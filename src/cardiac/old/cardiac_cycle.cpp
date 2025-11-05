@@ -1,0 +1,400 @@
+#include <armadillo>
+#include "util/command_line_args.h"
+#include "cardiac_cycle.hpp"
+#include "util/pugixml.hpp"
+
+
+Electromechanic::Electromechanic(const std::string & epmodel) : dt_mech(1.0), timer(), Ta0(0.0), dTa0(0.0)
+{
+  // TODO: change from EPHY to EP
+  // create electrophysiology model
+  //if (epmodel == "mono")
+  //  ep = new MonodomainDeformation();
+  //else
+  //  ep = new BidomainDeformation();
+}
+
+Electromechanic::~Electromechanic()
+{
+  // freeing memory
+  /*
+  for (uint i = 0; i < vec_stress.size(); i++)
+    delete vec_stress[i];
+  for (uint i = 0; i < vec_fib.size(); i++)
+    delete vec_fib[i];
+  for (uint i = 0; i < vec_fib0.size(); i++)
+    delete vec_fib0[i];
+
+  for (uint i = 0; i < Ta_list.size(); i++)
+    delete Ta_list[i];
+  for (uint i = 0; i < p_lv.size(); i++)
+    delete p_lv[i];
+  for (uint i = 0; i < p_art.size(); i++)
+    delete p_art[i];
+  for (uint i = 0; i < p_ven.size(); i++)
+    delete p_ven[i];
+  for (uint i = 0; i < p_LA.size(); i++)
+    delete p_LA[i];
+  */
+
+}
+
+void Electromechanic::config(const string & basename)
+{
+  double T, dt;
+  string parfile = basename ;
+  string mshfile = basename ;
+  string monofile = basename ;
+  string cellmodel, odesolver;
+  filename = basename;
+
+
+  cout << endl << "Starting coupled electromechanics problem" << endl;
+
+  T = CommandLineArgs::read("-t", 1.0);
+  dt = CommandLineArgs::read("-dt", 0.1);
+  cellmodel = CommandLineArgs::read("-c", "NP");
+  odesolver = CommandLineArgs::read("-m", "ExplicitEuler");
+
+  double pr = 1.0;
+  double pa = 1.0;
+
+  ifstream inp;
+
+  pugi::xml_document doc;
+  pugi::xml_parse_result result = doc.load_file(mshfile.c_str());
+
+  if (!result) {
+    std::cout << "XML parsed with errors\n";
+    std::cout << "Error description: " << result.description() << "\n";
+    std::cout << "Error offset: " << result.offset;
+    std::cout << " (error at [..." << (result + result.offset) << "]\n\n";
+  }
+
+  pugi::xml_node fnodes = doc.child("mesh").child("pvloop");
+  T = fnodes.attribute("total_time").as_double();
+  int size = fnodes.attribute("size").as_int();
+  C_art = fnodes.attribute("C_art").as_double();
+  part = fnodes.attribute("p_art").as_double();
+  R_per = fnodes.attribute("R_per").as_double();
+  P_o = fnodes.attribute("P_o").as_double();
+  stroke_volume = fnodes.attribute("stroke_volume").as_double();
+  double T_ref = (fnodes.attribute("T_ref")) ? fnodes.attribute("T_ref").as_double() : 1.0;
+
+  cout <<"PV-loop parameters:\n";
+  cout <<"C_art: " << C_art << " p_art: " << part << " R_per: " << R_per << " P_o: " << P_o << " Stroke volume: " << stroke_volume << "\n";
+
+  for (pugi::xml_node node = fnodes.child("step"); node; node = node.next_sibling("step"))
+  {
+    double t = node.attribute("time").as_double();
+    double press = node.attribute("pressure").as_double();
+    double ta = node.attribute("active_tension").as_double()*T_ref;
+    curr_time.push_back(t*1000.0);
+    //std::pair<double, double> par;
+    //par.first=press;
+    //par.second= (ta<1e-16) ? 0 : ta;
+    Ta_list.push_back(ta);
+    p_lv.push_back(press);
+
+    //cout << "Pressure: " << press << " Ta: " << ta << endl;
+
+  }
+
+
+  for(int i=0; i<n_cycles-1; i++)
+  {
+    for(int k=0; k<size; k++)
+    {
+      Ta_list.push_back(Ta_list.at(k));
+//	curr_time.push_back(curr_time.at(k));
+    }
+  }
+
+  for(int k=0; k<size*n_cycles; k++)
+  {
+    cout << k << " " << Ta_list.at(k) << endl;
+  }
+
+
+//exit(0);
+
+
+//  T = 0.9;
+  dt = T/(size-1);
+  dt_mech = dt;
+  cout << "size: " << size <<endl;
+  cout << "total time: " << T << endl;
+  cout << "Mechanical time step: " << dt_mech << endl;
+  //volume = arma::vec(Ta_list.size());
+  //p_ven = arma::vec(Ta_list.size());
+  //p_art = arma::vec(Ta_list.size());
+  //p_LA = arma::vec(Ta_list.size());
+
+  ephy.setup(monofile, cellmodel, odesolver, dt, T, pr, pa);
+  ephy.update_matrix(false);
+  ephy.init();
+  //ephy.setup_types(typfile);
+
+  elas.config(mshfile, parfile);
+  elas.set_output_step(false);
+  elas.init();
+  elas.setup_data_writer(curr_time.size());
+  //elas.set_output_step(false);
+
+/*
+
+  // Configure fibers for mechanical problem
+  for (int i = 0; i < elas.get_mesh().get_n_elements(); i++)
+  {
+    arma::vec3 f0 = ephy.get_fiber(i);
+    arma::vec3 s0 = ephy.get_trans(i);
+    arma::vec3 n0 = ephy.get_normal(i);
+    elas.get_mesh().set_element_fiber(i, f0);
+    elas.get_mesh().set_element_trans(i, s0);
+    elas.get_mesh().set_element_normal(i, n0);
+  }
+
+  // Configure fiber-sheet-normal directions
+  for (int i = 0; i < ephy.get_mesh().get_n_elements(); i++)
+  {
+    arma::mat33 * R = new arma::mat33();
+    arma::mat33 * R0 = new arma::mat33();
+
+    R->col(0) = ephy.get_fiber(i);
+    R->col(1) = ephy.get_trans(i);
+    R->col(2) = ephy.get_normal(i);
+
+    R0->col(0) = ephy.get_fiber(i);
+    R0->col(1) = ephy.get_trans(i);
+    R0->col(2) = ephy.get_normal(i);
+
+    vec_fib.push_back(R);
+    vec_fib0.push_back(R0);
+  }
+  int neln  = ephy.get_mesh().get_nen();
+  int nelem = elas.get_mesh().get_n_elements();
+  for (int i = 0; i < nelem; i++)
+    for (int j = 0; j < neln; j++)
+      vec_stress.push_back(new arma::mat33());
+
+*/
+
+  // Check if mechanical and electrical meshes are the same
+  assert(elas.get_mesh().get_n_points() == ephy.get_mesh().get_n_points());
+  assert(elas.get_mesh().get_n_elements() == ephy.get_mesh().get_n_elements());
+}
+
+void Electromechanic::Solve_System(double active_stress, double pressure)
+{
+  //int size = ephy.get_mesh().get_n_points();
+
+  //arma::vec dta(size);
+  double dTa = active_stress - Ta0;
+  //double dP = pressure - P0;
+/*
+  dta.ones();
+  dta = dta*dTa;
+  elas.assemble_active(dta, vec_stress, vec_fib0);
+*/
+  Ta0 = active_stress;
+  P0 = pressure;
+  cout << "Pressure: " << pressure << " Ta: " << active_stress << " Ta0: " << Ta0 << " dTa: " << dTa <<endl;
+  elas.set_pressure_Ta(pressure, active_stress, dTa);//ALTEREI AQUI!!!!!
+  elas.solve();
+  elas.reset();
+}
+
+
+void Electromechanic::solve()
+{
+  cout << "Solving coupled electromechanical problem" << endl;
+  elas.timer.enter("Solver");
+
+  int nstep;
+  int i  = 0, itempo=0,store=1;
+  int size  = elas.get_mesh().get_n_points();
+  int nelem = elas.get_mesh().get_n_elements();
+  double dt = CommandLineArgs::read("-dt", 0.1);
+  bool phase1 = true;
+  bool phase3 = false;
+  double VED = 0.0;
+  //double kilo=0.001;
+
+  ofstream pv_file;
+  string pvfilename = filename.c_str() + string("_pvloop.txt");
+  pv_file.open(pvfilename.c_str());
+
+  arma::vec vm(size), u_field(3*size);
+  vm.zeros();
+
+  // configure number of steps until mechanical solve
+  cout << "\nTime step of mechanics: " << dt_mech << endl;
+
+  TimeParameters tip(ephy.get_time_parameters());
+
+  // configure vector of displacements / stresses
+  //u_field.zeros();
+
+  //ephy.write_data(vm, u_field, "vm", i);
+  //ephy.write_data_text(vm, cont);
+  //elas.output_vtk(0, cont, "vm", vm, vec_fib0);
+  elas.pre_solve();
+
+
+  p_lv.push_back(0.0);
+//Cycle 6:
+  //p_lv.push_back(1.191e+03);
+  //p_lv.push_back(1.193e+03);
+  //p_lv.push_back(1.195e+03);
+  //p_lv.push_back(1.197e+03);
+  //p_lv.push_back(1.199e+03);
+
+  cout << "Solve 0 " <<endl;
+  Solve_System(Ta_list.at(0),p_lv[0]);
+  volume.push_back(elas.total_volume_cavity());
+  cout << "Volume: " << volume[i] <<endl;
+  cout << "Pressure: " << p_lv[i] << endl;
+
+  double dp = 10.;
+  double DT = dt_mech*1000;
+  double Vf_0, Vf_1, V_LP, V_LP0=volume[0], V_LA, V_LA0=10.0, V_LA_zero=10.0, V_art, V_ven, V_art0, V_ven0, p_0, p_1;
+  double Rmv = 2500.0*0.7, Rven = 2000.0*0.7, r_est, Rao = 5500.*0.7, Rper=140000., c_art=0.014, c_ven=0.3;
+  double V_art_zero = 580., V_ven_zero = 3300.0, pi = 3.14159265358979323846;
+  double E_es_LA = 60.0, A_LA = 58.67, B_LA = 0.049, Tmax = 200.0, tau = 25.0;
+  double qmv, qao, qven, qper;
+
+  p_ven.push_back(1600.0);
+  p_art.push_back(10800.0);
+  p_LA.push_back(0.0);
+  //Cycle 6:
+  //curr_time.at(itempo) << p_lv[i] << volume[i] << Ta_list.at(i) << p_art[i] << p_ven[i] << p_LA[i] << V_art0 << V_ven0 << V_LA0
+  //8.792 223.368 54.1872 0 8307.16 1498.51 1045.95 696.3 3749.55 69.9046
+  //8.793 235.482 54.5156 0 8303.69 1497.91 1040.66 696.252 3749.37 69.8066
+  //8.794 247.25 54.8377 0 8300.22 1497.31 1035.77 696.203 3749.19 69.7157
+  //8.795 258.616 55.1506 0 8296.75 1496.7 1031.35 696.154 3749.01 69.6332
+  //8.796 269.641 55.4577 0 8293.28 1496.09 1027.4 696.106 3748.83 69.5591
+  //8.797 280.39 55.7584 0 8289.81 1495.47 1023.87 696.057 3748.64 69.4925
+/*
+  4.283 287.358 57.1166 172.56 8951.3 1435.98 1015.18 669.513 3730.8 69.3282
+  4.284 289.93 57.6871 97.14 8945.93 1434.76 1006.75 669.459 3730.43 69.1673
+  4.285 296.24 58.2602 43.2 8940.57 1433.5 999.634 669.406 3730.05 69.0305
+  4.286 305.953 58.8207 10.8 8935.2 1432.23 993.161 669.352 3729.67 68.9053
+  4.287 318.899 59.3619 0 8929.85 1430.94 987.959 669.298 3729.28 68.8041
+  4.288 333.484 59.8929 0 8924.49 1429.64 983.535 669.245 3728.89 68.7177
+*/
+/*
+  p_lv[0] = 287.358;
+  p_lv[1] = 289.93;
+  p_lv[2] = 296.24;
+  p_lv[3] = 305.953;
+  p_lv[4] = 318.899;
+  p_lv[5] = 333.484;
+
+  p_art.push_back(8924.49);
+  p_ven.push_back(2000.0);
+  p_LA.push_back(983.535);
+*/
+  V_art0 = p_art[0]*c_art + V_art_zero;
+  V_ven0 = p_ven[0]*c_ven + V_ven_zero;
+  //Cycle 6:
+//  V_art0 = 669.245;
+//  V_ven0 = 3728.89;
+//  V_LA0 = 68.7177;
+
+  V_LP = V_LP0;
+  V_art = V_art0;
+  V_ven = V_ven0;
+  V_LA = V_LA0;
+
+  double total_time = 0;
+
+  for(int k=0; k<n_cycles; k++) {
+    total_time += tip.time();
+    tip.reset();
+//    elas.setup_data_writer(curr_time.size());
+
+    if(i>=5)
+    {
+      cout << "\nCycle :" << k << endl;
+      cout << "p_lv[i-1] = " << p_lv[i-1] << endl;
+      cout << "p_lv[i-2] = " << p_lv[i-2] << endl;
+      cout << "p_lv[i-3] = " << p_lv[i-3] << endl;
+      cout << "p_lv[i-4] = " << p_lv[i-4] << endl;
+      cout << "p_lv[i-5] = " << p_lv[i-5] << endl;
+      cout << "p_art[i-1] = " << p_art[i-1] << endl;
+      cout << "p_ven[i-1] = " << p_ven[i-1] << endl;
+      cout << "p_LA[i-1] = " << p_LA[i-1] << endl;
+      cout << "V_LP0 = " << V_LP0 << endl;
+      cout << "V_art0 = " << V_art0 << endl;
+      cout << "V_ven0 = " << V_ven0 << endl;
+      cout << "V_LA0 = " << V_LA0 << endl;
+      cout << "Ta_list[" << i << "] = " << Ta_list.at(i) << endl;
+    }
+    else
+    {
+      cout << "\nCycle :" << k << endl;
+      cout << "p_lv[i-1] = " << p_lv[i-1] << endl;
+      cout << "p_art[i-1] = " << p_art[i-1] << endl;
+      cout << "p_ven[i-1] = " << p_ven[i-1] << endl;
+      cout << "p_LA[i-1] = " << p_LA[i-1] << endl;
+      cout << "V_LP0 = " << V_LP0 << endl;
+      cout << "V_art0 = " << V_art0 << endl;
+      cout << "V_ven0 = " << V_ven0 << endl;
+      cout << "V_LA0 = " << V_LA0 << endl;
+      cout << "Ta_list[" << i << "] = " << Ta_list.at(i) << endl;
+    }
+
+    cout << "\n i: " << i << endl;
+    cout << "\n Total time: " << total_time << "\n" << endl;
+
+    for(int kk=0; kk<curr_time.size(); kk++)
+    {
+      cout << kk << " " << curr_time.at(kk) << endl;
+    }
+
+
+    itempo = 0;
+    // loop in time
+    while (!tip.finished())
+      //while (tip.time()<=0.5)
+    {
+      cout << "Incrementa tempo..." << endl;
+      tip.increase_time();
+      cout << "\nTime: " << tip.time() << endl;
+
+      cout << "\n i: " << i << endl;
+      cout << "\n Ta_list[l]: " << Ta_list.at(i) << endl;
+      //cout << "Solve 1 " <<endl;
+      Solve_System(Ta_list.at(i), 0.0);
+
+      elas.output_vtk(0, i);
+      elas.storeStress(i);
+
+      i += 1;
+      itempo = itempo + 1;
+
+//------------------------------------------------------------------------
+
+      }
+
+
+
+
+
+
+
+
+
+      //timer.leave();
+
+    }
+
+
+  elas.timer.leave();
+
+  pv_file.close();
+
+  elas.timer.summary();
+  //ephy.timer.summary();
+  timer.summary();
+}

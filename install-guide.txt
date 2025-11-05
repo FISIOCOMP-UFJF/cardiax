@@ -1,0 +1,84 @@
+Guide to intall and run Cardiax
+
+
+
+1- Create a directory "source" to store the dependences
+
+2- Install HDF5:
+
+	2.1- tar xvf hdf5-1.8.13.tar
+
+	2.2- cd hdf5-1.8.13
+
+	2.3- ./configure --prefix=/home/joventino/source/hdf5
+
+	2.4- make
+
+	2.5 make install
+
+3- Install PETSC:
+	3.1 Run configure:
+		python2 ./configure --COPTFLAGS="-O2 -g" --CXXOPTFLAGS="-O2 -g" --FOPTFLAGS="-O2 -g -std=legacy" --with-debugging=yes --with-mpi-dir=/opt/ohpc/pub/mpi/mpich-ofi-gnu12-ohpc/3.4.3/ --download-suitesparse --with-hdf5-dir=/home/joventino/source/hdf5 --download-fblaslapack=/home/joventino/source/fblaslapack-3.4.2.tar.gz --download-hypre=/home/joventino/source/hypre/hypre_2.14.0.orig.tar.gz --download-mumps --download-scalapack --download-superlu --download-cmake
+
+
+	3.2 Build:
+		make PETSC_DIR=/home/joventino/source/petsc-3.10.0 PETSC_ARCH=arch-linux2-c-debug all
+
+4- Install AMGX:
+	git clone --recursive git@github.com:nvidia/amgx.git
+	cd amgx
+	mkdir build
+	cd build
+	cmake -DCMAKE_INSTALL_PREFIX=/home/joventino/source/amgx/ ../
+	make -j16 all install
+
+5- Export environment variables
+
+export PETSC_DIR=/home/joventino/source/petsc-3.10.0/
+export PETSC_ARCH=arch-linux2-c-debug
+
+export PATH=$PATH:/opt/ohpc/pub/libs/gnu12/openmpi4/boost/1.81.0/include/:/home/joventino/source/hdf5/include/:/home/joventino/source/hdf5/bin/:/home/joventino/source/armadillo/include/:/home/joventino/source/amgx/include/
+
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/joventino/source/hdf5/lib/:/home/joventino/source/armadillo/lib64/:/home/joventino/source/amgx/lib/
+
+6- AMGX cmake settings
+
+	-Copy ./amgx-config.cmake to AMGX dir
+
+	-Include the following command in the first file lines to set CMAKE_INSTALL_PREFIX: 
+		set(CMAKE_INSTALL_PREFIX "/home/joventino/source/amgx")
+
+	
+7- Build Cardiax
+	mkdir build
+	cd build
+	cmake ..
+	make nonlinearelas electromech
+
+
+8- Run Cardiax
+
+	-Mechanical problems:
+
+		With AMGX: ./nonlinearelas -m ./bench_cardiax_prob2.xml -s ul
+
+		With PetSc (iterative method): ./nonlinearelas -m ./bench_cardiax_prob2.xml -s ul -ksp_type gmres -pc_type hypre -pc_hypre_type boomeramg
+
+		With PetSc (direct method): ./nonlinearelas -m ./bench_cardiax_prob2.xml -s ul -ksp_type preonly -pc_type lu
+
+	-Electromechanical:
+		With AMGX: ./electromech -f ./cubo_electromech.xml -dt 0.1 -t 10 -c NP -m ExplicitEuler -cond 0 -ep mono
+
+		With Petsc: ./electromech -f ./cubo_electromech.xml -dt 0.1 -t 10 -c NP -m ExplicitEuler -cond 0 -ep mono -ksp_type preonly -pc_type lu
+
+
+
+-----
+
+* Links:
+
+https://petsc.org/main/install/install/
+
+https://ftp.mcs.anl.gov/pub/petsc/externalpackages/
+
+https://github.com/NVIDIA/AMGX

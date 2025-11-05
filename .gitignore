@@ -1,0 +1,25 @@
+# Compilados
+*.o
+*.a
+*.so
+*.out
+*.exe
+build/
+
+# CMake
+/CMakeFiles/
+/CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# meshes
+meshes/
+temp/
+*.xmf
+*.h5
+*.zip

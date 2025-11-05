@@ -1,0 +1,186 @@
+
+// --------------------------------------------------------------------
+// Mesh BACKUP implementations
+// -------------------------------------------------------------------
+
+/*
+void Mesh::read(const char * filename)
+{
+  char nf[256]; // node file
+  char ef[256]; // element file
+  char af[256]; // cond. axes file
+
+  sprintf(nf, "%s.pts", filename);
+  nodefile = (char *) calloc(strlen(nf)+1, sizeof(char));
+  
+  sprintf(ef, "%s.elem", filename);
+  elemfile = (char *) calloc(strlen(ef)+1, sizeof(char));
+  
+  sprintf(af, "%s.fib", filename);
+  axesfile = (char *) calloc(strlen(af)+1, sizeof(char));
+
+  strcpy(nodefile, nf);
+  strcpy(elemfile, ef);
+  strcpy(axesfile, af);
+
+  read_elements (elemfile);
+  read_nodes (nodefile);
+
+  // allocate element list
+  elist.nel   = nel;
+  elist.elems = (element *) malloc(nel * sizeof(element));
+
+  read_fibers (axesfile);
+
+}
+
+void Mesh::read_nodes(const char * filename)
+{
+  int i, j, node;
+  real xtemp[3];
+  real **x;
+
+  // open nodefile
+  std::ifstream in(filename);
+  in >> ndof;
+  
+  x = new_2D_array<real> (ndim, ndof);
+  
+  node = 0;
+  for(i=0; i<ndof; i++)
+  {
+    in >> xtemp[0] >> xtemp[1] >> xtemp[2];
+
+    for(j=0; j<ndim; j++)
+      x[j][node] = (real) xtemp[j];
+    
+    node++;
+  }
+  
+  in.close();
+
+  // set the mesh properties
+  nodes = x;
+}
+
+void Mesh::read_fibers(const char * filename)
+{
+  element *elem;
+  float a1, a2, a3, b1, b2, b3, c1, c2, c3;
+  std::ifstream in(filename);  
+
+  for(int i=0; i<nel; i++)
+  {
+    in >> a1 >> a2 >> a3 >> b1 >> b2 >> b3 >> c1 >> c2 >> c3;
+
+    // build element info
+    elem = &elist.elems[i];
+    elem->elid   = i;
+    elem->eltype = eltype;
+    elem->ndim   = ndim;
+    elem->nint   = nint;
+    elem->ndofs  = nen;
+
+    elem->al[0] = a1;
+    elem->al[1] = a2;
+    elem->al[2] = a3;
+
+    elem->at[0] = b1;
+    elem->at[1] = b2;
+    elem->at[2] = b3;
+
+    elem->an[0] = c1;
+    elem->an[1] = c2;
+    elem->an[2] = c3;
+  }
+
+  in.close();
+
+}
+
+void Mesh::read_elements(const char * filename)
+{
+  int i,**conec, tmp, ret, tmp_nel;
+  int n1,n2,n3,n4;
+  char estr[2];
+  FILE *fp;
+
+  // open elemfile
+  fp = fopen(filename, "r");
+  if(!fp){
+    cerr << "Error in Mesh::read_elements File \'" << filename << "\' not found.\n";
+    exit(1);
+  }
+  
+  // read element conectivities
+  ret = fscanf(fp,"%d\n",&tmp_nel);
+  nel = tmp_nel;
+
+  ret = fscanf(fp,"%s ",estr);
+
+  if( strcmp( estr, "Tr" ) == 0 )
+  {
+    eltype = 1;
+    nen    = 3;
+    nint   = 3;
+    ndim   = 2;
+  }
+
+  if( strcmp( estr, "Qd" ) == 0 )
+  {
+    eltype = 0;
+    nen    = 4;
+    nint   = 4;
+    ndim   = 2;
+  }
+  
+  if( strcmp( estr, "Hx" ) == 0 )
+  {
+    eltype = 2;
+    nen    = 8;
+    nint   = 8;
+    ndim   = 3;
+  }
+
+  conec = new_2D_array<int> (nen, nel);
+
+  if(nen==3){
+
+    ret = fscanf(fp,"%d %d %d %d\n",&n1,&n2,&n3,&tmp);
+    conec[0][0] = n1; 
+    conec[1][0] = n2; 
+    conec[2][0] = n3;
+    for(i=1; i<nel; i++){
+      ret = fscanf(fp,"%d %d %d\n",&n1,&n2,&n3);
+      conec[0][i] = n1; 
+      conec[1][i] = n2; 
+      conec[2][i] = n3;
+    }
+
+  } else if (nen==4) {
+
+    ret = fscanf(fp,"%d %d %d %d %d\n",
+		 &n1,&n2,&n3,&n4,&tmp);
+    conec[0][0] = n1; 
+    conec[1][0] = n2; 
+    conec[2][0] = n3;  
+    conec[3][0] = n4;
+    for(i=1; i<nel; i++){
+      ret = fscanf(fp,"%s %d %d %d %d %d\n",
+		   estr,&n1,&n2,&n3,&n4,&tmp);
+      conec[0][i] = n1; 
+      conec[1][i] = n2; 
+      conec[2][i] = n3; 
+      conec[3][i] = n4;
+    }
+
+  }
+
+  // close elemfile
+  fclose(fp);
+
+  // set mesh localToGlobal
+  localToGlobal = conec;
+}
+*/
+

@@ -88,7 +88,7 @@ private:
   arma::vec ta;
   arma::vec lat;
 
-  void Solve_System(double tt, double active_stress, double pressure, double pressure2);
+  void Solve_System(double tt, double pressure, double pressure2);
 
   const double a6 = 2.0;
   const double a7 = 1.5;
@@ -106,6 +106,7 @@ private:
   std::vector<double> activeStressCurve;
   std::vector<double> timePoints;
   bool curveCalculated = false;
+  bool has_eikonal = false; 
 };
 
 #endif

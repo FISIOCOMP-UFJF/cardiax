@@ -195,9 +195,9 @@ void Mesh::read_xml(const std::string &filename)
   for (pugi::xml_node node = nodes.child("node"); node;
        node = node.next_sibling("node")) {
     arma::vec3 p;
-    p(0) = node.attribute("x").as_double()*1e1;
-    p(1) = node.attribute("y").as_double()*1e1;
-    p(2) = node.attribute("z").as_double()*1e1;
+    p(0) = node.attribute("x").as_double()*1e0;
+    p(1) = node.attribute("y").as_double()*1e0;
+    p(2) = node.attribute("z").as_double()*1e0;
     points.push_back(p);
   }
 

@@ -94,7 +94,7 @@ void CardiacElectromechanic::config(const string &basename)
 
   P_o = fnodes.attribute("P_o").as_double();
   stroke_volume = fnodes.attribute("stroke_volume").as_double();
-  double T_ref = (fnodes.attribute("T_ref")) ? fnodes.attribute("T_ref").as_double() : 1.0;
+  T_ref = (fnodes.attribute("T_ref")) ? fnodes.attribute("T_ref").as_double() : 1.0;
 
   //  cout <<"PV-loop parameters:\n";
   //  cout <<"C_art: " << C_art << " p_art: " << part << " R_per: " << R_per << " P_o: " << P_o << " Stroke volume: " << stroke_volume << "\n";
@@ -229,7 +229,7 @@ void CardiacElectromechanic::config(const string &basename)
   }  */
 
   lat.set_size(elas.get_mesh().get_n_elements());
-  bool has_eikonal = false; 
+  has_eikonal = false; 
   pugi::xml_node element_data = doc.child("mesh").child("element_data");
   if(element_data)
   {
@@ -263,112 +263,78 @@ void CardiacElectromechanic::config(const string &basename)
 
     //TODO: read this information from file? 
     double begin_active_stress = 0.136;
-    double end_qrs = 0.136 + 0.146;
+    double latest_lat = 0.136 + 0.146;
 
-    lat = begin_active_stress + (lat - min_val) * (end_qrs - begin_active_stress)/ (max_val-min_val);
+    lat = begin_active_stress + (lat - min_val) * (latest_lat - begin_active_stress)/ (max_val-min_val);
     std::cout << " Earliest activation: " << lat.min() << "  Latest activation: " << lat.max()  << std::endl; 
     std::cout << " Loaded LATs: " << lat.n_elem << " values.\n";
   }
   else
   {
+    lat.set_size(1);
     lat.fill(0.136); //if there isn't lat in the mesh file, we use 0.136 for all elements.
   }
 
-  cout<<"-- Calculating active stress -- " <<endl;
-  max_ta = 0.0;
-  Ta_matrix.set_size(curr_time.size(), lat.size()); // cada linha é um passo de tempo. 
-  for(int it_time = 0; it_time < curr_time.size(); it_time++)
+
+  cout << "Precomputing active stress..." << endl;
+
+  //TODO: define a generic active stress model 
+  max_ta = 0; 
+  for (int it_time = 0; it_time < curr_time.size(); it_time++)
   {
-    for(int it_elem = 0; it_elem < lat.size(); it_elem++)
-    {
-      double Ta_calculated =  solveTa((curr_time[it_time] / 1000.0) - lat[it_elem], dt / 1000.0); // solveTa((curr_time[it_time] / 1000.0) - (atraso[it_elem] / 1000.0), dt / 1000.0);
-      Ta_matrix(it_time, it_elem) = Ta_calculated;
-      if(Ta_calculated > max_ta)
+    double Ta_calculated =  solveTa((curr_time[it_time] / 1000.0) - 0.136, dt_mech); // using lat=0.136 only for instance, doesn't change the maximum value  
+    if(Ta_calculated > max_ta)
         max_ta = Ta_calculated; 
-    }
+
   }
-  //Normalizando:
-  Ta_matrix = (Ta_matrix * T_ref) / max_ta;
-  //TODO: MULTIPLOS CICLOS! */
+
+  cout << " Maximum active stress value (before rescaling): " << max_ta << std::endl;
+  cout << " Maximum active stress value (after rescaling): "  << T_ref << std::endl;
+  //obs: normalize the active stress with max_ta and multiply to T_ref. T_ref is aproximaly the maximum active stress value
+
+  ta.zeros(nelem);
+  dta.zeros(nelem);
+  lc = 1.9;
+  //TODO: Multiplos ciclos
 }
 
-void CardiacElectromechanic::Solve_System(double tt, double active_stress, double pressure, double pressure2)
+
+void CardiacElectromechanic::Solve_System(double tt, double pressure, double pressure2)
 {
-  //double activation_time = tt - 200.0;
-
-  //active_stress = solveTa(activation_time, dt_mech)*1000.0;
-
   int size = elas.get_mesh().get_n_elements();
   int index = static_cast<int>(tt*1000); 
 
-  arma::vec dta(size);
-  arma::vec ta(size);
-
-  double dTa = active_stress - Ta0;
-  // double dP = pressure - P0;
-
-  dta.ones();
-  //dta = dta * dTa;
-  if (index > 0)
+  if (has_eikonal)
   {
-    dta = Ta_matrix.row(index).t() - Ta_matrix.row(index-1).t();
+    for (int iel = 0; iel < size ; iel++)
+    {
+      double ta_calculated = solveTa(tt - lat(iel), dt_mech);
+      ta_calculated *= (T_ref/max_ta);
+      dta(iel) = ta_calculated - ta(iel);
+      ta(iel) = ta_calculated; 
+    }
   }
   else
   {
-    dta = Ta_matrix.row(index).t(); 
+    double ta_calculated = solveTa(tt - lat(0), dt_mech);
+    ta_calculated *= (T_ref/max_ta);
+    dta.fill(ta_calculated - ta(0));
+    ta.fill(ta_calculated);
   }
 
-  ta.ones();
-  //ta = ta * active_stress;
-  ta = Ta_matrix.row(index).t();
-
-  // cout << "Assemble Active" <<endl;
-  // elas.assemble_active(dta, vec_stress, vec_fib0);
-
-  Ta0 = active_stress;
   P0 = pressure;
   
-  cout << "Pressure: " << pressure << " Ta: " << active_stress << " Ta0: " << Ta0 << " dTa: " << dTa << endl;
+  cout << "Pressure: " << pressure << "Ta (mean): " << arma::mean(ta) << " dTA (mean): " <<arma::mean(dta) << " tt: " << tt << endl;
+  cout << "Ta: min=" << ta.min() << " max=" << ta.max() 
+      << " | dTa: min=" << dta.min() << " max=" << dta.max()
+      << " | lat: min=" << lat.min() << " max=" << lat.max()
+      << endl;
   elas.set_pressure_Ta(30, pressure, 20, pressure * 0.2, ta, dta);
   elas.solve();
   elas.reset();
 
-} 
-/* 
-void CardiacElectromechanic::Solve_System(double tt, double active_stress, double pressure, double pressure2)
-{
-  int size = elas.get_mesh().get_n_elements();
+}
 
-  arma::vec dta(size);
-  arma::vec ta(size);
-
-  for (int i = 0; i < size; ++i)
-  {
-    // Calcula o índice de tempo com atraso
-    double t_eff = tt - atraso[i];
-
-    int idx = static_cast<int>(t_eff);
-    if (idx < 0) idx = 0;
-    if (idx >= (int)Ta_list.size()) idx = (int)Ta_list.size() - 1;
-
-    double Ta_curr = Ta_list[idx];
-
-    double dTa;
-    if(idx > 0)
-      dTa = Ta_curr - Ta_list[idx - 1];
-    else if(idx == 0)
-      dTa = Ta_curr; 
-
-    ta[i] = Ta_curr;
-    dta[i] = dTa;
-  }
-
-  P0 = pressure;
-
-  elas.set_pressure_Ta(30, pressure, 20, pressure * 0.2, ta, dta);
-  elas.solve();
-  elas.reset();
-} */
 
 void CardiacElectromechanic::solve()
 {
@@ -398,7 +364,7 @@ void CardiacElectromechanic::solve()
   p_rv.push_back(0.0);
 
   cout << "Solve 0 " << endl;
-  Solve_System(0, 0.0, p_lv[0], p_rv[0]);
+  Solve_System(0, p_lv[0], p_rv[0]);
   volume.push_back(elas.total_volume_cavity());
 
   timePoints.push_back(0.0);
@@ -432,7 +398,6 @@ void CardiacElectromechanic::solve()
 
     itempo = 0;
     while (!tip.finished())
-    //while(tip.time() < 0.007)
     {
       cout << "Incrementa tempo..." << endl;
       tip.increase_time();
@@ -462,7 +427,7 @@ void CardiacElectromechanic::solve()
         p_1 = p_0 + (DP / DV) * Q * DT;
       }
 
-      Solve_System(tip.time(), 0.0, p_0, p_0); 
+      Solve_System(tip.time(), p_0, p_0); 
       Vf_0 = elas.total_volume_cavity();
 
       int iterations = 0;
@@ -478,7 +443,7 @@ void CardiacElectromechanic::solve()
              << endl;
 
         cout << "Solve 2 " << endl;
-        Solve_System(tip.time(), 0.0, p_1, p_1);
+        Solve_System(tip.time(), p_1, p_1);
         Vf_1 = elas.total_volume_cavity();
         double C = (p_1 - p_0) / (Vf_1 - Vf_0);
 

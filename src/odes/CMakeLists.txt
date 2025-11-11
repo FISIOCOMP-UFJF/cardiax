@@ -1,4 +1,4 @@
-# CmakeLists.txt in src dir
+# CmakeLists.txt in src/ode dir
 # Adds a library called ODE from the source files
 
 add_library(ODE
@@ -26,14 +26,36 @@ add_library(ODE
   minimalmodel.cpp
   mm_silva.cpp
   torord_land.cpp
-  ${agos_source}
-  )
+  ${agos_source} # Esta variável vem do seu CMakeLists.txt principal
+)
 
-target_link_libraries(ODE Util LinAlg)
+# [NOVO] Exporta os headers do ODE
+target_include_directories(ODE PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
-# Programs
-#if(BUILD_TESTS)
+# [MODIFICADO] Linka as dependências de ODE
+# Adicionamos 'ext_libs' porque os seus testes (testCellModel)
+# precisam de Armadillo e HDF5, que estão em 'ext_libs'.
+# Isso indica que a própria biblioteca 'ODE' (ou seus testes)
+# usa bibliotecas externas.
+target_link_libraries(ODE PUBLIC
+    Util
+    LinAlg
+    ext_libs # Nosso alvo com Armadillo, HDF5, PETSc, etc.
+)
+
+# --- Programas de Teste ---
+if(BUILD_TESTS)
     add_executable(testCellModel test/test_cellmodel.cpp)
-    target_link_libraries(testCellModel Util LinAlg ODE  ${ARMADILLO_LIBRARIES} ${HDF5_LIBRARIES} )
-#endif(BUILD_TESTS)
+    
+    # [MODIFICADO] Linkagem do teste
+    # Como 'ODE' já linka 'Util', 'LinAlg' e 'ext_libs'
+    # como PUBLIC, o CMake cuida da linkagem transitiva.
+    # 'testCellModel' recebe tudo o que precisa automaticamente.
+    target_link_libraries(testCellModel PRIVATE ODE)
 
+    # --- REMOVIDO ---
+    # A linha antiga era:
+    # target_link_libraries(testCellModel Util LinAlg ODE ${ARMADILLO_LIBRARIES} ${HDF5_LIBRARIES} )
+endif(BUILD_TESTS)

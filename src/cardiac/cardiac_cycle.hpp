@@ -83,7 +83,6 @@ private:
   std::vector<double> recorded_time;
   std::vector<double> p_lv, p_rv, Ta_list, volume, p_art, p_ven, p_LA;
   
-  arma::mat Ta_matrix; 
   arma::vec dta;
   arma::vec ta;
   arma::vec lat;

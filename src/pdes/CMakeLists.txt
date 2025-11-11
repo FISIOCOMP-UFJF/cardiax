@@ -1,4 +1,4 @@
-# CmakeLists.txt in src dir
+# CmakeLists.txt in src/pde dir
 # Adds a library called PDE from the source files
 
 set(
@@ -21,9 +21,21 @@ set(
   materials/guccione.cpp
   materials/exponential.cpp
   materials/holzapfel_ogden.cpp
-  )
+)
 
+# Definição da biblioteca (Isto está perfeito)
 add_library(PDE ${PDE_SRC})
-target_link_libraries(PDE FEM ODE LinAlg)
 
+# [NOVO] Exporta os headers do PDE para outros módulos
+target_include_directories(PDE PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
+# [MODIFICADO] Linka as dependências como PUBLIC
+# Isso garante que qualquer alvo que linkar 'PDE' (como 'Cardiac')
+# também receba as propriedades de 'FEM', 'ODE', e 'LinAlg'.
+target_link_libraries(PDE PUBLIC
+    FEM
+    ODE
+    LinAlg
+)

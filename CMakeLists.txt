@@ -2,107 +2,107 @@
 # author: Bernardo Martins Rocha
 # mail: bernardomartinsrocha@gmail.com
 
-cmake_minimum_required (VERSION 2.8)
-project (Cardiax)
+cmake_minimum_required(VERSION 3.12) # 3.10 funciona, mas 3.12+ é melhor para CMake moderno
+project(Cardiax C CXX)
 
-# Configure PETSc dir and arch
-#set (ENV{PETSC_DIR} "$ENV{PETSC_DIR}")
-#set (ENV{PETSC_ARCH} "$ENV{PETSC_ARCH}")
-#find_path (PETSC_DIR include/petsc.h
-#  HINTS ENV PETSC_DIR
-#  PATHS
-#  ${CMAKE_SYSTEM_PREFIX_PATH}
-#  DOC "PETSc Directory")
-#set(PETSC_ARCH 'arch-linux2-c-debug')
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 OLD)
+endif()
 
-# Configure cmake modules dir
-set (CMAKE_C_FLAGS "-O3 -Wall -Wno-deprecated")
-set (CMAKE_CXX_FLAGS "-O3 -Wall -Wno-deprecated")
-set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/Modules)
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 OLD)
+endif()
 
-set (MPI_C_LIBRARIES "/home/joventino/source/petsc-3.19.6/arch-linux2-c-debug/lib")
-set (MPI_C_INCLUDE_PATH "/home/joventino/source/petsc-3.19.6/arch-linux2-c-debug/include")
-set (MPI_CXX_LIBRARIES "/home/joventino/source/petsc-3.19.6/arch-linux2-c-debug/lib")
-set (MPI_CXX_INCLUDE_PATH "/home/joventino/source/petsc-3.19.6/arch-linux2-c-debug/include")
-set (MPI_C_COMPILER "/home/joventino/source/petsc-3.19.6/arch-linux2-c-debug/bin/mpicc")
-set (MPI_CXX_COMPILER "/home/joventino/source/petsc-3.19.6/arch-linux2-c-debug/bin/mpicxx")
+# --- Configurações Iniciais ---
+# Remove flags globais. Deixe o CMake gerenciar isso com Build Types.
+# O usuário pode compilar com: cmake -DCMAKE_BUILD_TYPE=Release ..
+# Ou -DCMAKE_BUILD_TYPE=Debug
+set(CMAKE_CXX_STANDARD 17) # Exemplo: defina um padrão C++
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set (MPI_lib_LIBRARY "/home/joventino/source/petsc-3.19.6/arch-linux2-c-debug/lib")
+# Configura cmake modules dir
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
-#set (HDF5_INCLUDE_DIRS "/opt/ohpc/pub/libs/gnu12/mpich/hdf5/1.10.8/include/")
-#set (HDF5_LIBRARIES "/opt/ohpc/pub/libs/gnu12/mpich/hdf5/1.10.8/lib/")
+# --- Configuração de Pacotes Externos ---
+# Esta seção está boa! find_package é a maneira correta.
+if (NOT DEFINED ENV{PETSC_DIR})
+    message(FATAL_ERROR "A variável de ambiente PETSC_DIR deve estar configurada para o PETSc.")
+endif()
+if (NOT DEFINED ENV{PETSC_ARCH})
+    message(WARNING "A variável de ambiente PETSC_ARCH não está configurada. Usando 'arch-linux2-c-debug' como padrão.")
+    set(ENV{PETSC_ARCH} "arch-linux2-c-debug")
+endif()
 
-set (HDF5_INCLUDE_DIRS "/home/joventino/source/hdf5/include/")
-set (HDF5_LIBRARIES "/home/joventino/source/hdf5/lib/")
-
-set (Boost_INCLUDE_DIRS "/home/joventino/source/boost_1_81_0/boost/")
-set (Boost_LIBRARIES "/home/joventino/source/boost_1_81_0/stage/lib")
-
-#set (BLAS_INCLUDE_DIRS "/usr/include/")
-set (BLAS_LIBRARIES "/usr/lib64/mpich/lib/")
-
-set (ARMADILLO_LIBRARY "/home/joventino/source/armadillo/usr/lib64/")
-set (ARMADILLO_INCLUDE_DIR "/home/joventino/source/armadillo/usr/include/")
-
-set (AMGX_INCLUDE_DIRS "/home/joventino/source/amgx/include/")
-set (AMGX_LIBRARIES "/home/joventino/source/amgx/lib/")
-set (AMGX_DIR "/home/joventino/source/amgx")
-
-# Find external packages
-find_package(MPI REQUIRED)
 find_package(PETSc REQUIRED)
-#find_package(HDF5 REQUIRED)
-#find_package(Boost REQUIRED)
-find_package(Armadillo REQUIRED)
-#find_package(AMGX REQUIRED)
+find_package(MPI REQUIRED)
+find_package(HDF5 REQUIRED)
+# find_package(Armadillo REQUIRED)
+find_package(Boost REQUIRED COMPONENTS system filesystem)
+find_package(BLAS REQUIRED)
+find_package(LAPACK REQUIRED)
+find_package(ScaLAPACK REQUIRED)
 
-message(${ARMADILLO_LIBRARY})
-message(${HDF5_LIBRARIES})
-message(${HDF5_LIBRARIES})
-#message(${Boost_LIBRARIES})
-message(${AMGX_LIBRARIES})
+set(AMGX_INCLUDE_DIRS $ENV{AMGX_ROOT}/include)
+# set(AMGX_LIBRARIES $ENV{AMGX_ROOT}/lib/libamgx.a) 
+find_library(AMGX_LIBRARY_PATH amgx HINTS $ENV{AMGX_ROOT} PATH_SUFFIXES lib lib64)
 
-# Includes and libraries for external packages
-#set (PARDISO_LIB /usr/lib/pardiso)
+find_library(CUDART_LIB cudart HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUSPARSE_LIB cusparse HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUSOLVER_LIB cusolver HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(NVTX_LIB nvToolsExt HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUBLAS_LIB cublas HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
 
 
-# OLD VTK stuff
-#include (${CMAKE_ROOT}/Modules/FindVTK.cmake)
-#include (${PROJECT_SOURCE_DIR}/cmake/Modules/FindVTK.cmake)
-###if (USE_VTK_FILE)
-###   include(${USE_VTK_FILE})
-###endif (USE_VTK_FILE)
-###find_package(VTK COMPONENTS REQUIRED)
+set(AMGX_LIBRARIES ${AMGX_LIBRARY_PATH})
+set(CUDA_LIBRARIES ${CUDART_LIB} ${CUSPARSE_LIB} ${CUSOLVER_LIB} ${NVTX_LIB} ${CUBLAS_LIB})
 
-link_directories( 
-  ${MPI_CXX_LIBRARIES}
-  ${PETSC_LIBRARIES} 
-  ${ARMADILLO_LIBRARIES} 
-  ${HDF5_LIBRARIES}
-  ${Boost_LIBRARIES}
-  ${BLAS_LIBRARIES}
-  ${AMGX_LIBRARIES}
-  )
 
-include_directories (
-  ${PROJECT_SOURCE_DIR}/src/  
-  ${PROJECT_SOURCE_DIR}/src/util/ 
-  ${PROJECT_SOURCE_DIR}/src/linalg/ 
-  ${PROJECT_SOURCE_DIR}/src/odes/
-  ${PROJECT_SOURCE_DIR}/src/fem/
-  ${PROJECT_SOURCE_DIR}/src/pde/
-  ${Boost_INCLUDE_DIRS}
-  ${PETSC_INCLUDES}
-  ${HDF5_INCLUDE_DIRS}
-  ${ARMADILLO_INCLUDE_DIRS}
-  ${AMGX_INCLUDE_DIRS} 
-  )
+add_library(ext_libs INTERFACE)
 
-# Configure some options for compiling or not extra packages, etc... 
-option(BUILD_TESTS "Build tests" ON)     
-option(USE_AGOS "Use AGOS for ODE solvers" OFF)
-  
-add_definitions(${PETSC_DEFINITIONS})
+# Adiciona includes das dependências
+target_include_directories(ext_libs INTERFACE
+    ${PROJECT_SOURCE_DIR}/src
+    ${MPI_C_INCLUDE_DIRS}
+    ${PETSC_INCLUDES}
+    ${HDF5_INCLUDE_DIRS}
+    # ${Armadillo_INCLUDE_DIRS}
+    $ENV{ARMADILLO_ROOT}/include
+    ${Boost_INCLUDE_DIRS}
+    ${AMGX_INCLUDE_DIRS}
+)
+
+# Adiciona bibliotecas das dependências
+target_link_libraries(ext_libs INTERFACE
+    ${PETSC_LIBRARIES}
+    ${MPI_C_LIBRARIES}
+    ${HDF5_LIBRARIES}
+    $ENV{ARMADILLO_ROOT}/lib64/libarmadillo.so
+    ${Boost_LIBRARIES}
+    ${BLAS_LIBRARIES}
+    ${LAPACK_LIBRARIES}
+    ${ScaLAPACK_LIBRARIES}
+    ${AMGX_LIBRARIES}    
+    ${CUDA_LIBRARIES}
+)
+
+# Adiciona definições das dependências
+target_compile_definitions(ext_libs INTERFACE 
+    ${PETSC_DEFINITIONS}
+)
+
+
+# --- [REMOVIDO] ---
+# O `include_directories(...)` global foi removido.
+# O `set(EXTERNAL_LIBRARIES ...)` global foi removido.
+# O `add_definitions(${PETSC_DEFINITIONS})` global foi removido.
+# Tudo isso agora está dentro do alvo "ext_libs".
+
+
+# --- Subdiretórios e Alvos ---
+option(BUILD_TESTS "Build tests" ON)
+option(USE_AGOS "Use AGOS for ODE solvers" OFF) # Você pode usar isso para CFLAGS condicionais
+
+# Adiciona os subdiretórios que definem seus próprios alvos (bibliotecas)
 add_subdirectory(src/util)
 add_subdirectory(src/linalg)
 add_subdirectory(src/mesh)
@@ -111,22 +111,10 @@ add_subdirectory(src/odes)
 add_subdirectory(src/pdes)
 add_subdirectory(src/cardiac)
 add_subdirectory(src/nls)
+
+# O aplicativo principal, que depende das bibliotecas acima
 add_subdirectory(app)
 
-if(BUILD_TESTS)
-  add_subdirectory(test)   
-endif(BUILD_TESTS)
-
-#
-#message(STATUS "OK Listing all include directories ")
-#get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
-#foreach(dir ${dirs})
-#  message(STATUS " dir=${dir}")
-#endforeach()  
-
-#message(STATUS "OK Listing all library directories ")
-#get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY LINK_DIRECTORIES)
-#foreach(dir ${dirs})
-#  message(STATUS " dir=${dir}")
-#endforeach()  
-
+# if(BUILD_TESTS)
+#    add_subdirectory(test)
+# endif(BUILD_TESTS)

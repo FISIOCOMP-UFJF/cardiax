@@ -114,9 +114,23 @@ mkdir build && cd build
 cmake ..
 make -j4
 ```
+## 4. Using CardiaX
+
+### Electromech
+
+```
+./electromech -f ../../examples/pvloop.xml -s ul -amgx ../../configs/CG_DILU.json
+```
+
+To use a different local activation time for each cell, add the eikonal field in the mesh, inside the element_data field, as shown in the example:
+
+```
+./electromech -f ../../examples/pvloop_eikonal.xml -s ul -amgx ../../configs/CG_DILU.json 
+```
 
 
-## 4.PETSc tips
+
+## 5.PETSc tips
 
 ### 3D elasticity preconditioner command line options
 

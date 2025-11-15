@@ -20,7 +20,7 @@ mkdir -p /home/<username>/source
 ```
 2. Always export environment variables in your `~/.bashrc`.
 3. For Armadillo, make sure to export the path **containing both `include/` and `lib/`** directories. Depending on your system, this folder might be named `armadillo`, `usr`, or `usr/local`.
-
+4. For the CUDA Toolkit, make sure to export CUDAToolkit_ROOT pointing directly to the main installation directory (the one containing bin/, include/, and lib64/). This ensures that build tools can correctly locate the CUDA headers and libraries.
 ---
 
 ## 2. Installing Dependencies

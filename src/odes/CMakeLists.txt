@@ -26,6 +26,7 @@ add_library(ODE
   minimalmodel.cpp
   mm_silva.cpp
   torord_land.cpp
+  kerkoff2003.cpp
   ${agos_source} # Esta variável vem do seu CMakeLists.txt principal
 )
 

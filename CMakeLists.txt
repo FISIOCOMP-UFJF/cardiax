@@ -13,6 +13,12 @@ if(POLICY CMP0167)
   cmake_policy(SET CMP0167 OLD)
 endif()
 
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the build type: Debug, Release, RelWithDebInfo, MinSizeRel")
+  message(STATUS "No build type specified, defaulting to 'Release'.")
+  message(STATUS "Use -DCMAKE_BUILD_TYPE=Debug for debugging.")
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -34,6 +40,8 @@ find_package(Boost REQUIRED COMPONENTS system filesystem)
 find_package(BLAS REQUIRED)
 find_package(LAPACK REQUIRED)
 find_package(ScaLAPACK REQUIRED)
+find_library(ARMADILLO_LIBRARY_PATH armadillo HINTS $ENV{ARMADILLO_ROOT} PATH_SUFFIXES lib lib64)
+
 
 set(AMGX_INCLUDE_DIRS $ENV{AMGX_ROOT}/include)
 # set(AMGX_LIBRARIES $ENV{AMGX_ROOT}/lib/libamgx.a) 
@@ -67,7 +75,7 @@ target_link_libraries(ext_libs INTERFACE
     ${PETSC_LIBRARIES}
     ${MPI_C_LIBRARIES}
     ${HDF5_LIBRARIES}
-    $ENV{ARMADILLO_ROOT}/lib64/libarmadillo.so
+    ${ARMADILLO_LIBRARY_PATH}
     ${Boost_LIBRARIES}
     ${BLAS_LIBRARIES}
     ${LAPACK_LIBRARIES}

@@ -64,7 +64,7 @@ int main(int argc, const char* argv[])
   {
     CardiacElectromechanic model(ep_model);
     model.config(basename);
-cout << "Config OK" << endl;
+    cout << "Config OK" << endl;
     model.ref().set_conductivity(condtype);
     cout << "Iniciando solve"<<endl;
     model.solve();

@@ -8,6 +8,7 @@ set(CARDIAC_SRC
     monodomain.cpp
     monodomain_purkinje.cpp
     monodomain_deformation.cpp
+    eikonal.cpp
     cardiac_cycle.cpp
     #coupled_electromechanic.cpp
     coupled_purkinje.cpp

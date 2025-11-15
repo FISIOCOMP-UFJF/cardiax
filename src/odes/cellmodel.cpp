@@ -18,6 +18,7 @@
 #include "minimalmodel.hpp"
 #include "mm_silva.hpp"
 #include "torord_land.hpp"
+#include "kerkoff2003.hpp"
 #include "hdf5.h"
 
 CellModel::CellModel(int num_states)
@@ -649,6 +650,8 @@ CellModel *CellModel::create(std::string cellname)
     ptr = new SimpleODE();
   else if (cellname == "ToRORdLand")
     ptr = new TorordLand();
+  else if(cellname == "Kerkoff2003")
+    ptr = new Kerkoff2003(); 
   else
     throw std::invalid_argument("Unknown CellModel.");
 

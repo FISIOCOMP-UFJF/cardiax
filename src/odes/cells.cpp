@@ -37,6 +37,7 @@ void Cells::advance(double t, double dt)
       for(int j=0; j<ode->get_num_monitored(); j++)
       {
         double value = ode->get_monitored_value(j);
+        //cout << "el: "<<system<<" - " << value << endl;
         // BUG
         //const uint moffset = system * ode->get_num_monitored() + j;
         const uint moffset = system * ode->get_num_monitored();

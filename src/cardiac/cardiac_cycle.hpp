@@ -5,6 +5,7 @@
 #include "monodomain_deformation.hpp"
 #include "pdes/total_lagrangian.hpp"
 #include "pdes/updated_lagrangian.hpp"
+#include "eikonal.hpp"
 #include <fstream>
 
 class CardiacElectromechanic
@@ -16,8 +17,8 @@ public:
 
   void config(const string &basename);
 
-  MonodomainDeformation &ref() { return ephy; }
-
+  // MonodomainDeformation &ref() { return ephy; }
+  Eikonal &ref() { return ephy; }
   void solve();
 
 public:
@@ -73,7 +74,8 @@ private:
   double E_es_LA, A_LA, B_LA, Tmax, tau;
   double P_o, part, pven, stroke_volume;
   string filename;
-  MonodomainDeformation ephy;
+  // MonodomainDeformation ephy;
+  Eikonal ephy; 
   UpdatedLagrangian elas;
   std::vector<arma::mat33 *> vec_stress;
   std::vector<arma::mat33 *> vec_fib;

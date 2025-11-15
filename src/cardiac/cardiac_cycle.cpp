@@ -51,7 +51,7 @@ void CardiacElectromechanic::config(const string &basename)
 
   T = CommandLineArgs::read("-t", 1.0);
   dt = CommandLineArgs::read("-dt", 0.1);
-  cellmodel = CommandLineArgs::read("-c", "NP");
+  cellmodel = CommandLineArgs::read("-c", "Kerkoff2003"); // using kerkoff2003 as a standard value
   odesolver = CommandLineArgs::read("-m", "ExplicitEuler");
 
   double pr = 1.0;
@@ -125,11 +125,11 @@ void CardiacElectromechanic::config(const string &basename)
     cout << "Pressure: " << press << " " << press2 << " Ta: " << ta << endl;
   }
 
-
+   /*
   cout<<"-- Calculating active tension for all time steps --" <<endl; 
   lc = 1.9;
 
- /*  double max_ta = 0.0; 
+  double max_ta = 0.0; 
   for (size_t i = 0; i < curr_time.size(); ++i)
   {
     double Ta_calculated = solveTa((curr_time[i] / 1000.0) - 0.136, dt / 1000.0);
@@ -227,57 +227,60 @@ void CardiacElectromechanic::config(const string &basename)
   {
     lat.push_back(0.136);
   }  */
-
-  lat.set_size(elas.get_mesh().get_n_elements());
-  has_eikonal = false; 
-  pugi::xml_node element_data = doc.child("mesh").child("element_data");
-  if(element_data)
-  {
-    for (pugi::xml_node elem = element_data.child("element"); elem; elem = elem.next_sibling("element"))
+      
+  /* 
+    //! PASSAR ESSA PARTE PRO EIKONAL
+    lat.set_size(elas.get_mesh().get_n_elements());
+    has_eikonal = false; 
+    pugi::xml_node element_data = doc.child("mesh").child("element_data");
+    if(element_data)
     {
-        pugi::xml_node eikonal_p_elem = elem.child("eikonal");
-        if(eikonal_p_elem)
-        {
-          has_eikonal = true; 
-          int index; 
-          index = elem.attribute("id").as_int();
-          lat(index) = std::stod(eikonal_p_elem.text().as_string());
-        }
-        else
-        {
-          if(has_eikonal)
+      for (pugi::xml_node elem = element_data.child("element"); elem; elem = elem.next_sibling("element"))
+      {
+          pugi::xml_node eikonal_p_elem = elem.child("eikonal");
+          if(eikonal_p_elem)
           {
-            std::cerr << "ERROR: Some elements have a local activation time, and others do not.\n";
-            exit(6);
+            has_eikonal = true; 
+            int index; 
+            index = elem.attribute("id").as_int();
+            lat(index) = std::stod(eikonal_p_elem.text().as_string());
           }
-        }
+          else
+          {
+            if(has_eikonal)
+            {
+              std::cerr << "ERROR: Some elements have a local activation time, and others do not.\n";
+              exit(6);
+            }
+          }
+      }
     }
-  }
 
-  if(has_eikonal)
-  {
-    double min_val = lat.min(); 
-    double max_val = lat.max(); 
+    if(has_eikonal)
+    {
+      double min_val = lat.min(); 
+      double max_val = lat.max(); 
 
-    std::cout<<"Local activation time"<<std::endl;
+      std::cout<<"Local activation time"<<std::endl;
 
-    //TODO: read this information from file? 
-    double begin_active_stress = 0.136;
-    double latest_lat = 0.136 + 0.146;
+      //TODO: read this information from file? 
+      double begin_active_stress = 0.136;
+      double latest_lat = 0.136 + 0.146;
 
-    lat = begin_active_stress + (lat - min_val) * (latest_lat - begin_active_stress)/ (max_val-min_val);
-    std::cout << " Earliest activation: " << lat.min() << "  Latest activation: " << lat.max()  << std::endl; 
-    std::cout << " Loaded LATs: " << lat.n_elem << " values.\n";
-  }
-  else
-  {
-    lat.set_size(1);
-    lat.fill(0.136); //if there isn't lat in the mesh file, we use 0.136 for all elements.
-  }
+      lat = begin_active_stress + (lat - min_val) * (latest_lat - begin_active_stress)/ (max_val-min_val);
+      std::cout << " Earliest activation: " << lat.min() << "  Latest activation: " << lat.max()  << std::endl; 
+      std::cout << " Loaded LATs: " << lat.n_elem << " values.\n";
+    }
+    else
+    {
+      lat.set_size(1);
+      lat.fill(0.136); //if there isn't lat in the mesh file, we use 0.136 for all elements.
+    }
+ */
 
 
+ //TODO: recalcular o T_ref a partir do max_ta desse valor aqui
   cout << "Precomputing active stress..." << endl;
-
   //TODO: define a generic active stress model 
   max_ta = 0; 
   for (int it_time = 0; it_time < curr_time.size(); it_time++)
@@ -293,9 +296,12 @@ void CardiacElectromechanic::config(const string &basename)
   //obs: normalize the active stress with max_ta and multiply to T_ref. T_ref is aproximaly the maximum active stress value
 
   ta.zeros(nelem);
-  dta.zeros(nelem);
-  lc = 1.9;
+  dta.zeros(nelem); 
   //TODO: Multiplos ciclos
+
+
+  ephy.solve(basename);
+  
 }
 
 
@@ -304,6 +310,7 @@ void CardiacElectromechanic::Solve_System(double tt, double pressure, double pre
   int size = elas.get_mesh().get_n_elements();
   int index = static_cast<int>(tt*1000); 
 
+  /*  
   if (has_eikonal)
   {
     for (int iel = 0; iel < size ; iel++)
@@ -321,14 +328,15 @@ void CardiacElectromechanic::Solve_System(double tt, double pressure, double pre
     dta.fill(ta_calculated - ta(0));
     ta.fill(ta_calculated);
   }
-
+ */
   P0 = pressure;
   
   cout << "Pressure: " << pressure << "Ta (mean): " << arma::mean(ta) << " dTA (mean): " <<arma::mean(dta) << " tt: " << tt << endl;
   cout << "Ta: min=" << ta.min() << " max=" << ta.max() 
       << " | dTa: min=" << dta.min() << " max=" << dta.max()
-      << " | lat: min=" << lat.min() << " max=" << lat.max()
       << endl;
+
+
   elas.set_pressure_Ta(30, pressure, 20, pressure * 0.2, ta, dta);
   elas.solve();
   elas.reset();
@@ -359,6 +367,7 @@ void CardiacElectromechanic::solve()
   cout << "\nTime step of mechanics: " << dt_mech << endl;
   TimeParameters tip(ephy.get_time_parameters());
   elas.pre_solve();
+  ephy.initial_conditions(); 
 
   p_lv.push_back(0.0);
   p_rv.push_back(0.0);
@@ -396,7 +405,7 @@ void CardiacElectromechanic::solve()
     total_time += tip.time();
     tip.reset();
 
-    itempo = 0;
+    itempo = 0;  
     while (!tip.finished())
     {
       cout << "Incrementa tempo..." << endl;
@@ -426,6 +435,13 @@ void CardiacElectromechanic::solve()
         float Q = DV / 200.;
         p_1 = p_0 + (DP / DV) * Q * DT;
       }
+
+      //Atualiza o valor de ta
+      ephy.advance();
+      dta = -ta; 
+      ephy.get_cells().get_monitored_values(0, ta);
+      ta *= T_ref/max_ta; //TEMPORÁRIO
+      dta += ta; 
 
       Solve_System(tip.time(), p_0, p_0); 
       Vf_0 = elas.total_volume_cavity();
@@ -516,6 +532,7 @@ void CardiacElectromechanic::solve()
         elas.storeStress(ii);
       }
     }
+    
   }
 
   pv_file.close();

@@ -125,45 +125,7 @@ void CardiacElectromechanic::config(const string &basename)
     cout << "Pressure: " << press << " " << press2 << " Ta: " << ta << endl;
   }
 
-   /*
-  cout<<"-- Calculating active tension for all time steps --" <<endl; 
-  lc = 1.9;
-
-  double max_ta = 0.0; 
-  for (size_t i = 0; i < curr_time.size(); ++i)
-  {
-    double Ta_calculated = solveTa((curr_time[i] / 1000.0) - 0.136, dt / 1000.0);
-    Ta_list.push_back(Ta_calculated);
-    if(Ta_calculated > max_ta)
-      max_ta = Ta_calculated; 
-  }
-
-  //Normalizando e multiplicando pelo _tref
-  if (max_ta != 0.0) {
-    for (double& ta : Ta_list) {
-        ta = (ta * T_ref) / max_ta;
-    }
-  } else {
-      std::cerr << "Warning: max_ta is zero, normalization skipped.\n";
-  }
-
-  for (int i = 0; i < n_cycles - 1; i++)
-  {
-    for (int k = 0; k < size; k++)
-    {
-      Ta_list.push_back(Ta_list.at(k));
-      //	curr_time.push_back(curr_time.at(k));
-    }
-  }
-
-  for (int k = 0; k < size * n_cycles; k++)
-  {
-    cout << k << " " << Ta_list.at(k) << endl;
-  } */
-
-  // exit(0);
-
-  //  T = 0.9;
+  
   dt = T / (size - 1);
   dt_mech = dt;
   cout << "size: " << size << endl;
@@ -223,85 +185,11 @@ void CardiacElectromechanic::config(const string &basename)
   assert(elas.get_mesh().get_n_points() == ephy.get_mesh().get_n_points());
   assert(elas.get_mesh().get_n_elements() == ephy.get_mesh().get_n_elements());
 
-  /* for (int i =0; i<elas.get_mesh().get_n_elements();i++)
-  {
-    lat.push_back(0.136);
-  }  */
-      
-  /* 
-    //! PASSAR ESSA PARTE PRO EIKONAL
-    lat.set_size(elas.get_mesh().get_n_elements());
-    has_eikonal = false; 
-    pugi::xml_node element_data = doc.child("mesh").child("element_data");
-    if(element_data)
-    {
-      for (pugi::xml_node elem = element_data.child("element"); elem; elem = elem.next_sibling("element"))
-      {
-          pugi::xml_node eikonal_p_elem = elem.child("eikonal");
-          if(eikonal_p_elem)
-          {
-            has_eikonal = true; 
-            int index; 
-            index = elem.attribute("id").as_int();
-            lat(index) = std::stod(eikonal_p_elem.text().as_string());
-          }
-          else
-          {
-            if(has_eikonal)
-            {
-              std::cerr << "ERROR: Some elements have a local activation time, and others do not.\n";
-              exit(6);
-            }
-          }
-      }
-    }
-
-    if(has_eikonal)
-    {
-      double min_val = lat.min(); 
-      double max_val = lat.max(); 
-
-      std::cout<<"Local activation time"<<std::endl;
-
-      //TODO: read this information from file? 
-      double begin_active_stress = 0.136;
-      double latest_lat = 0.136 + 0.146;
-
-      lat = begin_active_stress + (lat - min_val) * (latest_lat - begin_active_stress)/ (max_val-min_val);
-      std::cout << " Earliest activation: " << lat.min() << "  Latest activation: " << lat.max()  << std::endl; 
-      std::cout << " Loaded LATs: " << lat.n_elem << " values.\n";
-    }
-    else
-    {
-      lat.set_size(1);
-      lat.fill(0.136); //if there isn't lat in the mesh file, we use 0.136 for all elements.
-    }
- */
-
-
- //TODO: recalcular o T_ref a partir do max_ta desse valor aqui
-  cout << "Precomputing active stress..." << endl;
-  //TODO: define a generic active stress model 
-  max_ta = 0; 
-  for (int it_time = 0; it_time < curr_time.size(); it_time++)
-  {
-    double Ta_calculated =  solveTa((curr_time[it_time] / 1000.0) - 0.136, dt_mech); // using lat=0.136 only for instance, doesn't change the maximum value  
-    if(Ta_calculated > max_ta)
-        max_ta = Ta_calculated; 
-
-  }
-
-  cout << " Maximum active stress value (before rescaling): " << max_ta << std::endl;
-  cout << " Maximum active stress value (after rescaling): "  << T_ref << std::endl;
-  //obs: normalize the active stress with max_ta and multiply to T_ref. T_ref is aproximaly the maximum active stress value
-
   ta.zeros(nelem);
   dta.zeros(nelem); 
-  //TODO: Multiplos ciclos
 
-
+  //"Solve" the eikonal, to discover the lat in each element
   ephy.solve(basename);
-  
 }
 
 
@@ -310,25 +198,6 @@ void CardiacElectromechanic::Solve_System(double tt, double pressure, double pre
   int size = elas.get_mesh().get_n_elements();
   int index = static_cast<int>(tt*1000); 
 
-  /*  
-  if (has_eikonal)
-  {
-    for (int iel = 0; iel < size ; iel++)
-    {
-      double ta_calculated = solveTa(tt - lat(iel), dt_mech);
-      ta_calculated *= (T_ref/max_ta);
-      dta(iel) = ta_calculated - ta(iel);
-      ta(iel) = ta_calculated; 
-    }
-  }
-  else
-  {
-    double ta_calculated = solveTa(tt - lat(0), dt_mech);
-    ta_calculated *= (T_ref/max_ta);
-    dta.fill(ta_calculated - ta(0));
-    ta.fill(ta_calculated);
-  }
- */
   P0 = pressure;
   
   cout << "Pressure: " << pressure << "Ta (mean): " << arma::mean(ta) << " dTA (mean): " <<arma::mean(dta) << " tt: " << tt << endl;
@@ -436,11 +305,10 @@ void CardiacElectromechanic::solve()
         p_1 = p_0 + (DP / DV) * Q * DT;
       }
 
-      //Atualiza o valor de ta
+      //Update the active stress value
       ephy.advance();
       dta = -ta; 
       ephy.get_cells().get_monitored_values(0, ta);
-      ta *= T_ref/max_ta; //TEMPORÁRIO
       dta += ta; 
 
       Solve_System(tip.time(), p_0, p_0); 

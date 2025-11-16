@@ -22,31 +22,6 @@ public:
   void solve();
 
 public:
-  double solveTa(double cur_time, double dt)
-  {
-    lc = lc + dt * (Ea * (ls0 - lc) - 1.0) * v0;
-    return sigma(cur_time, ls0, lc);
-  }
-
-  double fiso(double lc)
-  {
-    return (lc <= a7) ? 0.0 : T0 * pow(tanh(a6 * (lc - a7)), 2);
-  }
-
-  double ftwich(double cur_time, double ls)
-  {
-    double tmax = b * (ls - ld);
-    if (cur_time < 0.0 || cur_time > tmax)
-      return 0.0;
-      
-    return pow(tanh(cur_time / tr), 2) * pow(tanh((tmax - cur_time) / td), 2);
-  }
-
-  double sigma(double cur_time, double ls, double lc)
-  {
-    return (ls / ls0) * fiso(lc) * ftwich(cur_time, ls) * (ls - lc) * Ea;
-  }
-
   void saveActiveStressToFile(const std::string &filename)
   {
     std::ofstream outFile(filename);
@@ -91,18 +66,6 @@ private:
 
   void Solve_System(double tt, double pressure, double pressure2);
 
-  const double a6 = 2.0;
-  const double a7 = 1.5;
-  const double T0 = 180.0;
-  const double Ea = 20.0;
-  const double v0 = 7.5;
-  const double ls0 = 1.9;
-  const double tr = 0.075;
-  const double td = 0.075;
-  const double b = 0.21; 
-  const double ld = -0.4;
-  double lc = 0.0;
-  double max_ta = 0.0; 
 
   std::vector<double> activeStressCurve;
   std::vector<double> timePoints;

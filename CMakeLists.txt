@@ -24,6 +24,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
+# --- CONFIGURAÇÃO PETSC ---
 if (NOT DEFINED ENV{PETSC_DIR})
     message(FATAL_ERROR "The environment variable PETSC_DIR must be set to the PETSc directory.")
 endif()
@@ -32,14 +33,51 @@ if (NOT DEFINED ENV{PETSC_ARCH})
     set(ENV{PETSC_ARCH} "arch-linux2-c-debug")
 endif()
 
+# Caminho onde o PETSc instala dependências (MPI, BLAS, LAPACK, etc)
+set(PETSC_DEPS_ROOT "$ENV{PETSC_DIR}/$ENV{PETSC_ARCH}")
+
 find_package(PETSc REQUIRED)
-find_package(MPI REQUIRED)
+
+# --- BUSCA DE DEPENDÊNCIAS COM FALLBACK PARA PETSC ---
+
+# 1. MPI
+find_package(MPI QUIET)
+if(NOT MPI_FOUND)
+    message(STATUS "System MPI not found. Searching in PETSc dir: ${PETSC_DEPS_ROOT}")
+    set(ENV{MPI_HOME} "${PETSC_DEPS_ROOT}")
+    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
+    find_package(MPI REQUIRED)
+endif()
+
 find_package(HDF5 REQUIRED)
+
+# 2. BLAS
+find_package(BLAS QUIET)
+if(NOT BLAS_FOUND)
+    message(STATUS "System BLAS not found. Searching in PETSc dir...")
+    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
+    find_package(BLAS REQUIRED)
+endif()
+
+# 3. LAPACK
+find_package(LAPACK QUIET)
+if(NOT LAPACK_FOUND)
+    message(STATUS "System LAPACK not found. Searching in PETSc dir...")
+    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
+    find_package(LAPACK REQUIRED)
+endif()
+
+# 4. ScaLAPACK
+find_package(ScaLAPACK QUIET)
+if(NOT ScaLAPACK_FOUND)
+    message(STATUS "System ScaLAPACK not found. Searching in PETSc dir...")
+    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
+    find_package(ScaLAPACK REQUIRED)
+endif()
+
+# --- OUTRAS DEPENDÊNCIAS ---
 # find_package(Armadillo REQUIRED)
-find_package(Boost REQUIRED COMPONENTS system filesystem)
-find_package(BLAS REQUIRED)
-find_package(LAPACK REQUIRED)
-find_package(ScaLAPACK REQUIRED)
+
 find_library(ARMADILLO_LIBRARY_PATH armadillo HINTS $ENV{ARMADILLO_ROOT} PATH_SUFFIXES lib lib64)
 
 
@@ -67,7 +105,6 @@ target_include_directories(ext_libs INTERFACE
     ${HDF5_INCLUDE_DIRS}
     # ${Armadillo_INCLUDE_DIRS}
     $ENV{ARMADILLO_ROOT}/include
-    ${Boost_INCLUDE_DIRS}
     ${AMGX_INCLUDE_DIRS}
 )
 
@@ -76,7 +113,6 @@ target_link_libraries(ext_libs INTERFACE
     ${MPI_C_LIBRARIES}
     ${HDF5_LIBRARIES}
     ${ARMADILLO_LIBRARY_PATH}
-    ${Boost_LIBRARIES}
     ${BLAS_LIBRARIES}
     ${LAPACK_LIBRARIES}
     ${ScaLAPACK_LIBRARIES}
@@ -103,5 +139,5 @@ add_subdirectory(src/nls)
 add_subdirectory(app)
 
 # if(BUILD_TESTS)
-#    add_subdirectory(test)
+#   add_subdirectory(test)
 # endif(BUILD_TESTS)

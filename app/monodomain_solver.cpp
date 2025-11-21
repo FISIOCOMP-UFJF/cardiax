@@ -5,12 +5,12 @@
 #include "cardiac/monodomain.hpp"
 #include "cardiac/monodomain_purkinje.hpp"
 #include "cardiac/coupled_purkinje.hpp"
-#include "boost/filesystem.hpp"   
+#include<filesystem>
 
 static char help[] = "Monodomain Cardiac Solver.\n\n";
 
 using namespace std;
-using namespace boost::filesystem; 
+namespace fs = std::filesystem;
 
 void usage()
 {
@@ -50,16 +50,15 @@ int main(int argc, const char *argv[])
 
 	typefile  = mshname + ".typ";
 
-  // check and clean output directory
-  if ( exists("output") )
+  if ( fs::exists("output") ) 
   {
-    remove_all("output");
-    assert(!exists("output"));
+    fs::remove_all("output");
+    assert(!fs::exists("output"));
   }
   
-  create_directory("output");
-  create_directories("output/vm_vtu/");
-  create_directories("output/vm_text/");
+  fs::create_directory("output");
+  fs::create_directories("output/vm_vtu/");
+  fs::create_directories("output/vm_text/");
 
   // Start PETSc
   PetscMPIInt rank;

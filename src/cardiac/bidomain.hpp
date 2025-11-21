@@ -1,8 +1,7 @@
 #ifndef BIDOMAIN_HPP_
 #define BIDOMAIN_HPP_
 
-#include <boost/unordered_map.hpp>
-#include <boost/unordered_set.hpp>
+#include <unordered_set> 
 #include "cardiacproblem.hpp"
 #include "fem/fem.h"
 
@@ -89,7 +88,7 @@ protected:
   double sigma_el, sigma_et, sigma_en;
 
   //! TODO: document 
-  boost::unordered_set<uint> tissueset, bathset;
+  std::unordered_set<uint> tissueset, bathset;
 
   //! Connectivity for Vm+Ve in tissue+bath, reordered but not renumbered 
   std::vector< std::vector<uint> > connec;

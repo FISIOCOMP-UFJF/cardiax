@@ -1,0 +1,29 @@
+{% set name = "armadillo_custom" %}
+{% set version = "8.300.1" %}
+
+package:
+  name: {{ name }}
+  version: {{ version }}
+
+source:
+  url: ../../dependencies/armadillo-8.300.1.tgz
+
+build:
+  number: 0
+  skip: True  # [not linux]
+
+requirements:
+  build:
+    - {{ compiler('cxx') }}
+    - cmake
+    - make
+  host:
+    # --- CORREÇÃO AQUI ---
+    - libblas   # Em vez de blas-devel
+    - liblapack # Em vez de lapack-devel
+    # ---------------------
+
+about:
+  home: http://arma.sourceforge.net
+  summary: "Armadillo C++ linear algebra library"
+  license: Apache-2.0

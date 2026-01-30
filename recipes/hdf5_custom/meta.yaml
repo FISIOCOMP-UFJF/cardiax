@@ -1,0 +1,25 @@
+{% set name = "hdf5_custom" %}
+{% set version = "1.8.13" %}
+
+package:
+  name: {{ name }}
+  version: {{ version }}
+
+source:
+  # Aponta para o arquivo na pasta dependencies (relativo a esta receita)
+  url: ../../dependencies/hdf5-1.8.13.tar.gz
+
+build:
+  number: 0
+  skip: True  # [not linux]
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    - make
+    - pkg-config
+
+about:
+  home: https://www.hdfgroup.org/
+  summary: "HDF5 1.8.13 Custom Build (GCC 12 compatible)"
+  license: HDF5

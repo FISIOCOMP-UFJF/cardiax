@@ -1,0 +1,34 @@
+{% set name = "petsc_custom" %}
+{% set version = "3.19.6" %}
+
+package:
+  name: {{ name }}
+  version: {{ version }}
+
+source:
+  # Aponta para o arquivo na pasta dependencies
+  url: ../../dependencies/petsc-3.19.6.tar.gz
+
+build:
+  number: 0
+  skip: True  # [not linux]
+
+requirements:
+  build:
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - {{ compiler('fortran') }}
+    - python 3.10.* # Essencial para rodar o ./configure
+    - make
+    - pkg-config
+  
+  host:
+    - python 3.10.* # Essencial para o ambiente
+    - hdf5_custom    # <--- USA O SEU PACOTE LOCAL
+    - libgfortran-ng
+    - libgomp
+
+about:
+  home: https://petsc.org/
+  summary: "PETSc 3.19.6 Custom Build (Debug + Python 3.10)"
+  license: BSD-2-Clause

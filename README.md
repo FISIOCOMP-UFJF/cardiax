@@ -1,155 +1,60 @@
 # C A R D I A X
 
-This document provides installation instructions and guidance for configuring the environment required to build and run CardiaX.
+This document provides installation instructions and guidance for configuring the environment required to build and run Cardiax.
+
 ---
 
-## 1. Requirements
+## 1. Prerequisites
 
-CardiaX depends on the following external libraries:
+Before starting, make sure the following dependencies are installed on your system:
 
-- HDF5 **1.8.13**
-- Armadillo (compatible with C++11 or later)
-- AMGx (NVIDIA CUDA-based algebraic multigrid)
-- PETSc **3.19.\*** (this guide uses **3.19.6** as an example)
+* **Miniconda** or **Anaconda**
+* **Nvidia Drivers** compatible with CUDA 12
+* **Git**
 
-### General Recommendations
+--- 
 
-1. Create a directory to store all external dependencies, for example:
-```
-mkdir -p /home/<username>/source
-```
-2. Always export environment variables in your `~/.bashrc`.
-3. For Armadillo, make sure to export the path **containing both `include/` and `lib/`** directories. Depending on your system, this folder might be named `armadillo`, `usr`, or `usr/local`.
-4. For the CUDA Toolkit, make sure to export CUDAToolkit_ROOT pointing directly to the main installation directory (the one containing bin/, include/, and lib64/). This ensures that build tools can correctly locate the CUDA headers and libraries.
----
+## 2. Instalation 
+Cardiax uses a set of automated scripts to handle complex dependencies (HDF5, PETSc, AMGX and Armadillo) and the compilation process within an isolated Conda environment.
 
-## 2. Installing Dependencies
-
-### 2.1 HDF5 (1.8.13)
-
-```bash
-tar xvf hdf5-1.8.13.tar
-cd hdf5-1.8.13
-./configure --prefix=/home/<username>/source/hdf5
-make -j4
-make install
-```
-
-Add to your ~/.bashrc:
+1. Grant execution permissions to the .sh scripts in the project root:
 
 ```
-export HDF5_ROOT=/home/<username>/source/hdf5
+chmod +x ./install_deps.sh ./build.sh
 ```
 
-### 2.2 AMGX
-```
-git clone --recursive https://github.com/NVIDIA/AMGX
-mv AMGX amgx
-cd amgx
-mkdir build && cd build
-cmake -DCMAKE_INSTALL_PREFIX=/home/<username>/source/amgx \
-      -DCMAKE_C_COMPILER=<path_to_gcc> \
-      -DCMAKE_CXX_COMPILER=<path_to_g++> \
-      ..
-make -j16 all install
-```
-Add to your ~/.bashrc
-```
-export AMGX_ROOT=/home/<username>/source/amgx
-```
-
-
-### 2.3 Armadillo
+2. Run the dependency installation script. This step usually needs to be performed only once. It will download, compile and configure all dependencies inside a temporary Conda environment.
 
 ```
-tar -zxf armadillo-8.300.1.tar.gz
-cd armadillo-8.300.1
-mkdir build && cd build
-cmake ..
-make -j4
-make install DESTDIR=/home/<username>/source/armadillo
+./install_deps.sh 
 ```
+*Note: This step may take some time, as several libraries are compiled from source — so grab a coffee.*
 
-Add to your ~/.bashrc
-(ensure this path contains the include/ and lib/ folders):
-
+3. Once the dependencies are installed, compile the simulator using the build script: 
 ```
-export ARMADILLO_ROOT=/home/<username>/source/armadillo/usr
+./build.sh
 ```
+*If you make changes to the source code, you only need to rerun this command to recompile the Cardiax binary.*
 
-### 2.4 PETSc (3.19.*)
+You can also specify a target binary name to compile only that executable. For example:
 
 ```
-tar xvf petsc-3.19.6.tar.gz
-cd petsc-3.19.6/
-
-python3 ./configure \
- --COPTFLAGS="-O2 -g" --CXXOPTFLAGS="-O2 -g" --FOPTFLAGS="-O2 -g -std=legacy" \
- --with-debugging=yes \
- --download-mpich \
- --download-suitesparse \
- --with-hdf5-dir=$HDF5_ROOT \
- --download-fblaslapack \
- --download-hypre \
- --download-mumps \
- --download-scalapack \
- --download-superlu
-
-make PETSC_DIR=/home/<username>/source/petsc-3.19.6 PETSC_ARCH=arch-linux2-c-debug all
+./build.sh electromech
 ```
+*To list all available executables, use the `--help` flag.*
 
-Add to your ~/.bashrc:
+
+4. After a successful build, all executables will be available in the build/app directory.
+For more detailed usage examples, refer to the README located in the examples/ folder.
+If you just want to get things started, you can run:
 
 ```
-export PETSC_DIR=/home/<username>/source/petsc-3.19.6
-export PETSC_ARCH=arch-linux2-c-debug
+./build/app/electromech -f examples/pvloop.xml -s ul -amgx configs/CG_DILU.json
 ```
 
-## 3. Building CardiaX
+## 3. Dependency Management & Troubleshooting
+The install_deps.sh script performs checks to determine whether each dependency has already been compiled, avoiding unnecessary rebuilds. However, if you need to update or force the recompilation of specific dependencies, several force flags are available.
 
 ```
-git clone https://github.com/FISIOCOMP-UFJF/cardiax.git
-cd cardiax
-mkdir build && cd build
-cmake ..
-make -j4
+./install_deps.sh --help
 ```
-## 4. Using CardiaX
-
-### Electromech
-
-```
-./electromech -f ../../examples/pvloop.xml -s ul -amgx ../../configs/CG_DILU.json
-```
-
-To use a different local activation time for each cell, add the eikonal field in the mesh, inside the element_data field, as shown in the example:
-
-```
-./electromech -f ../../examples/pvloop_eikonal.xml -s ul -amgx ../../configs/CG_DILU.json 
-```
-
-
-
-## 5.PETSc tips
-
-### 3D elasticity preconditioner command line options
-
-#### BoomerAMG
-```
--ksp_type gmres -pc_type hypre -pc_hypre_type boomeramg -pc_hypre_boomeramg_max_iter 1 -ksp_view -ksp_monitor
-```
-
-#### GAMG
-```
--ksp_type cg -pc_type gamg -pc_gamg_type agg -log_summary
--ksp_monitor -ksp_view -options_left -mg_levels_ksp_max_it 1
-```
-ou
-```
--ksp_type cg -pc_type gamg -pc_gamg_type agg -log_summary
--ksp_monitor -ksp_view -options_left -mg_levels_ksp_type richardson -mg_levels_pc_type sor
-```
-
-
-
-

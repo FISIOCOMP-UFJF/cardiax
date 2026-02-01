@@ -69,13 +69,12 @@ void HyperelasticMaterial::active_stress_elastensor(int iel, int nincs, arma::ve
                                                       Tensor4 & A) const
 {
   arma::mat delta = fib*fib.t();
-
   for(int i=0; i<ndim; i++)
     for(int j=0; j<ndim; j++)
       for(int k=0; k<ndim; k++)
         for(int l=0; l<ndim; l++)
         {
-          A(i,j,k,l) += -(delta_active_stress(iel)/nincs) * delta(i,j) * delta(k,l);
+          A(i,j,k,l) += -(delta_active_stress(iel)/nincs) * delta(i,j) * delta(k,l); // bug: delta_active_stress
 
         }
 

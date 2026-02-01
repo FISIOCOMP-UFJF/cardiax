@@ -24,3 +24,11 @@ temp/
 *.h5
 *.zip
 *.msh
+
+# examples
+examples/*.dat
+examples/*.txt
+examples/*.xmf
+examples/*.h5
+examples/*.zip
+

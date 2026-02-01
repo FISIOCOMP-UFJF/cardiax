@@ -53,8 +53,12 @@ If you just want to get things started, you can run:
 ```
 
 ## 3. Dependency Management & Troubleshooting
-The install_deps.sh script performs checks to determine whether each dependency has already been compiled, avoiding unnecessary rebuilds. However, if you need to update or force the recompilation of specific dependencies, several force flags are available.
+1. The install_deps.sh script performs checks to determine whether each dependency has already been compiled, avoiding unnecessary rebuilds. However, if you need to update or force the recompilation of specific dependencies, several force flags are available.
 
 ```
 ./install_deps.sh --help
 ```
+
+2. By default, install_deps.sh and the corresponding conda recipes install AMGX targeting a specific set of GPU architectures (70, 75, 80, 86, 89).
+If your GPU architecture is not included in the conda recipe, the compilation will succeed, but you may encounter runtime issues when executing Cardiax.
+To fix this, locate the CUDA_ARCH variable in recipe/amgx_custom/build.sh and add the required architecture.

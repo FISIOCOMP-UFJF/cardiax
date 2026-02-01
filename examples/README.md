@@ -1,59 +1,76 @@
-================================================================================
-                                   EXAMPLES
-================================================================================
+# EXAMPLES
 
-CardiaX provides multiple executables, each serving a specific function in 
+
+Cardiax provides multiple executables, each serving a specific function in 
 cardiac simulation. This document serves as a quick guide on how to use them.
 
 TIP: We strongly recommend opening and inspecting the structure of the .xml 
 files located in this directory. They contain crucial simulation parameters 
 that you will likely need to modify for your specific use cases.
 
---------------------------------------------------------------------------------
-1. MONODOMAIN
---------------------------------------------------------------------------------
+--- 
+
+## 1. MONODOMAIN
+
 The 'monodomain' executable is an electrophysiology simulator that solves the 
 reaction-diffusion equation (monodomain model).
 
 USAGE:
+```
   ../build/app/monodomain -f ./monodomain_torord.xml -d 0.1 -t 100 -c NP -m ExplicitEuler -ep monodomain
+```
 
 FLAGS:
+```
   -f   : Specifies the input configuration file (e.g., mesh and parameters).
-  -d   : Sets the time integration step (dt).
+  -dt   : Sets the time integration step (dt).
   -t   : Sets the final simulation time.
-  -c   : Specifies the cell model (e.g., NP for Nash-Panfilov, TT for Ten Tusscher).
-  -m   : Specifies the ODE solver method (e.g., ExplicitEuler, RungeKutta).
+  -c   : Specifies the cell model (e.g., NP for Nash-Panfilov, TT2 for Ten Tusscher).
+  -m   : Specifies the ODE solver method (e.g., ExplicitEuler, Implicit).
   -ep  : Selects the physics model (use 'monodomain' or 'bidomain').
+```
 
-NOTE: To view all available cell models, check the source code in the 'src/odes' directory.
+*NOTE: To view all available cell models, check the source code in the 'src/odes' directory.*
 
---------------------------------------------------------------------------------
-2. NONLINEARELAS
---------------------------------------------------------------------------------
+
+
+## 2. NONLINEARELAS
+
 The 'nonlinearelas' executable simulates the passive mechanical behavior of 
-cardiac tissue (elasticity only, without electrical coupling).
+cardiac tissue.
 
 USAGE:
-  ../build/app/nonlinearelas -m mesh.xml -s ul -amgx ../configs/CG_DILU.json
+```
+  ../build/app/nonlinearelas -m prob1_100.xml -s ul -amgx ../configs/CG_DILU.json
+  ../build/app/nonlinearelas -m prob2_12x27x2_k300.xml -s ul -amgx ../configs/CG_DILU.json
+  ../build/app/nonlinearelas -m prob3_24x54x6_k1000.xml -s ul -amgx ../configs/CG_DILU.json
+```
 
 FLAGS:
+
+```
   -m   : Specifies the mesh/configuration file.
   -s   : Specifies the formulation strategy (e.g., 'ul' for Updated Lagrangian).
   -amgx: Specifies the path to the AMGX configuration JSON file (linear solver settings).
+```
 
---------------------------------------------------------------------------------
-3. ELECTROMECH
---------------------------------------------------------------------------------
+The three usage examples represent the experiments described in the mechanical benchmark presented in [https://doi.org/10.1098/rspa.2015.0641]
+
+
+## 3. ELECTROMECH
 
 
 USAGE:
+```
   ../build/app/electromech -f ./examples/pvloop.xml -s ul -amgx ../configs/CG_DILU.json
+```
 
 FLAGS:
+```
   -f   : Specifies the input configuration file.
   -s   : Specifies the mechanical formulation (e.g., 'ul').
   -amgx: Specifies the path to the AMGX configuration JSON file (linear solver settings).
+```
 
 [USING EIKONAL ACTIVATION]
 To apply different local activation times for each cell, ensure your mesh contains the 'eikonal' 
@@ -62,9 +79,8 @@ field inside 'element_data', as demonstrated in this example:
 USAGE:
   ../build/app/electromech -f ./examples/pvloop_eikonal.xml -s ul -amgx ../configs/CG_DILU.json 
 
---------------------------------------------------------------------------------
-4. COUPLED ELECTROMECH
---------------------------------------------------------------------------------
+## 4. COUPLED ELECTROMECH
+
 * WORK IN PROGRESS *
 
 

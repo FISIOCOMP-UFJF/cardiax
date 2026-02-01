@@ -1963,7 +1963,6 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
 
     elem_stiff (i, fe, qd, Ke);
     fespace.get_element_dofs_u (i, dnums);
-
 #ifndef USE_BFGS
     // Fast assembling
     int * pidx;
@@ -2001,7 +2000,6 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
     {
       fespace.get_boundary_element_dofs_u(i, bdof);
       elem_kpress(i, bfe, bdof, belmat);
-
       // assembles the pressure component of the stiffness matrix
       for (int j = 0; j < nu; j++)
         for (int k = 0; k < nu; k++)

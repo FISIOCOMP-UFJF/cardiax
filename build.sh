@@ -14,6 +14,9 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     echo "                       monodomain    "
     echo "                       nonlinearelas "
     echo "                       poisson       "
+    echo "                       l2projection  "
+    echo "                       elasticity    "
+    echo "                       bidomain      "
     echo "               If omitted, ALL targets will be built."
     echo ""
     exit 0

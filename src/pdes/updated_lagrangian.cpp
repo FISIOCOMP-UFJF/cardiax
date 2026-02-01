@@ -72,15 +72,16 @@ void UpdatedLagrangian::assemble_const()
   {
     calc_elmat_const(i, fe, qd, Ke);
     fespace.get_element_dofs_u(i, dnums);
-
     // Fast assembling
     pidx = &dnums[0];
     Ke = Ke.t();
     K.add(n, n, pidx, pidx, Ke.memptr());
+
   }
 
   K.assemble();
   apply_boundary(K);
+  
 
   delete qd;
   delete fe;
@@ -258,6 +259,7 @@ void UpdatedLagrangian::calc_elmat_const(const int iel, const MxFE *fe,
   arma::mat F = arma::eye<arma::mat>(3, 3);
 
   std::vector<arma::vec3> xe(nubf);
+
   get_element_x(iel, xe);
 
   Mapping em = fe->get_mapping(iel, xe);
@@ -273,6 +275,7 @@ void UpdatedLagrangian::calc_elmat_const(const int iel, const MxFE *fe,
   // Mean dilatation method
   if (material->is_incompressible())
     mean_dilatation(iel, fe, qd, press, Ke);
+
 
   // loop over integration points
   for (int q = 0; q < qd->get_num_ipoints(); q++)
@@ -299,8 +302,10 @@ void UpdatedLagrangian::calc_elmat_const(const int iel, const MxFE *fe,
       {
         im->deviatoric_elastensor(md, elastensorM);
         im->map_elas_to_global(md, elastensorM, elastensorM_global);
+
         if (md->get_marker() == 0)
-          im->active_stress_elastensor(iel, lc.get_nincs(), md->fiber(), elastensorM_global);
+          im->active_stress_elastensor(iel, lc.get_nincs(), md->fiber(), elastensorM_global); //Deu pau aqui
+
         im->push_forward(F, elastensorM_global, elastensor);
       }
       else
@@ -801,6 +806,7 @@ void UpdatedLagrangian::elem_stiff (const int iel, const MxFE * fe,
 
 */
 
+
 void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
                                    const Quadrature *qd, arma::mat &Ke)
 {
@@ -882,8 +888,9 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
       if (im->get_name() == "Guccione")
       {
         im->piola2_stress(md, S);
-        if (md->get_marker() == 0)
+        if (md->get_marker() == 0){
           im->set_active_stress(iel, S, lc.load());
+        }
         im->map_to_global(md, S);
         im->push_forward(*F, S, sigma);
       }
@@ -1086,8 +1093,16 @@ void UpdatedLagrangian::pre_solve()
     // body_forces();
     // assemble_traction();
     // assemble_const();
-    material->set_dTa(material->get_Ta() / lc.get_nincs());
-    // cout << "Active stress: " << material->get_Ta() << endl;
+    int iel = msh.get_n_elements();
+    arma::vec dta = arma::ones<arma::vec>(iel) * (material->get_Ta() / lc.get_nincs());
+    material->set_dTa(dta); 
+
+    // PLACEHOLDER:
+    arma::vec ta = arma::ones<arma::vec>(iel) * (material->get_Ta());
+    material->set_Ta(ta);
+  
+    //material->set_dTa(material->get_Ta() / lc.get_nincs());
+    //cout << "Active stress: " << material->get_Ta() << endl;
   }
 }
 
@@ -1124,7 +1139,6 @@ void UpdatedLagrangian::solve()
   while (lc.has_load())
   {
     lc.update();
-
     // augmented Lagrangian
     int al_iter = 0;
 

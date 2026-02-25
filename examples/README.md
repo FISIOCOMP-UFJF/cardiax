@@ -17,7 +17,7 @@ reaction-diffusion equation (monodomain model).
 
 USAGE:
 ```
-  ../build/app/monodomain -f ./monodomain_torord.xml -d 0.1 -t 100 -c NP -m ExplicitEuler -ep monodomain
+../build/app/monodomain -f ./monodomain_ToRORdLand.xml -dt 0.001 -t 500 -c ToRORdLand -m ExplicitEuler -ep monodomain -amgx ../configs/CG_DILU.json 
 ```
 
 FLAGS:

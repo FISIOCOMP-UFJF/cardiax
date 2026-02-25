@@ -31654,6 +31654,6 @@
 </mesh>
 <electrophysiology>
   <stimuli number="1">
-      <stim start="1.0" duration="1.00" value="-53.0" x0="-4500.00" x1="4500.00" y0="-4500.00" y1="-2000.00" z0="-4500.00" z1="4500.00" />
+      <stim start="1.0" duration="1.00" value="-53.0" x0="-4500.00" x1="-1000.00" y0="-4500.00" y1="-1000.00" z0="-4500.00" z1="-1000.00" />
   </stimuli>
 </electrophysiology>

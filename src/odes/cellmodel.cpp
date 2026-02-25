@@ -653,7 +653,35 @@ CellModel *CellModel::create(std::string cellname)
   else if(cellname == "Kerkoff2003")
     ptr = new Kerkoff2003(); 
   else
+  {
+    help(); 
     throw std::invalid_argument("Unknown CellModel.");
-
+  }
   return ptr;
+}
+
+void CellModel::help()
+{
+    std::cout << "Available Cell Models:\n\n";
+
+    std::cout << "  FHN          - FitzHugh-Nagumo\n";
+    std::cout << "  NP           - Nash-Panfilov\n";
+    std::cout << "  MNP          - My Nash-Panfilov\n";
+    std::cout << "  MINI         - Minimal Model\n";
+    std::cout << "  MMSilva      - MM Silva\n";
+    std::cout << "  MS           - Mitchell-Schaeffer\n";
+    std::cout << "  MV           - Minimal Ventricular\n";
+    std::cout << "  LR1          - Luo-Rudy I\n";
+    std::cout << "  ORd          - O'Hara-Rudy\n";
+    std::cout << "  TNNP         - Ten Tusscher 2004\n";
+    std::cout << "  TT2          - Ten Tusscher 2006\n";
+    std::cout << "  TT2Ta        - Ten Tusscher (Ta)\n";
+    std::cout << "  RiceTT2      - Rice + Ten Tusscher\n";
+    std::cout << "  RiceORd      - Rice + O'Hara-Rudy\n";
+    std::cout << "  SODE         - Simple ODE\n";
+    std::cout << "  ToRORdLand   - ToR-ORd Land\n";
+    std::cout << "  Kerkoff2003  - Kerkoff 2003\n";
+
+    std::cout << "\nUsage example:\n";
+    std::cout << "  -c ORd\n";
 }

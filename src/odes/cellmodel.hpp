@@ -33,6 +33,7 @@ class CellModel
   //! Destructor
   virtual ~CellModel ();
 
+  static void help();
   //! Advance ODE in time with ODE solver
   void advance(double * statevars, double t, double dt);
 

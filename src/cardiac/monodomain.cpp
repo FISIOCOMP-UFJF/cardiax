@@ -337,7 +337,6 @@ void Monodomain::solve_odes()
   
   if (stim_apply)
   {
-    cout << "Aplicando estimulos " << tip.time() << endl;
     cells->advance(tip.time(), timestep, stim_val, stim_nodes);
     stim_nodes.clear();
   }
@@ -350,7 +349,6 @@ void Monodomain::solve_odes()
   }
   else
   {
-    cout << "Não aplicando estímulos" << tip.time() << endl; 
     cells->advance(tip.time(), timestep);
   }
 

@@ -194,7 +194,7 @@ void Electromechanic::solve()
         ephy.get_cells().get_var(49, ta);
         ta = ta/25.;
       }
-
+    
       // Assemble initial stress and solve
       dta = ta - ta0;
       ta0 = ta;
@@ -209,10 +209,20 @@ void Electromechanic::solve()
       //elas.assemble_active(dta, vec_stress, vec_fib);
 
       // TL
+      
       elas.assemble_active(dta, vec_stress, vec_fib0);
+      elas.set_Ta(ta, dta);
+      
 
-      elas.solve();
 
+      cout<<"antes do solve"<<endl;
+      elas.solve(); //PROBLEMA!
+      cout<<"depois do solve"<<endl; 
+
+
+      cout<<"AQUI!"<<endl; 
+      return; 
+      
       // This should be used for the case where we update the coordinates
       // instead of using div( F^{-1} D F^{-T}) in the monodomain/bidomain eqs.
       elas.get_displacements(xmat);

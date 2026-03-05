@@ -87,7 +87,7 @@ cd build
 echo ">>> Configuring CMAKE <<<"
 cmake .. \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
-    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_TYPE=${BUILD_TYPE:-Release} \
     -DMPI_C_COMPILER=$CC \
     -DMPI_CXX_COMPILER=$CXX \
     -DCMAKE_C_COMPILER=$CC \

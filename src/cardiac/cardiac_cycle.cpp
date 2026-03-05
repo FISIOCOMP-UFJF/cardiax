@@ -215,7 +215,7 @@ void CardiacElectromechanic::Solve_System(double tt, double pressure, double pre
 
 void CardiacElectromechanic::solve()
 {
-  cout << "Solving coupled electromechanical problem" << endl;
+  cout << "Solving electromechanical problem" << endl;
 
   int nstep;
   int i = 0, ii = 0, itempo = 0, store = 1;

@@ -16,21 +16,28 @@ void TotalLagrangian::assemble_const()
   int n  = msh.get_n_dim() * msh.get_nen();
   int ne = msh.get_n_elements();
   int * pidx;
+
   arma::mat Ke(n,n);
   std::vector<int> dnums;
   
   MxFE * fe = fespace.createFE();
+
   Quadrature * qd = Quadrature::create(2*fe->get_order_u()-2, fe->get_type());
 
   for(int i=0; i<ne; i++)
   {
     calc_elmat_const(i, fe, qd, Ke);
+    cout<<"calc_elmat_const"<<endl; 
+
     fespace.get_element_dofs_u (i,dnums);
+    cout<<"get_element_dofs_u"<<endl; 
 
     // Fast assembling
     pidx = &dnums[0];
     Ke = Ke.t();
+
     K.add(n, n, pidx, pidx, Ke.memptr());
+    cout<<"K.add"<<endl; 
   }
 
   delete qd;
@@ -82,7 +89,7 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
 {
   MixedFiniteElement * fe = fespace.createFE();
   Quadrature * qd = Quadrature::create(0, fe->get_type());
-
+ 
   int n  = msh.get_n_dim() * msh.get_nen();
   int ne = msh.get_n_elements();
   int ndim  = fe->get_ndim();
@@ -95,11 +102,11 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
   std::vector<int> dnums;
 
   tmp_fext.zeros();
-//cout << "passou 1\n";
+//  cout << "passou 1\n";
 
   for(int i=0; i<ne; i++)
   {
-//cout << "elem: " << i <<endl;
+    // cout << "elem: " << i <<endl;
     double detJxW, J;
     arma::vec shape;
     arma::vec3 pt, qpt;
@@ -114,7 +121,7 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
 
     elvec.zeros();  
     fespace.get_element_dofs_u(i,dnums);
-//cout << "passou 2\n";
+    // cout << "passou 2\n";
 
     for(int q=0; q<nint; q++)
     {
@@ -130,36 +137,38 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
       F = vecF[i*nint + q];
       rcg_tensor(gradn, x0, J, F, C);
       Bl_matrix (gradn, F, Bl);            
-//cout << "passou 3\n";      
+      // cout << "passou 3\n";      
       // interpolation of active stress from nodal to integration points
       arma::mat33 T;                        // active stress tensor 
       arma::mat33 Tl(arma::fill::zeros);    // active local stress tensor
       arma::mat33 & M  = *(vfibcoords[i]);  // change of basis matrix
-      arma::mat33 & Ta = *(vstrs[i]);       // anisotropic Cauchy active stress
-      arma::mat33 Fi   = arma::inv(*F);     // inverse of F
-//cout << "passou 4\n";
+      arma::mat33 & Ta = *(vstrs[i]);       // anisotropic Cauchy active stresscccc
+      arma::mat33 Fi   = arma::inv(*F);     // inverse of F  
+      // cout << "passou 4\n";
       arma::vec3 f0 = M.col(0);
       arma::vec3 f  = (*F) * f0;
       double lambda2 = pow(arma::norm(f,2),2);
 
       Ta.zeros();
-//cout << "passou 5\n";
+      cout<<"assemble_active ta_n_elem: " <<Ta.n_elem<<endl;
+      // cout << "passou 5\n";
       for(int j=0; j<nnode; j++)
       {	
         int node = ( dnums[j] - 2) / 3 ; // global node number
-//cout << "j: " << j << " node: " << node <<endl;
+        // cout << "j: " << j << " node: " << node <<endl;
 
         Tl(0,0) = is(node);  // local active tension in fiber direction	
         //T = M * Tl * M.t();  // global active tension
         //T = (Tl(0,0)/lambda2) * (f0 * f0.t());
         T = is(node)*(f * f.t());
-        
+        cout<<"Tl: " << Tl.n_elem<<endl;
+        cout<<"T: " << T.n_elem<<endl;
 	      // interpolate from node to integration point
 	      for(int ii=0; ii<3; ii++)
           for(int jj=0; jj<3; jj++)
 	          Ta(ii,jj) += shape(j) * T(ii,jj); //Ta(1,1) += shape(j) * is(k);
       }
-//cout << "passou 6\n";
+      // cout << "passou 6\n";
 
       // Total Lagrangian formulation, thus
       // since Ta is Cauchy stress, we need to convert to PK2
@@ -183,6 +192,8 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
         tmp_fext(dnums[k]) -= elvec(k);
   }
 
+  // cout<<"pasou 7"<<endl;
+
   // copy
   fext = tmp_fext;
 
@@ -194,6 +205,7 @@ void TotalLagrangian::calc_elmat_const (const int iel, const MxFE * fe,
                                         const Quadrature * qd,
                                         arma::mat & elmat)
 {
+  cout<<"01"<<endl; 
   int ndim  = fe->get_ndim();
   int ndof  = fe->get_ndofs_u();
   int nnode = ndof/ndim;
@@ -201,10 +213,12 @@ void TotalLagrangian::calc_elmat_const (const int iel, const MxFE * fe,
   double detJxW, detF;
   arma::mat Bl(nvoig,ndof), D(nvoig,nvoig);
   arma::mat33 C, *F;
+  cout<<"02"<<endl; 
 
   std::vector<arma::vec3> elem_xe(nnode);
   get_element_x (iel, elem_xe);
-  
+  cout<<"03"<<endl; 
+
   //std::vector<arma::vec3> elem_x0(nnode);
   //get_element_x0(iel, elem_x0);
 
@@ -212,6 +226,8 @@ void TotalLagrangian::calc_elmat_const (const int iel, const MxFE * fe,
   //Mapping em = fe->get_mapping(iel, elem_x0); 
 
   elmat.zeros();
+  cout<<"04"<<endl; 
+
   for(int q=0; q<nint; q++)
   {
     //qpt = qd->get_point(q);
@@ -223,16 +239,29 @@ void TotalLagrangian::calc_elmat_const (const int iel, const MxFE * fe,
     
     // Using MxFEData
     const arma::mat & gradn = fedata[iel]->get_gradn(q);
+      cout<<"05"<<endl; 
+
     double d = fedata[iel]->get_jacobian_det(q);
+    cout<<"06"<<endl; 
+
     detJxW = qd->get_weight(q) * d;
+      cout<<"07"<<endl; 
+
     F = vecF[iel*nint + q];
+      cout<<"08"<<endl; 
 
     rcg_tensor(gradn, elem_xe, detF, F, C);
+      cout<<"09"<<endl; 
+
     Bl_matrix(gradn, F, Bl);
+      cout<<"10"<<endl; 
 
     // compute elasticity tensor using FD
     MaterialData * md = new MaterialData(msh.get_element(iel), *F);
+          cout<<"11"<<endl; 
+
     material->calc_fd_elastensor(iel, md, D);
+          cout<<"12"<<endl; 
 
     // assemble element matrix
     elmat += (Bl.t() * D * Bl) * detJxW;
@@ -611,10 +640,14 @@ void TotalLagrangian::solve()
 
 
 
+  cout<<"antes de body_forces"<<endl;
   body_forces();
+  cout<<"1"<<endl;
   assemble_traction();
+  cout<<"2"<<endl;
   assemble_const();
-  
+  cout<<"depois de assemble_const"<<endl;
+
   // load increment loop
   while( lc.has_load() )
   {
@@ -634,10 +667,13 @@ void TotalLagrangian::solve()
       react = 0.0;
     }       
 
+    cout<<"antes do nonlinear solver"<<endl; 
     // call the nonlinear solver
     timer.enter("Nonlinear solver");
     nits = nls->solve();
     timer.leave();
+    cout<<"depois do nonlinear solver"<<endl; 
+
     
     // output deformation from this load increment
     if(output_step)

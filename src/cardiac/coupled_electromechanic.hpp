@@ -46,7 +46,7 @@ public:
 
   //! Mechanical problem
   TotalLagrangian elas;
-  //UpdatedLagrangian elas; //! TODO: Updated Lagrangian is not working!
+  // UpdatedLagrangian elas; //! TODO: Updated Lagrangian is not working!
 
   //! Vector of stress tensors (used to load cardiac EP problem)
   std::vector<arma::mat33*> vec_stress;

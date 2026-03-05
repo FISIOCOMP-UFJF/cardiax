@@ -1687,6 +1687,12 @@ void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double p
   material->set_dTa(dta);
 }
 
+void NonlinearElasticity::set_Ta(arma::vec &ta, arma::vec &dta)
+{
+  material->set_Ta(ta);
+  material->set_dTa(dta);
+}
+
 void NonlinearElasticity::run()
 {
   init();

@@ -90,11 +90,13 @@ void HyperelasticMaterial::active_stress_elastensor(int iel, int nincs, Material
   //cout << "f: " << f << endl;
   //cout << "delta: " << delta <<endl;
 
+  cout<<"active_stress tamanho: " <<active_stress.n_elem<< " iel:" << iel <<endl;
+  
   for(int i=0; i<ndim; i++)
     for(int j=0; j<ndim; j++)
       for(int k=0; k<ndim; k++)
         for(int l=0; l<ndim; l++){
-          A(i,j,k,l) += md->get_J()*(active_stress(iel)/nincs) * delta(i,j) * delta(k,l);
+          A(i,j,k,l) += md->get_J()*(active_stress(iel)/nincs) * delta(i,j) * delta(k,l); //TROQUEI iel POR 0 AQUI!! PROBLEMA!
           //A(i,j,k,l) += (active_stress/nincs) * delta(i,j) * delta(k,l);
          //cout << 1000. * delta(i,j) * delta(k,l) << endl;
 	//A(i,j,k,l) += 1000.*md->get_J()*(1./nincs) * delta(i,k) * delta(j,l);
@@ -232,7 +234,9 @@ void HyperelasticMaterial::calc_fd_elastensor(int iel, MaterialData * md, Tensor
         for(int l=0; l<=k; l++) 
           A(i,j,l,k) = A(i,j,k,l);
 
-  active_stress_elastensor(iel, 1,md,A);
+  cout<<"Provavelmente o problema é aqui"<<endl;
+  active_stress_elastensor(iel, 1,md,A); //PROBLEMA!
+  cout<<"espero que não passe aqui agora"<<endl;
 
 }
 

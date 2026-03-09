@@ -211,17 +211,8 @@ void Electromechanic::solve()
       // TL
       
       elas.assemble_active(dta, vec_stress, vec_fib0);
-      elas.set_Ta(ta, dta);
-      
 
-
-      cout<<"antes do solve"<<endl;
-      elas.solve(); //PROBLEMA!
-      cout<<"depois do solve"<<endl; 
-
-
-      cout<<"AQUI!"<<endl; 
-      return; 
+      elas.solve();       
       
       // This should be used for the case where we update the coordinates
       // instead of using div( F^{-1} D F^{-T}) in the monodomain/bidomain eqs.

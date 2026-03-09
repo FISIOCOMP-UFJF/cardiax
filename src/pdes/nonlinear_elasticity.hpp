@@ -92,9 +92,8 @@ public:
   //! Run simulation
   void run();
 
-  void set_pressure_Ta(int mlv, double plv, int mrv, double prv, const arma::vec &ta, const arma::vec &dta);
+  void set_pressure_Ta(int mlv, double plv, int mrv, double prv, double ta, double dta);
 
-  void set_Ta(arma::vec &ta, arma::vec &dta);
   //! Compute total cavity volume
   double total_volume_cavity();
 

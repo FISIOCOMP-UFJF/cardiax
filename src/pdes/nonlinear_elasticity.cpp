@@ -772,8 +772,8 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
 
     // create quadrature rule (need to check if order is ok)
     Quadrature * qd;
-    //qd = Quadrature::create(fe->get_order_u(), fe->get_type());
-    qd = Quadrature::create(2, fe->get_type());
+    qd = Quadrature::create(fe->get_order_u(), fe->get_type());
+    //qd = Quadrature::create(2, fe->get_type());
 
     // quadrature loop
     for(int q=0; q<qd->get_num_ipoints(); q++)
@@ -796,7 +796,7 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
           for(int in=0; in<neln; in++)
 	        {
 	          //int ip = bdof[in];
-		        int ip = bdof[in]/ndim;
+		  int ip = bdof[in]/ndim;
 	          dxis(id,jd) = dxis(id,jd) + x[ip][id] * dshape(in,jd);
 	        }
 
@@ -806,10 +806,10 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
       {
 	      arma::vec3 vl = xe[in] * detJxW * shape(in);
 
-        for(int id=0; id<ndim; id++)
-            endo_volume += xnorm(id) * vl[id]/3.;
-        //int id = 0;
-        //endo_volume += xnorm(id) * vl[id];
+        //for(int id=0; id<ndim; id++)
+        //    endo_volume += xnorm(id) * vl[id]/3.;
+        int id = 0;
+        endo_volume += xnorm(id) * vl[id];
       }
 
     }
@@ -1292,7 +1292,6 @@ void NonlinearElasticity::init_matvecs()
   }
 
   // Allocate matrices and vectors
-  cout << "N: " << N << endl;
   K.create(N,N,120); K = 0.0;
   u.create(N);       u = 0.0;
   r.create(N);       r = 0.0;
@@ -1602,7 +1601,6 @@ void NonlinearElasticity::storeStress(int step)
     //std::cout << f_l << " " << f_c << " " << f_r << std::endl;
 
     fib = F*fib; //F*fib; //Alterei aqui para testar stress longitudinal
-    fib = fib/arma::norm(fib,2);
 
     fiber_stress(id_el) = fib(0) * (fib(0)*sig(0,0) + fib(1)*sig(0,1) + fib(2)*sig(0,2)) +
                           fib(1) * (fib(0)*sig(0,1) + fib(1)*sig(1,1) + fib(2)*sig(1,2)) +
@@ -1679,16 +1677,10 @@ void NonlinearElasticity::reset()
   lc.reset();
 }
 
-void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double prv, const arma::vec &ta, const arma::vec &dta)
+void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double prv, double ta, double dta)
 {
   pressure_map[mlv] = plv;
   pressure_map[mrv] = prv;
-  material->set_Ta(ta);
-  material->set_dTa(dta);
-}
-
-void NonlinearElasticity::set_Ta(arma::vec &ta, arma::vec &dta)
-{
   material->set_Ta(ta);
   material->set_dTa(dta);
 }
@@ -1969,6 +1961,7 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
 
     elem_stiff (i, fe, qd, Ke);
     fespace.get_element_dofs_u (i, dnums);
+
 #ifndef USE_BFGS
     // Fast assembling
     int * pidx;
@@ -2006,6 +1999,7 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
     {
       fespace.get_boundary_element_dofs_u(i, bdof);
       elem_kpress(i, bfe, bdof, belmat);
+
       // assembles the pressure component of the stiffness matrix
       for (int j = 0; j < nu; j++)
         for (int k = 0; k < nu; k++)

@@ -60,7 +60,7 @@ double HolzapfelOgden::strain_energy(MaterialData * md, const arma::mat & E) con
   //return tiso + tvol;
 }
 
-double HolzapfelOgden::active_strain_energy(int iel, MaterialData * md, const arma::mat & E) const
+double HolzapfelOgden::active_strain_energy(MaterialData * md, const arma::mat & E) const
 {
   const arma::vec3 & f0 = md->fiber();
   const arma::vec3 & s0 = md->sheet();
@@ -72,7 +72,7 @@ double HolzapfelOgden::active_strain_energy(int iel, MaterialData * md, const ar
   arma::mat Cbar = pow(J,-(2.0/3.0)) * C;
   double I4f  = dot(f0, Cbar*f0);
 
-  return I4f*active_stress(iel);
+  return I4f*active_stress;
 }
 
 void HolzapfelOgden::deviatoric_stress(MaterialData * md, arma::mat & sigma) const

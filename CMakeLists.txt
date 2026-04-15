@@ -2,7 +2,7 @@
 # author: Bernardo Martins Rocha
 # mail: bernardomartinsrocha@gmail.com
 
-cmake_minimum_required(VERSION 3.12) 
+cmake_minimum_required(VERSION 3.12)
 project(Cardiax C CXX)
 
 if(POLICY CMP0144)
@@ -24,78 +24,130 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
-# --- CONFIGURAÇÃO PETSC ---
-if (NOT DEFINED ENV{PETSC_DIR})
-    message(FATAL_ERROR "The environment variable PETSC_DIR must be set to the PETSc directory.")
-endif()
-if (NOT DEFINED ENV{PETSC_ARCH})
-    message(WARNING "The environment variable PETSC_ARCH is not set. Using 'arch-linux2-c-debug' as the default.")
-    set(ENV{PETSC_ARCH} "arch-linux2-c-debug")
-endif()
+# --- PETSC (via pkg-config, conda-forge compatible) ---
+find_package(PkgConfig REQUIRED)
 
-# Caminho onde o PETSc instala dependências (MPI, BLAS, LAPACK, etc)
-set(PETSC_DEPS_ROOT "$ENV{PETSC_DIR}/$ENV{PETSC_ARCH}")
-
-find_package(PETSc REQUIRED)
-
-# --- BUSCA DE DEPENDÊNCIAS COM FALLBACK PARA PETSC ---
-
-# 1. MPI
-find_package(MPI QUIET)
-if(NOT MPI_FOUND)
-    message(STATUS "System MPI not found. Searching in PETSc dir: ${PETSC_DEPS_ROOT}")
-    set(ENV{MPI_HOME} "${PETSC_DEPS_ROOT}")
-    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
-    find_package(MPI REQUIRED)
+if(NOT DEFINED ENV{PKG_CONFIG_PATH})
+  set(ENV{PKG_CONFIG_PATH} "$ENV{CONDA_PREFIX}/lib/pkgconfig")
+else()
+  set(ENV{PKG_CONFIG_PATH} "$ENV{CONDA_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
 endif()
 
+pkg_check_modules(PETSC REQUIRED IMPORTED_TARGET PETSc)
+
+message(STATUS "PETSc found via pkg-config:")
+message(STATUS "  Version  : ${PETSC_VERSION}")
+message(STATUS "  Includes : ${PETSC_INCLUDE_DIRS}")
+message(STATUS "  Libraries: ${PETSC_LINK_LIBRARIES}")
+
+set(PETSC_INCLUDES    ${PETSC_INCLUDE_DIRS})
+set(PETSC_LIBRARIES   ${PETSC_LINK_LIBRARIES})
+set(PETSC_DEFINITIONS ${PETSC_CFLAGS_OTHER})
+
+# --- MPI ---
+find_package(MPI REQUIRED)
+
+# --- HDF5 ---
 find_package(HDF5 REQUIRED)
 
-# 2. BLAS
-find_package(BLAS QUIET)
-if(NOT BLAS_FOUND)
-    message(STATUS "System BLAS not found. Searching in PETSc dir...")
-    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
-    find_package(BLAS REQUIRED)
+# --- BLAS/LAPACK (conda Netlib — must match Armadillo's build) ---
+find_library(BLAS_LIBRARY
+  NAMES blas
+  HINTS $ENV{CONDA_PREFIX}
+  PATH_SUFFIXES lib lib64
+  NO_CMAKE_SYSTEM_PATH)
+
+find_library(LAPACK_LIBRARY
+  NAMES lapack
+  HINTS $ENV{CONDA_PREFIX}
+  PATH_SUFFIXES lib lib64
+  NO_CMAKE_SYSTEM_PATH)
+
+if(BLAS_LIBRARY AND LAPACK_LIBRARY)
+  message(STATUS "BLAS   (conda): ${BLAS_LIBRARY}")
+  message(STATUS "LAPACK (conda): ${LAPACK_LIBRARY}")
+  set(BLAS_LIBRARIES   ${BLAS_LIBRARY})
+  set(LAPACK_LIBRARIES ${LAPACK_LIBRARY})
+else()
+  message(FATAL_ERROR "conda BLAS/LAPACK not found. Run: conda install -c conda-forge blas lapack")
 endif()
 
-# 3. LAPACK
-find_package(LAPACK QUIET)
-if(NOT LAPACK_FOUND)
-    message(STATUS "System LAPACK not found. Searching in PETSc dir...")
-    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
-    find_package(LAPACK REQUIRED)
-endif()
-
-# 4. ScaLAPACK
+# --- ScaLAPACK (optional) ---
 find_package(ScaLAPACK QUIET)
 if(NOT ScaLAPACK_FOUND)
-    message(STATUS "System ScaLAPACK not found. Searching in PETSc dir...")
-    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
-    find_package(ScaLAPACK REQUIRED)
+  set(ScaLAPACK_LIBRARIES "")
+  message(STATUS "ScaLAPACK not found — linking without it.")
 endif()
 
-# --- OUTRAS DEPENDÊNCIAS ---
-# find_package(Armadillo REQUIRED)
+# --- Armadillo ---
+find_library(ARMADILLO_LIBRARY
+  NAMES armadillo
+  HINTS $ENV{ARMADILLO_ROOT} $ENV{CONDA_PREFIX}
+  PATH_SUFFIXES lib lib64)
+find_path(ARMADILLO_INCLUDE_DIR armadillo
+  HINTS $ENV{ARMADILLO_ROOT} $ENV{CONDA_PREFIX}
+  PATH_SUFFIXES include)
+if(NOT ARMADILLO_LIBRARY)
+  message(FATAL_ERROR "Armadillo not found. Set ARMADILLO_ROOT or run: conda install -c conda-forge armadillo")
+else()
+  message(STATUS "Armadillo: ${ARMADILLO_LIBRARY}")
+endif()
 
-find_library(ARMADILLO_LIBRARY_PATH armadillo HINTS $ENV{ARMADILLO_ROOT} PATH_SUFFIXES lib lib64)
+# # --- AmgX ---
+# find_library(AMGX_LIBRARY
+#   NAMES amgx
+#   HINTS $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
+#   PATH_SUFFIXES lib lib64)
+# find_path(AMGX_INCLUDE_DIR amgx_c.h
+#   HINTS $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
+#   PATH_SUFFIXES include)
+# if(NOT AMGX_LIBRARY)
+#   message(FATAL_ERROR "AmgX not found. Build and install it first.")
+# else()
+#   message(STATUS "AmgX: ${AMGX_LIBRARY}")
+# endif()
+
+# # Eigen
+# find_package(Eigen3 REQUIRED)
+# if(Eigen3_FOUND)
+#   message(STATUS "Eigen3 found via find_package: ${EIGEN3_INCLUDE_DIR}")
+# else()
+#   find_path(EIGEN3_INCLUDE_DIR Eigen/Core
+#     HINTS $ENV{CONDA_PREFIX}/include/eigen3
+#           $ENV{CONDA_PREFIX}/include
+#     NO_CMAKE_SYSTEM_PATH)
+#   if(EIGEN3_INCLUDE_DIR)
+#     message(STATUS "Eigen3 found manually: ${EIGEN3_INCLUDE_DIR}")
+#   else()
+#     message(FATAL_ERROR "Eigen3 not found. Run: conda install -c conda-forge eigen")
+#   endif()
+# endif()
 
 
-set(AMGX_INCLUDE_DIRS $ENV{AMGX_ROOT}/include)
-# set(AMGX_LIBRARIES $ENV{AMGX_ROOT}/lib/libamgx.a) 
-find_library(AMGX_LIBRARY_PATH amgx HINTS $ENV{AMGX_ROOT} PATH_SUFFIXES lib lib64)
+# # autodiff (header-only, precisa do Eigen)
+# find_package(autodiff REQUIRED)
+# if(autodiff_FOUND)
+#   message(STATUS "autodiff found via find_package")
+# else()
+#   find_path(AUTODIFF_INCLUDE_DIR autodiff/forward/dual.hpp
+#     HINTS $ENV{CONDA_PREFIX}/include
+#     NO_CMAKE_SYSTEM_PATH)
+#   if(AUTODIFF_INCLUDE_DIR)
+#     message(STATUS "autodiff found manually: ${AUTODIFF_INCLUDE_DIR}")
+#   else()
+#     message(FATAL_ERROR "autodiff not found. Run: conda install -c conda-forge autodiff")
+#   endif()
+# endif()
 
-find_library(CUDART_LIB cudart HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(CUSPARSE_LIB cusparse HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(CUSOLVER_LIB cusolver HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(NVTX_LIB nvToolsExt HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(CUBLAS_LIB cublas HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+# # --- CUDA ---
+# find_library(CUDART_LIB   cudart     HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+# find_library(CUSPARSE_LIB cusparse   HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+# find_library(CUSOLVER_LIB cusolver   HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+# find_library(NVTX_LIB     nvToolsExt HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+# find_library(CUBLAS_LIB   cublas     HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+# set(CUDA_LIBRARIES ${CUDART_LIB} ${CUSPARSE_LIB} ${CUSOLVER_LIB} ${NVTX_LIB} ${CUBLAS_LIB})
 
-
-set(AMGX_LIBRARIES ${AMGX_LIBRARY_PATH})
-set(CUDA_LIBRARIES ${CUDART_LIB} ${CUSPARSE_LIB} ${CUSOLVER_LIB} ${NVTX_LIB} ${CUBLAS_LIB})
-
-
+# --- Interface library ---
 add_library(ext_libs INTERFACE)
 
 target_include_directories(ext_libs INTERFACE
@@ -103,29 +155,31 @@ target_include_directories(ext_libs INTERFACE
     ${MPI_C_INCLUDE_DIRS}
     ${PETSC_INCLUDES}
     ${HDF5_INCLUDE_DIRS}
-    # ${Armadillo_INCLUDE_DIRS}
+    ${ARMADILLO_INCLUDE_DIR}
     $ENV{ARMADILLO_ROOT}/include
-    ${AMGX_INCLUDE_DIRS}
+    # ${AMGX_INCLUDE_DIR}
+    # ${EIGEN3_INCLUDE_DIR}
 )
 
 target_link_libraries(ext_libs INTERFACE
     ${PETSC_LIBRARIES}
     ${MPI_C_LIBRARIES}
     ${HDF5_LIBRARIES}
-    ${ARMADILLO_LIBRARY_PATH}
+    ${ARMADILLO_LIBRARY}
     ${BLAS_LIBRARIES}
     ${LAPACK_LIBRARIES}
     ${ScaLAPACK_LIBRARIES}
-    ${AMGX_LIBRARIES}    
-    ${CUDA_LIBRARIES}
+    # ${AMGX_LIBRARY}
+    # ${CUDA_LIBRARIES}
 )
 
-target_compile_definitions(ext_libs INTERFACE 
+target_compile_definitions(ext_libs INTERFACE
     ${PETSC_DEFINITIONS}
 )
 
+# --- Subdirectories ---
 option(BUILD_TESTS "Build tests" ON)
-option(USE_AGOS "Use AGOS for ODE solvers" OFF) 
+option(USE_AGOS "Use AGOS for ODE solvers" OFF)
 
 add_subdirectory(src/util)
 add_subdirectory(src/linalg)
@@ -140,4 +194,4 @@ add_subdirectory(app)
 
 # if(BUILD_TESTS)
 #   add_subdirectory(test)
-# endif(BUILD_TESTS)
+# endif()

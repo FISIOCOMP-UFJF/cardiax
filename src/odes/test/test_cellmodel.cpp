@@ -3,137 +3,91 @@
 #include <string>
 #include <cstdlib>
 #include <fstream>
-#include "../cells.hpp"
-#include "../cellmodel.hpp"
-#include "../ode_solver.hpp"
-#include "../fitz_hugh_nagumo.hpp"
-#include "../ten_tusscher2006.hpp"
-#include "../ten_tusscher_ta.hpp"
-#include "../rice_ten_tusscher.hpp"
-#include "../luo_rudy.hpp"
-#include "../mv.hpp"
-#include "../torord_land.hpp"
+#include "../odes.h"
 #include "util/command_line_args.h"
-
 
 using namespace std;
 
-// FHN 0.1   20.0
-// LRI 0.01  500.0
-// TT2 0.001 500.0
-
 void usage()
 {
-  cout << "Usage: \n";
-  cout << " ./testCellmodel -c <Model> -m <Method> -dt <Step> -p <Protocol> [More options]\n" << endl;
-  cout << "Options:" << endl;
-  cout << " -p protocol (single, pacing, restitution)" << endl;
-  cout << " -c model" << endl;
-  cout << " -m method (ExplicitEuler, ImplicitEuler, RungeKutta4)" << endl;
-  cout << " -T total time" << endl;
-  cout << " -dt step" << endl;
-  cout << " -st stimulus time" << endl;
-  cout << " -sv stimulus value" << endl;
-  cout << " -sd stimulus duration" << endl;
-  cout << " -tr time rate" << endl;
-  cout << " -ct cell type (EPI,MCELL,ENDO,APEX,BASE - TT2 and TT2Ta onyl)" << endl;
-  cout << " -out output file name" << endl;
-  cout << " -bcl basic cycle length" << endl;
-  cout << " -ncl number of cycles" << endl;
-  cout << " -nrc number of restitution cycles" << endl;
-  cout << " -d delta - time step (variation) for restitution protocol" << endl << endl;
-  cout << " Models" << endl;
-  cout << "   NP     : Nash-Panfilov" << endl;
-  cout << "   MNP    : MyNash-Panfilov" << endl;
-  cout << "   MS     : Mitchell-Schaeffer" << endl;
-  cout << "   MV     : Minimal Ventricular" << endl;
-  cout << "   FHN    : FitzHugh-Nagumo" << endl;
-  cout << "   LR1    : Luo-Rudy I" << endl;
-  cout << "   TT2    : ten Tusscher" << endl;
-  cout << "   TT2Ta  : ten Tusscher + Active tension (Ta)" << endl;
-  cout << "   RiceTT2: Rice + ten Tusscher" << endl;
-  cout << "   SODE   : simple ODE for test" << endl;
-  cout << endl;
+  const int W = 26; // column width for alignment
+  auto opt = [&](const string& flag, const string& desc) {
+    cout << "  " << left << setw(W) << flag << desc << "\n";
+  };
+
+  cout << "\n";
+  cout << "  Cardiax - Cell Model Solver\n";
+  cout << "  ============================\n\n";
+
+  cout << "  Usage:\n";
+  cout << "    ./testCellmodel -c <model> -m <method> -dt <step> -p <protocol> [options]\n\n";
+
+  cout << "  Protocols (-p):\n";
+  opt("-p single",       "Single stimulus run (default)");
+  opt("-p pacing",       "Basic cycle length pacing");
+  opt("-p restitution",  "Restitution protocol");
+  cout << "\n";
+
+  cout << "  Required options:\n";
+  opt("-c  <model>",     "Cell model (see list below)");
+  opt("-m  <method>",    "ODE method (see list below)");
+  opt("-dt <step>",      "Time step (ms)");
+  cout << "\n";
+
+  cout << "  General options:\n";
+  opt("-T   <time>",     "Total simulation time (ms)");
+  opt("-tr  <rate>",     "Time rate");
+  opt("-out <file>",     "Output file name [default: output.h5]");
+  opt("-ct  <type>",     "Cell type: EPI | MCELL | ENDO | APEX | BASE");
+  cout << "\n";
+
+  cout << "  Stimulus options:\n";
+  opt("-st  <time>",     "Stimulus start time (ms)");
+  opt("-sv  <value>",    "Stimulus value");
+  opt("-sd  <duration>", "Stimulus duration (ms) [default: 1.0]");
+  cout << "\n";
+
+  cout << "  Pacing options:\n";
+  opt("-bcl <length>",   "Basic cycle length (ms)");
+  opt("-nbc <n>",        "Number of basic cycles");
+  cout << "\n";
+
+  cout << "  Restitution options:\n";
+  opt("-bcl <length>",   "Basic cycle length (ms)");
+  opt("-nbc <n>",        "Number of basic cycles (to reach steady state)");
+  opt("-nrc <n>",        "Number of restitution cycles");
+  opt("-d   <delta>",    "Time step variation per restitution cycle (ms)");
+  cout << "\n";
+
+  cout << "  Models:\n";
+  opt("NP",          "Nash-Panfilov");
+  opt("MNP",         "MyNash-Panfilov");
+  opt("MS",          "Mitchell-Schaeffer");
+  opt("MV",          "Minimal Ventricular");
+  opt("FHN",         "FitzHugh-Nagumo");
+  opt("LR1",         "Luo-Rudy I");
+  opt("TT2",         "ten Tusscher 2006");
+  opt("TT2Ta",       "ten Tusscher + Active tension (cell types: EPI,MCELL,ENDO,APEX,BASE)");
+  opt("RiceTT2",     "Rice + ten Tusscher");
+  opt("ToRORdLand",  "ToR-ORd + Land");
+  opt("SODE",        "Simple ODE (test)");
+  cout << "\n";
+
+  cout << "  Methods:\n";
+  opt("ExplicitEuler",  "Forward Euler");
+  opt("ImplicitEuler",  "Backward Euler");
+  opt("RungeKutta4",    "4th order Runge-Kutta");
+  cout << "\n";
+
+  cout << "  Examples:\n";
+  cout << "    ./testCellmodel -p single      -c TT2 -m RungeKutta4 -dt 0.001 -T 500 -sv -52 -st 10 -sd 1\n";
+  cout << "    ./testCellmodel -p pacing      -c FHN -m ExplicitEuler -dt 0.1 -bcl 500 -nbc 10 -sv -0.3 -sd 1\n";
+  cout << "    ./testCellmodel -p restitution -c TT2 -m RungeKutta4 -dt 0.001 -bcl 500 -nbc 20 -nrc 10 -d 10\n";
+  cout << "\n";
 }
 
 int main(int argc, const char **argv)
 {
-//  int celltp = 0;
-//  double step, T, stim, sini, send, tts;
-//  string model;
-//  string method;
-//  string outf;
-//
-//
-//  // TODO: include BCL protocol
-//  // BCL1, BCL2, etc....
-//
-//  if (argc < 9)
-//  {
-//    cout << "\n Usage: ";
-//    cout << "testCellmodel <Model> <Method> <Step> <T> <Sval> <Sini> <Send> <tts> [Type] [Output]\n" << endl;
-//    cout << " Models" << endl;
-//    cout << "   NP     : Nash-Panfilov" << endl;
-//    cout << "   MNP    : MyNash-Panfilov" << endl;
-//    cout << "   MS     : Mitchell-Schaeffer" << endl;
-//    cout << "   MV     : Minimal Ventricular" << endl;
-//    cout << "   FHN    : FitzHugh-Nagumo" << endl;
-//    cout << "   LR1    : Luo-Rudy I" << endl;
-//    cout << "   TT2    : ten Tusscher" << endl;
-//    cout << "   TT2Ta  : ten Tusscher + Active tension (Ta)" << endl;
-//    cout << "   RiceTT2: Rice + ten Tusscher" << endl;
-//    cout << "   SODE   : simple ODE for test" << endl;
-//    cout << endl;
-//    cout << " Methods" << endl;
-//    cout << "   ExplicitEuler" << endl;
-//    cout << "   ImplicitEuler" << endl;
-//    cout << "   RungeKutta4" << endl;
-//    cout << endl;
-//    cout << " Cell Type (TT2 and TT2Ta only)" << endl;
-//    cout << "   0 : EPI" << endl;
-//    cout << "   1 : MCELL" << endl;
-//    cout << "   2 : ENDO" << endl;
-//    cout << "   3 : APEX" << endl;
-//    cout << "   4 : BASE" << endl;
-//    cout << endl;
-//    exit(1);
-//  }
-//
-//  model  = argv[1];
-//  method = argv[2];
-//  step   = atof(argv[3]);
-//  T      = atof(argv[4]);
-//  stim   = atof(argv[5]);
-//  sini   = atof(argv[6]);
-//  send   = atof(argv[7]);
-//  tts    = atof(argv[8]);
-//
-//  CellModel * cell = CellModel::create(model);
-//  cell->setup(method, step, T, tts);
-//
-//  if(argc >= 10)
-//  {
-//    celltp = atoi(argv[9]);
-//    cout << " Using celltype: " << celltp << endl;
-//    if(model == "TT2Ta" || model == "RiceTT2" || model == "TNNP" ||
-//       model == "ORd"   || model == "RiceORd" || model == "MV")
-//      cell->set_celltype(celltp);
-//  }
-//
-//  if(argc == 11)
-//  {
-//    outf = argv[10];
-//    cell->solveTest(stim, sini, send, outf);
-//  }
-//  else
-//  {
-//    //cell->solveTest(stim, sini, send, "output.txt");
-//    cell->solveTestHDF5(stim, sini, send, "output.h5");
-//  }
-//
-//
-//  delete cell;
-
   if(argc < 6)  // not enough params
   {
     usage();

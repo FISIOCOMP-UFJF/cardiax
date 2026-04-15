@@ -16,12 +16,14 @@ class Eikonal : public CardiacProblem
 {
 public:
 
-  enum CondTensorType { S_ISOTROPIC,    // spatial isotropy
+  enum CondTensorType { 
+      S_ISOTROPIC,    // spatial isotropy
 			S_TRANSVERSE,   // spatial transverse isotropy
 			S_ORTHOTROPIC,  // spatial orthotropy
 			M_ISOTROPIC,    // material isotropy
 			M_TRANSVERSE,   // material transverse isotropy
-			M_ORTHOTROPIC}; // material orthotropy
+			M_ORTHOTROPIC   // material orthotropy
+  };
 
   //! Constructor
   Eikonal();
@@ -46,8 +48,9 @@ public:
 
   //! Solve the problem
   void solve();
-  void solve(const string &mshfile);
 
+  //! Solve the problem with meshfile given
+  void solve(const string &mshfile);
 
 protected:
   

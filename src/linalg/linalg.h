@@ -18,7 +18,7 @@
 
 // Solvers
 #include "cg.hpp"
-#include "pardiso_solver.hpp"
+// #include "pardiso_solver.hpp"
 
 // PETSc wrappers
 #include "petsc_vector.hpp"

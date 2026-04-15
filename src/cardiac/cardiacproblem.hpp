@@ -104,12 +104,6 @@ protected:
   double printrate;
   double printrate_apd;
 
-  //uint maxnz;
-  //double theta;
-  //double pcgtol;
-  //double surf_to_vol;
-  //double um2_to_cm2;
-
   string cell_name;
   string odesolver;
   string mesh_filename;

@@ -19,7 +19,7 @@
 #include "materials/incompressible_material.hpp"
 #include "mech_utils.hpp"
 
-//#define USE_BFGS
+// #define USE_BFGS
 
 //! Enum with bitflags for assemble functions
 enum AssembleFlags
@@ -90,7 +90,7 @@ public:
   void reset();
 
   //! Run simulation
-  void run();
+  void run(const string & mshfile, const string & parfile);
 
   void set_pressure_Ta(int mlv, double plv, int mrv, double prv, const arma::vec &ta, const arma::vec &dta);
 
@@ -134,11 +134,11 @@ public:
   //! Controls loading (incremental Newton)
   LoadControl lc;
 
-    void gambiarra(bool b) {
-      cout << "PRESS MAP " << pressure_map.size() << endl;
-      pressure_map.clear();
-      cout << "PRESS MAP " << pressure_map.size() << endl;
-    }
+  void gambiarra(bool b) {
+    cout << "PRESS MAP " << pressure_map.size() << endl;
+    pressure_map.clear();
+    cout << "PRESS MAP " << pressure_map.size() << endl;
+  }
 
 protected:
   

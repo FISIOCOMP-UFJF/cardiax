@@ -4,7 +4,6 @@
 #include <map>
 #include "nonlinear_problem.hpp"
 #include "linalg/petsc_linear_solver.hpp"
-#include "linalg/pardiso_solver.hpp"
 
 //#define USE_PARDISO
 

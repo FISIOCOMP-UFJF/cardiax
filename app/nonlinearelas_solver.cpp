@@ -83,13 +83,13 @@ int main(int argc, const char* argv[])
       throw std::runtime_error("Unknown formulation. Please use TL or UL.");
     }
 
-    msg("Setting material and elasticity type");
-    msg("Setting boundary conditions");
-    esolver->config(mshfile, parfile);
-    esolver->set_output_step(true);
+    // msg("Setting material and elasticity type");
+    // msg("Setting boundary conditions");
+    // esolver->config(mshfile, parfile);
+    // esolver->set_output_step(true);
 
     msg("Solving problem");
-    esolver->run();
+    esolver->run(mshfile, parfile);
 
     delete esolver;
   }

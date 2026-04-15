@@ -33,6 +33,11 @@ public:
   //! Set the number of dimensions
   void set_ndim(int nd) { ndim = nd; }
 
+  void allocate_Ta(int nel){
+    active_stress.resize(nel);
+    cout << "xxxxx Size of active stress: " << active_stress.n_elem << endl;
+  }
+
   //! Set the active stress
   void set_Ta(const arma::vec Ta) { active_stress = Ta; }
 

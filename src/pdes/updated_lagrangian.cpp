@@ -82,7 +82,6 @@ void UpdatedLagrangian::assemble_const()
   K.assemble();
   apply_boundary(K);
   
-
   delete qd;
   delete fe;
 }
@@ -392,7 +391,6 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
 
     if (material->is_incompressible())
     {
-
       IncompressibleMaterial *im;
       im = static_cast<IncompressibleMaterial *>(material);
 
@@ -896,6 +894,7 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
       }
       else
       {
+        // cout << "ZZZ" << endl;
         im->calc_fd_stress(iel, md, S);
         // im->set_active_stress(md, S, lc.load());
         im->push_forward(*F, S, sigma);
@@ -929,6 +928,8 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
         // im->active_stress_elastensor(lc.get_nincs(), md, elastensorM);
         // cout << "Ca: " << elastensorM(0,1,2,0) << endl << endl;
         im->push_forward(*F, elastensorM, elastensor);
+
+        // cout << "XXX" << endl;
       }
 
       // analytical
@@ -938,7 +939,7 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
       elastensor.get_matrix(D);
     }
     else
-    {
+    {      
       material->cauchy_stress(md, sigma);
       material->sp_elastensor(md, D);
     }
@@ -1093,17 +1094,27 @@ void UpdatedLagrangian::pre_solve()
     // body_forces();
     // assemble_traction();
     // assemble_const();
+    int nelem = msh.get_n_elements();
+    cout << "YYY " << nelem << endl;
+    material->allocate_Ta(nelem);
+
     int iel = msh.get_n_elements();
-    arma::vec dta = arma::ones<arma::vec>(iel) * (material->get_Ta() / lc.get_nincs());
+    // arma::vec dta = arma::ones<arma::vec>(iel) * (material->get_Ta() / lc.get_nincs());
+
+    arma::vec dta = (material->get_Ta() / lc.get_nincs());
+
     material->set_dTa(dta); 
 
+
     // PLACEHOLDER:
-    arma::vec ta = arma::ones<arma::vec>(iel) * (material->get_Ta());
+    // arma::vec ta = arma::ones<arma::vec>(iel) * (material->get_Ta());
+    arma::vec ta = (material->get_Ta());
     material->set_Ta(ta);
   
     //material->set_dTa(material->get_Ta() / lc.get_nincs());
     //cout << "Active stress: " << material->get_Ta() << endl;
   }
+  cout << "OKKKK" << endl;
 }
 
 void UpdatedLagrangian::solve()
@@ -1197,8 +1208,11 @@ void UpdatedLagrangian::solve()
   cont += 1;     // counter for output
   fext0 += fext; // save nodal loads
   log << calc_volume() << endl;
+  
   // std::cout.precision(16);
+
   cout << "End inner volume: " << calc_volume() << endl;
   nls->timer.summary();
+
   cout << " Done" << endl;
 }

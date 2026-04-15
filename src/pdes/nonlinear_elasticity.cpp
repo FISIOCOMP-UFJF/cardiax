@@ -82,7 +82,6 @@ void NonlinearElasticity::assemble_traction()
         fext(bdof[k]) += belvec(k);
     }
   }
-
   delete bfe;
 }
 
@@ -827,6 +826,8 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
   std::string extension = file_extension(parfile);
   std::vector<double> matprop;
 
+  int nelem = msh.get_n_elements();
+
   if(extension == "par")
   {
     cout << "Reading parameters from .par file" << endl;
@@ -859,8 +860,12 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
       throw runtime_error("Unknown elasticity type.");
 
     // setup material type
+    
     material = HyperelasticMaterial::create(mtype, elastype, matprop);
     cout << "Hyperelastic material: " << mtype << endl;
+
+    int nelem = msh.get_n_elements();
+    material->allocate_Ta(nelem);
 
     // setup mesh filename
     assert(file_exists(mshfile.c_str()));
@@ -939,10 +944,13 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
 
       // setup material
       std::cout << mtype << std::endl;
-      material = HyperelasticMaterial::create(mtype, elastype, vec_matprop, num_materials, map_matAHA);
+      material = HyperelasticMaterial::create(mtype, elastype,  vec_matprop, num_materials, map_matAHA);
       cout << " Hyperelastic material: " << mtype << endl;
       cout << " Material properties: ";
       cout << " Multiple materials were defined. ";
+
+      int nelem = msh.get_n_elements();
+      material->allocate_Ta(nelem);
     }
     else
     {
@@ -967,6 +975,9 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
         for (it = matprop.begin(); it != matprop.end(); ++it)
           cout << *it << " ";
         cout << endl;
+
+        int nelem = msh.get_n_elements();
+        material->allocate_Ta(nelem);
       }
     }
 
@@ -1231,13 +1242,13 @@ void NonlinearElasticity::init_mesh()
     x0.push_back(p);
   }
 
-  std::cout << "Output step: " << output_step << std::endl;
-  // setup data writer
-  if(output_step)
-  {
-    std::string output = filename.substr(0, filename.length() - 4) + "_output_nl";
-    writer.open(output, lc.get_nincs() + 1 + INCs_TA, 1);
-  }
+  // std::cout << "Output step: " << output_step << std::endl;
+  // // setup data writer
+  // if(output_step)
+  // {
+  //   std::string output = filename.substr(0, filename.length() - 4) + "_output_nl";
+  //   writer.open(output, lc.get_nincs() + 1 + INCs_TA, 1);
+  // }
 }
 
 void NonlinearElasticity::setup_data_writer(int size)
@@ -1453,13 +1464,9 @@ void NonlinearElasticity::output_vtk(const int cont, const int step)
 
 void NonlinearElasticity::output_vtk(const int step, const arma::vec & v, const arma::vec & displ)
 {
-
-
   cout << "Escrevendo DADOS\n";
   writer.write_vm_step(step, v.memptr());
   writer.write_displ_step(step, displ.memptr());
-
-
 }
 
 void NonlinearElasticity::output_vtk(const int cont,
@@ -1639,7 +1646,6 @@ void NonlinearElasticity::storeStress(int step)
   writer.write_cell_field_step(step, long_strain.memptr(), string("long_strain"));
   writer.write_cell_field_step(step, circ_strain.memptr(), string("circ_strain"));
   writer.write_cell_field_step(step, rad_strain.memptr(), string("rad_strain"));
-
 }
 
 
@@ -1687,15 +1693,46 @@ void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double p
   material->set_dTa(dta);
 }
 
-void NonlinearElasticity::run()
+void NonlinearElasticity::run(const string & mshfile, const string & parfile)
 {
-  init();
+  // TO-DO: esta fixo para formato XML, mas pensando em remover codigo do .par
+
+  // setup mesh filename
+  assert(file_exists(mshfile.c_str()));
+  std::string::size_type idx = mshfile.rfind(".xml");
+  filename = mshfile;
+  basename = filename.substr(0,idx);
+
+  // init(); // -> init_mesh(); init_matvecs();
+
+  init_mesh(); 
+
+  msg("Setting material and elasticity type");
+  msg("Setting boundary conditions");
+  config(mshfile, parfile);
+  set_output_step(true);
+  
+  std::cout << "Output step: " << output_step << std::endl;
+  // setup data writer
+  if(output_step)
+  {
+    std::string output = filename.substr(0, filename.length() - 4) + "_output_nl";
+    writer.open(output, lc.get_nincs() + 1 + INCs_TA, 1);
+  }
+
+  init_matvecs();
+
   pre_solve();
   cout << "Initial cavity volume: " << total_volume_cavity() << "\n";
+
   solve();
+  
   storeStress(lc.get_nincs());
+  
   storeLVvolumes(this->basename);
+  
   //cout << "Final cavity volume: " << total_volume_cavity() << "\n";
+  
   timer.summary();
 }
 

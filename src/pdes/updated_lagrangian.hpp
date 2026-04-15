@@ -2,8 +2,8 @@
 #define UPDATED_LAGRANGIAN_HPP
 
 #include "nonlinear_elasticity.hpp"
-#include "materials/neo_hookean.hpp"
-#include "materials/holzapfel_ogden.hpp"
+// #include "materials/neo_hookean.hpp"
+// #include "materials/holzapfel_ogden.hpp"
 
 //#define USE_AL
 
@@ -43,8 +43,6 @@ public:
 
   void solve_old();
 
-
-  
 protected:
 
 

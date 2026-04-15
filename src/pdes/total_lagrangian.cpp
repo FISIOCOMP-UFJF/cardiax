@@ -26,12 +26,15 @@ void TotalLagrangian::assemble_const()
   {
     calc_elmat_const(i, fe, qd, Ke);
     fespace.get_element_dofs_u (i,dnums);
-
     // Fast assembling
     pidx = &dnums[0];
     Ke = Ke.t();
     K.add(n, n, pidx, pidx, Ke.memptr());
   }
+
+  K.assemble();
+  apply_boundary(K);
+  
 
   delete qd;
   delete fe;
@@ -95,11 +98,9 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
   std::vector<int> dnums;
 
   tmp_fext.zeros();
-//cout << "passou 1\n";
 
   for(int i=0; i<ne; i++)
   {
-//cout << "elem: " << i <<endl;
     double detJxW, J;
     arma::vec shape;
     arma::vec3 pt, qpt;
@@ -130,23 +131,22 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
       F = vecF[i*nint + q];
       rcg_tensor(gradn, x0, J, F, C);
       Bl_matrix (gradn, F, Bl);            
-//cout << "passou 3\n";      
       // interpolation of active stress from nodal to integration points
       arma::mat33 T;                        // active stress tensor 
       arma::mat33 Tl(arma::fill::zeros);    // active local stress tensor
       arma::mat33 & M  = *(vfibcoords[i]);  // change of basis matrix
       arma::mat33 & Ta = *(vstrs[i]);       // anisotropic Cauchy active stress
       arma::mat33 Fi   = arma::inv(*F);     // inverse of F
-//cout << "passou 4\n";
       arma::vec3 f0 = M.col(0);
       arma::vec3 f  = (*F) * f0;
       double lambda2 = pow(arma::norm(f,2),2);
 
       Ta.zeros();
-//cout << "passou 5\n";
       for(int j=0; j<nnode; j++)
       {	
-        int node = ( dnums[j] - 2) / 3 ; // global node number
+        // int node = ( dnums[j] - 2) / 3 ; // global node number
+        int node = dnums[j];
+
 //cout << "j: " << j << " node: " << node <<endl;
 
         Tl(0,0) = is(node);  // local active tension in fiber direction	
@@ -159,7 +159,7 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
           for(int jj=0; jj<3; jj++)
 	          Ta(ii,jj) += shape(j) * T(ii,jj); //Ta(1,1) += shape(j) * is(k);
       }
-//cout << "passou 6\n";
+      cout << Ta << endl;
 
       // Total Lagrangian formulation, thus
       // since Ta is Cauchy stress, we need to convert to PK2
@@ -233,7 +233,7 @@ void TotalLagrangian::calc_elmat_const (const int iel, const MxFE * fe,
     // compute elasticity tensor using FD
     MaterialData * md = new MaterialData(msh.get_element(iel), *F);
     material->calc_fd_elastensor(iel, md, D);
-
+    
     // assemble element matrix
     elmat += (Bl.t() * D * Bl) * detJxW;
 
@@ -367,7 +367,6 @@ void TotalLagrangian::elem_stiff(const int iel, const MxFE * fe,
     material->calc_fd_stress(iel, md, S);
     material->calc_fd_elastensor(iel, md, D);
     Sb = arma::kron(I, S.submat(0, 0, ndim-1, ndim-1));
-    delete md;
 
     // computations in matricial form
     Ke += (Bl.t()  * D  * Bl)  * detJxW;
@@ -379,6 +378,7 @@ void TotalLagrangian::elem_stiff(const int iel, const MxFE * fe,
     //stressdb.tube(iel, q) = arma::vectorise(S,1);
     straindb.tube(iel, q) = arma::vectorise(md->lagrangian_strain(),1);
 
+    delete md;
   }
 
 }
@@ -432,6 +432,9 @@ void TotalLagrangian::Bl_matrix (const arma::mat & gradn, const arma::mat * F,
   int ndof  = gradn.n_rows;    // ndof
   int ndim  = msh.get_n_dim(); // ndim
   int nnode = ndof/ndim;       // nnode
+
+  // cout << "GRADN " << gradn.n_rows << " " << gradn.n_cols << endl;
+  // cout << gradn << endl << endl;
 
   if (ndim == 2)
   {
@@ -505,6 +508,62 @@ void TotalLagrangian::Bl_matrix (const arma::mat & gradn, const arma::mat * F,
   }  
 }
 
+// void TotalLagrangian::Bl_matrix (const arma::mat & gradn, const arma::mat * F, 
+//                                  arma::mat & Bl) const
+// {
+//   Bl.zeros();
+
+//   int ndim  = msh.get_n_dim();
+//   int nnode = gradn.n_rows / ndim;
+
+//   if (ndim == 2)
+//   {
+//     // row 1 (E11)
+//     for(int i=0; i<nnode; i++) Bl(0, i)       = (*F)(0,0) * gradn(i,0);
+//     for(int i=0; i<nnode; i++) Bl(0, i+nnode) = (*F)(1,0) * gradn(i,0);
+
+//     // row 2 (E22)
+//     for(int i=0; i<nnode; i++) Bl(1, i)       = (*F)(0,1) * gradn(i,1);
+//     for(int i=0; i<nnode; i++) Bl(1, i+nnode) = (*F)(1,1) * gradn(i,1);
+
+//     // row 3 (2E12)
+//     for(int i=0; i<nnode; i++) Bl(2, i)       = (*F)(0,0)*gradn(i,1) + (*F)(0,1)*gradn(i,0);
+//     for(int i=0; i<nnode; i++) Bl(2, i+nnode) = (*F)(1,0)*gradn(i,1) + (*F)(1,1)*gradn(i,0);
+//   }
+//   else if (ndim == 3)
+//   {
+//     // row 1 (E11)
+//     for(int i=0; i<nnode; i++) Bl(0, i)         = (*F)(0,0) * gradn(i,0);
+//     for(int i=0; i<nnode; i++) Bl(0, i+nnode)   = (*F)(1,0) * gradn(i,0);
+//     for(int i=0; i<nnode; i++) Bl(0, i+2*nnode) = (*F)(2,0) * gradn(i,0);
+
+//     // row 2 (E22)
+//     for(int i=0; i<nnode; i++) Bl(1, i)         = (*F)(0,1) * gradn(i,1);
+//     for(int i=0; i<nnode; i++) Bl(1, i+nnode)   = (*F)(1,1) * gradn(i,1);
+//     for(int i=0; i<nnode; i++) Bl(1, i+2*nnode) = (*F)(2,1) * gradn(i,1);
+
+//     // row 3 (E33)
+//     for(int i=0; i<nnode; i++) Bl(2, i)         = (*F)(0,2) * gradn(i,2);
+//     for(int i=0; i<nnode; i++) Bl(2, i+nnode)   = (*F)(1,2) * gradn(i,2);
+//     for(int i=0; i<nnode; i++) Bl(2, i+2*nnode) = (*F)(2,2) * gradn(i,2);
+
+//     // row 4 (2E12)
+//     for(int i=0; i<nnode; i++) Bl(3, i)         = (*F)(0,0)*gradn(i,1) + (*F)(0,1)*gradn(i,0);
+//     for(int i=0; i<nnode; i++) Bl(3, i+nnode)   = (*F)(1,0)*gradn(i,1) + (*F)(1,1)*gradn(i,0);
+//     for(int i=0; i<nnode; i++) Bl(3, i+2*nnode) = (*F)(2,0)*gradn(i,1) + (*F)(2,1)*gradn(i,0);
+
+//     // row 5 (2E23)
+//     for(int i=0; i<nnode; i++) Bl(4, i)         = (*F)(0,1)*gradn(i,2) + (*F)(0,2)*gradn(i,1);
+//     for(int i=0; i<nnode; i++) Bl(4, i+nnode)   = (*F)(1,1)*gradn(i,2) + (*F)(1,2)*gradn(i,1);
+//     for(int i=0; i<nnode; i++) Bl(4, i+2*nnode) = (*F)(2,1)*gradn(i,2) + (*F)(2,2)*gradn(i,1);
+
+//     // row 6 (2E13)
+//     for(int i=0; i<nnode; i++) Bl(5, i)         = (*F)(0,0)*gradn(i,2) + (*F)(0,2)*gradn(i,0);
+//     for(int i=0; i<nnode; i++) Bl(5, i+nnode)   = (*F)(1,0)*gradn(i,2) + (*F)(1,2)*gradn(i,0);
+//     for(int i=0; i<nnode; i++) Bl(5, i+2*nnode) = (*F)(2,0)*gradn(i,2) + (*F)(2,2)*gradn(i,0);
+//   }
+// }
+
 void TotalLagrangian::Bnl_matrix (const arma::mat & gradn, arma::mat & B) const
 {
   int nd = msh.get_n_dim();  // n_dim
@@ -576,9 +635,8 @@ void TotalLagrangian::solve()
   int nits;
   int num_prescribed = get_num_nz_prescribed();
   
-
-  
   static NonlinearSolver * nls = NULL;
+
 #ifdef USE_BFGS
   static PardisoSolver * parsolver = NULL;
 #endif
@@ -608,8 +666,6 @@ void TotalLagrangian::solve()
  
   if(output_step)
     output_vtk(cont,0);
-
-
 
   body_forces();
   assemble_traction();

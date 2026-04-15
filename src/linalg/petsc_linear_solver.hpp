@@ -3,7 +3,7 @@
 
 #include <iostream>
 #include <map>
-#include <amgx_c.h>
+// #include <amgx_c.h>
 #include "petscksp.h"
 #include "petsc_matrix.hpp"
 #include "petsc_vector.hpp"

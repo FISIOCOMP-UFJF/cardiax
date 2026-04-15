@@ -124,6 +124,10 @@ endif()
 # --- Defining Solver ---
 if(AMGX_LIBRARY AND AMGX_INCLUDE_DIR)
     # AMGx foi found. What about CUDA?
+    message(STATUS "AMGx found: ")
+    message(STATUS "  Includes : ${AMGX_INCLUDE_DIR}")
+    message(STATUS "  Libraries: ${AMGX_LIBRARY} ")
+
     if(CUDA_FOUND_MANUAL)
         message(STATUS "AmgX and CUDA found. Enabling AMGX_SOLVER.")
         
@@ -192,6 +196,10 @@ target_include_directories(ext_libs INTERFACE
     ${ARMADILLO_INCLUDE_DIR}
     $ENV{ARMADILLO_ROOT}/include
     # ${EIGEN3_INCLUDE_DIR}
+)
+
+target_link_directories(ext_libs INTERFACE
+    ${PETSC_LIBRARY_DIRS}
 )
 
 target_link_libraries(ext_libs INTERFACE

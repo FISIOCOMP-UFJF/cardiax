@@ -14,7 +14,9 @@ HyperelasticMaterial::HyperelasticMaterial(const std::vector<double> & prm)
     parameters.push_back(prm[i]);
 
   // initialize active stress
-  active_stress.zeros();
+  // active_stress.zeros(); 
+
+  active_stress = 0.0;
 }
 
 double HyperelasticMaterial::get_param(int i) const
@@ -51,7 +53,7 @@ void HyperelasticMaterial::calc_fd_stress(int iel, MaterialData * md, arma::mat 
 
 void HyperelasticMaterial::set_active_stress(int iel, arma::mat & S, double loadFactor)
 {
-  S(0,0) += active_stress(iel)*loadFactor;
+  S(0,0) += active_stress*loadFactor;
 }
 
 void HyperelasticMaterial::set_active_stress(int iel, MaterialData * md, arma::mat & S, double loadFactor)
@@ -60,8 +62,8 @@ void HyperelasticMaterial::set_active_stress(int iel, MaterialData * md, arma::m
   //arma::vec3 s = md->sheet();
   //f = f / arma::norm(f,2);
   //S += active_stress*loadFactor*f*f.t();
-  //cout << "Active stress: " << active_stress << endl;
-  S += md->get_J()*active_stress(iel)*loadFactor*(f*f.t()); //+ 0.4*s*s.t());
+  cout << "Active stress: " << active_stress << endl;
+  S += md->get_J()*active_stress*loadFactor*(f*f.t()); //+ 0.4*s*s.t());
   //S += active_stress*loadFactor*f*f.t();
 }
 
@@ -74,7 +76,7 @@ void HyperelasticMaterial::active_stress_elastensor(int iel, int nincs, arma::ve
       for(int k=0; k<ndim; k++)
         for(int l=0; l<ndim; l++)
         {
-          A(i,j,k,l) += -(delta_active_stress(iel)/nincs) * delta(i,j) * delta(k,l); // bug: delta_active_stress
+          A(i,j,k,l) += -(delta_active_stress/nincs) * delta(i,j) * delta(k,l); // bug: delta_active_stress
 
         }
 
@@ -94,7 +96,7 @@ void HyperelasticMaterial::active_stress_elastensor(int iel, int nincs, Material
     for(int j=0; j<ndim; j++)
       for(int k=0; k<ndim; k++)
         for(int l=0; l<ndim; l++){
-          A(i,j,k,l) += md->get_J()*(active_stress(iel)/nincs) * delta(i,j) * delta(k,l);
+          A(i,j,k,l) += md->get_J()*(active_stress/nincs) * delta(i,j) * delta(k,l);
           //A(i,j,k,l) += (active_stress/nincs) * delta(i,j) * delta(k,l);
          //cout << 1000. * delta(i,j) * delta(k,l) << endl;
 	//A(i,j,k,l) += 1000.*md->get_J()*(1./nincs) * delta(i,k) * delta(j,l);

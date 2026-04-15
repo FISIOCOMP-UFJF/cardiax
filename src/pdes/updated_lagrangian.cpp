@@ -1096,19 +1096,18 @@ void UpdatedLagrangian::pre_solve()
     // assemble_const();
     int nelem = msh.get_n_elements();
     cout << "YYY " << nelem << endl;
-    material->allocate_Ta(nelem);
 
     int iel = msh.get_n_elements();
     // arma::vec dta = arma::ones<arma::vec>(iel) * (material->get_Ta() / lc.get_nincs());
 
-    arma::vec dta = (material->get_Ta() / lc.get_nincs());
-
+    double dta = (material->get_Ta() / lc.get_nincs());
     material->set_dTa(dta); 
 
 
     // PLACEHOLDER:
     // arma::vec ta = arma::ones<arma::vec>(iel) * (material->get_Ta());
-    arma::vec ta = (material->get_Ta());
+    // ISSO NÃO FAZ SENTIDO, FAZ? ACHAR DINHEIRO NO BOLSO
+    double ta = (material->get_Ta());
     material->set_Ta(ta);
   
     //material->set_dTa(material->get_Ta() / lc.get_nincs());

@@ -33,17 +33,12 @@ public:
   //! Set the number of dimensions
   void set_ndim(int nd) { ndim = nd; }
 
-  void allocate_Ta(int nel){
-    active_stress.resize(nel);
-    cout << "xxxxx Size of active stress: " << active_stress.n_elem << endl;
-  }
-
   //! Set the active stress
-  void set_Ta(const arma::vec Ta) { active_stress = Ta; }
+  void set_Ta(const double Ta) { active_stress = Ta; }
 
-  arma::vec get_Ta() { return active_stress; }
+  double get_Ta() { return active_stress; }
 
-  void set_dTa(const arma::vec val) { delta_active_stress = val; /*std::cout << "set dTa active: " << delta_active_stress << std::endl;*/ }
+  void set_dTa(const double val) { delta_active_stress = val; }
 
   //! Computes PK2 stress using finite difference
   void calc_fd_stress(int iel, MaterialData *md, arma::mat &S);
@@ -137,10 +132,9 @@ protected:
   std::vector<double> parameters;
 
   //! Active stress
-  arma::vec active_stress;
+  double active_stress;
+  double delta_active_stress;
 
-  //! Active stress
-  arma::vec delta_active_stress;
 };
 
 #endif

@@ -206,7 +206,7 @@ void CardiacElectromechanic::Solve_System(double tt, double pressure, double pre
       << endl;
 
 
-  elas.set_pressure_Ta(30, pressure, 20, pressure * 0.2, ta, dta);
+  elas.set_pressure_Ta(30, pressure, 20, pressure * 0.2, arma::mean(ta), arma::mean(dta));
   elas.solve();
   elas.reset();
 

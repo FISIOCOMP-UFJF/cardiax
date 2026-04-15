@@ -92,7 +92,7 @@ public:
   //! Run simulation
   void run(const string & mshfile, const string & parfile);
 
-  void set_pressure_Ta(int mlv, double plv, int mrv, double prv, const arma::vec &ta, const arma::vec &dta);
+  void set_pressure_Ta(int mlv, double plv, int mrv, double prv, const double ta, const double dta);
 
   //! Compute total cavity volume
   double total_volume_cavity();

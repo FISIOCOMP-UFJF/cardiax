@@ -865,7 +865,7 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
     cout << "Hyperelastic material: " << mtype << endl;
 
     int nelem = msh.get_n_elements();
-    material->allocate_Ta(nelem);
+    // material->allocate_Ta(nelem);
 
     // setup mesh filename
     assert(file_exists(mshfile.c_str()));
@@ -950,7 +950,7 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
       cout << " Multiple materials were defined. ";
 
       int nelem = msh.get_n_elements();
-      material->allocate_Ta(nelem);
+      // material->allocate_Ta(nelem);
     }
     else
     {
@@ -977,7 +977,7 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
         cout << endl;
 
         int nelem = msh.get_n_elements();
-        material->allocate_Ta(nelem);
+        // material->allocate_Ta(nelem);
       }
     }
 
@@ -1685,7 +1685,7 @@ void NonlinearElasticity::reset()
   lc.reset();
 }
 
-void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double prv, const arma::vec &ta, const arma::vec &dta)
+void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double prv, const double ta, const double dta)
 {
   pressure_map[mlv] = plv;
   pressure_map[mrv] = prv;

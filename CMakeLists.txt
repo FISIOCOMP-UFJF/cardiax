@@ -24,6 +24,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
+
+# --- Create Interface library ---
+add_library(ext_libs INTERFACE)
+
 # --- PETSC (via pkg-config, conda-forge compatible) ---
 find_package(PkgConfig REQUIRED)
 
@@ -93,19 +97,57 @@ else()
   message(STATUS "Armadillo: ${ARMADILLO_LIBRARY}")
 endif()
 
-# # --- AmgX ---
-# find_library(AMGX_LIBRARY
-#   NAMES amgx
-#   HINTS $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
-#   PATH_SUFFIXES lib lib64)
-# find_path(AMGX_INCLUDE_DIR amgx_c.h
-#   HINTS $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
-#   PATH_SUFFIXES include)
-# if(NOT AMGX_LIBRARY)
-#   message(FATAL_ERROR "AmgX not found. Build and install it first.")
-# else()
-#   message(STATUS "AmgX: ${AMGX_LIBRARY}")
-# endif()
+# --- AmgX ---
+find_library(AMGX_LIBRARY
+  NAMES amgx
+  HINTS $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
+  PATH_SUFFIXES lib lib64)
+find_path(AMGX_INCLUDE_DIR amgx_c.h
+  HINTS $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
+  PATH_SUFFIXES include)
+
+# --- CUDA ---
+find_library(CUDART_LIB   cudart     HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUSPARSE_LIB cusparse   HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUSOLVER_LIB cusolver   HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(NVTX_LIB     nvToolsExt HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUBLAS_LIB   cublas     HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+set(CUDA_LIBRARIES ${CUDART_LIB} ${CUSPARSE_LIB} ${CUSOLVER_LIB} ${NVTX_LIB} ${CUBLAS_LIB})
+
+# All cuda libraries found?
+if(CUDART_LIB AND CUSPARSE_LIB AND CUSOLVER_LIB AND NVTX_LIB AND CUBLAS_LIB)
+    set(CUDA_FOUND_MANUAL TRUE)
+else()
+    set(CUDA_FOUND_MANUAL FALSE)
+endif()
+
+# --- Defining Solver ---
+if(AMGX_LIBRARY AND AMGX_INCLUDE_DIR)
+    # AMGx foi found. What about CUDA?
+    if(CUDA_FOUND_MANUAL)
+        message(STATUS "AmgX and CUDA found. Enabling AMGX_SOLVER.")
+        
+        # Define AMGX_SOLVER 
+        add_compile_definitions(AMGX_SOLVER)
+
+        target_include_directories(ext_libs INTERFACE 
+            ${AMGX_INCLUDE_DIR}
+        )
+        target_link_libraries(ext_libs INTERFACE 
+            ${AMGX_LIBRARY} 
+            ${CUDA_LIBRARIES}
+        )
+        
+    else()
+        message(WARNING "AMGx was found, but CUDA libraries are missing! AMGx requires CUDA to work properly.")
+        add_compile_definitions(PETSC_SOLVER)
+    endif()
+else()
+    # AMGx not founded. Fallback to PETSC_SOLVER.
+    message(STATUS "AmgX not found. Falling back to PETSC_SOLVER.")
+    
+    add_compile_definitions(PETSC_SOLVER)
+endif()
 
 # # Eigen
 # find_package(Eigen3 REQUIRED)
@@ -124,6 +166,7 @@ endif()
 # endif()
 
 
+
 # # autodiff (header-only, precisa do Eigen)
 # find_package(autodiff REQUIRED)
 # if(autodiff_FOUND)
@@ -139,17 +182,8 @@ endif()
 #   endif()
 # endif()
 
-# # --- CUDA ---
-# find_library(CUDART_LIB   cudart     HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-# find_library(CUSPARSE_LIB cusparse   HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-# find_library(CUSOLVER_LIB cusolver   HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-# find_library(NVTX_LIB     nvToolsExt HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-# find_library(CUBLAS_LIB   cublas     HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-# set(CUDA_LIBRARIES ${CUDART_LIB} ${CUSPARSE_LIB} ${CUSOLVER_LIB} ${NVTX_LIB} ${CUBLAS_LIB})
 
-# --- Interface library ---
-add_library(ext_libs INTERFACE)
-
+# --- Build Interface library --- 
 target_include_directories(ext_libs INTERFACE
     ${PROJECT_SOURCE_DIR}/src
     ${MPI_C_INCLUDE_DIRS}
@@ -157,7 +191,6 @@ target_include_directories(ext_libs INTERFACE
     ${HDF5_INCLUDE_DIRS}
     ${ARMADILLO_INCLUDE_DIR}
     $ENV{ARMADILLO_ROOT}/include
-    # ${AMGX_INCLUDE_DIR}
     # ${EIGEN3_INCLUDE_DIR}
 )
 
@@ -169,8 +202,6 @@ target_link_libraries(ext_libs INTERFACE
     ${BLAS_LIBRARIES}
     ${LAPACK_LIBRARIES}
     ${ScaLAPACK_LIBRARIES}
-    # ${AMGX_LIBRARY}
-    # ${CUDA_LIBRARIES}
 )
 
 target_compile_definitions(ext_libs INTERFACE

@@ -2,9 +2,6 @@
 #include "util/command_line_args.h"
 #include <chrono>
 
-#define PETSC_SOLVER
-// #define AMGX_SOLVER
-
 namespace petsc
 {
 

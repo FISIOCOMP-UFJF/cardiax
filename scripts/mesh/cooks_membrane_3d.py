@@ -5,33 +5,46 @@ Generates .geo, .msh, and .xml files matching the exact format
 of cook_hex0_k1.xml .. cook_hex5_k1.xml.
 
 XML structure produced:
-  <problem>
-    <elasticity type="THREE_DIM">
-      <parameters>
-        <material>NeoHookean</material>
-        <coefficients>mu, kappa, kappa</coefficients>
-        <ninc>N</ninc>
-      </parameters>
-      <neumann>
-        <node id="1" marker="10" t0="0.0" t1="6.25" t2="0.0" />
-      </neumann>
-      <prescribed_displacement>
-        <!-- left face nodes: directions 0 and 1 fixed (clamped) -->
-        <!-- ALL nodes: direction 2 fixed (plane strain in Z)     -->
-      </prescribed_displacement>
-    </elasticity>
-    <mesh celltype="hexahedron" dim="3">
-      <nodes size="N"> ... </nodes>
-      <elements size="M"> ... </elements>
-      <element_data type="fiber_isotropic"> </element_data>
-      <boundary celltype="quadrilateral" dim="2">
-        <!-- right face quads only, marker=10 -->
-      </boundary>
-    </mesh>
-  </problem>
+  <elasticity type="THREE_DIM">
+    <parameters>
+      <material>NeoHookean</material>
+      <coefficients>mu, kappa, kappa</coefficients>
+      <ninc>N</ninc>
+    </parameters>
+    <neumann>
+      <node id="1" marker="10" t0="0.0" t1="6.25" t2="0.0" />
+    </neumann>
+    <prescribed_displacement>
+      <!-- left face nodes: directions 0 and 1 fixed (clamped) -->
+      <!-- ALL nodes: direction 2 fixed (plane strain in Z)     -->
+    </prescribed_displacement>
+  </elasticity>
+  <mesh celltype="hexahedron" dim="3">
+    <nodes size="N"> ... </nodes>
+    <elements size="M"> ... </elements>
+    <boundary celltype="quadrilateral" dim="2">
+      <!-- right face quads only, marker=10 -->
+    </boundary>
+  </mesh>
+
+Hex node ordering convention (matching cook_hex*_k1.xml):
+  Nodes are stored in alternating z pairs within each face:
+    v0 = (x0,y0, z=h)   v1 = (x1,y1, z=h)
+    v2 = (x1,y1, z=0)   v3 = (x0,y0, z=0)   <- bottom face (z=h top, z=0 bottom interleaved)
+    v4 = (x2,y2, z=h)   v5 = (x3,y3, z=h)
+    v6 = (x3,y3, z=0)   v7 = (x2,y2, z=0)   <- top face
+
+  In practice: GMSH extrudes from z=0 upward, so the z=0 face is the
+  "front" surface and z=h is the "back". The reference files store nodes
+  column-by-column with z=h BEFORE z=0 for each (x,y) pair.
+
+  The reorder_hex() function remaps GMSH's default hex connectivity
+  [z=0 bottom: 0,1,2,3 | z=h top: 4,5,6,7]
+  to the reference convention
+  [v0,v1,v2,v3,v4,v5,v6,v7] = [top1, top2, bot2, bot1, top3, top4, bot4, bot3]
 
 Geometry:
-  Trapezoid extruded by h=1 in Z:
+  Trapezoid extruded by h in Z:
     A = (0,  0)   left-bottom  -> clamped (directions 0 and 1)
     B = (48, 44)  right-bottom
     C = (48, 60)  right-top    -> shear load t1=6.25
@@ -55,12 +68,12 @@ Refinement guide (matching cook_hex0..hex5):
   --n 18  -> cook_hex4
   --n 24  -> cook_hex5
 
-Examples:  
+Examples:
     python cooks_membrane_3d.py --n 3   # matches cook_hex0 (27 elements)
     python cooks_membrane_3d.py --n 6   # matches cook_hex1
     python cooks_membrane_3d.py --n 9 --ninc 20
     python cooks_membrane_3d.py --n 4 --out_dir ./results
-  
+
 """
 
 import argparse
@@ -275,6 +288,56 @@ def _parse_msh4(content):
     nodes = {}
     hexes, quads = [], []
 
+    # ------------------------------------------------------------------
+    # Build entity_tag -> physical_marker map from $Entities block.
+    # In MSH4, surfaces (dim=2) and volumes (dim=3) list their physical
+    # group tags in the header line. We need this to map the entity tag
+    # stored per element block back to the user-defined marker (10, 20...).
+    # ------------------------------------------------------------------
+    entity_to_marker = {}   # (dim, entity_tag) -> physical_marker
+
+    ent_block = _block(content, "Entities")
+    if ent_block:
+        ent_lines = ent_block.splitlines()
+        idx = 0
+        counts = ent_lines[idx].split(); idx += 1
+        n_pts, n_crv, n_sur, n_vol = int(counts[0]), int(counts[1]), int(counts[2]), int(counts[3])
+
+        # Points (dim=0): tag, x,y,z, nPhysicals, [physicals]
+        for _ in range(n_pts):
+            p = ent_lines[idx].split(); idx += 1
+            tag = int(p[0])
+            n_phys = int(p[4])
+            if n_phys > 0:
+                entity_to_marker[(0, tag)] = int(p[5])
+
+        # Curves (dim=1): tag, xmin,ymin,zmin,xmax,ymax,zmax, nPhysicals, [physicals], nBounding, [bounding]
+        for _ in range(n_crv):
+            p = ent_lines[idx].split(); idx += 1
+            tag = int(p[0])
+            n_phys = int(p[7])
+            if n_phys > 0:
+                entity_to_marker[(1, tag)] = int(p[8])
+
+        # Surfaces (dim=2): tag, xmin..zmax, nPhysicals, [physicals], nBounding, [bounding]
+        for _ in range(n_sur):
+            p = ent_lines[idx].split(); idx += 1
+            tag = int(p[0])
+            n_phys = int(p[7])
+            if n_phys > 0:
+                entity_to_marker[(2, tag)] = int(p[8])
+
+        # Volumes (dim=3): tag, xmin..zmax, nPhysicals, [physicals], nBounding, [bounding]
+        for _ in range(n_vol):
+            p = ent_lines[idx].split(); idx += 1
+            tag = int(p[0])
+            n_phys = int(p[7])
+            if n_phys > 0:
+                entity_to_marker[(3, tag)] = int(p[8])
+
+    # ------------------------------------------------------------------
+    # Nodes
+    # ------------------------------------------------------------------
     node_lines = _block(content, "Nodes").splitlines()
     idx = 0
     nb  = int(node_lines[idx].split()[0]); idx += 1
@@ -285,27 +348,75 @@ def _parse_msh4(content):
             p = node_lines[idx].split(); idx += 1
             nodes[nid] = (float(p[0]), float(p[1]), float(p[2]))
 
+    # ------------------------------------------------------------------
+    # Elements — resolve entity tag to physical marker
+    # ------------------------------------------------------------------
     elem_lines = _block(content, "Elements").splitlines()
     idx = 0
     nb  = int(elem_lines[idx].split()[0]); idx += 1
     eid = 0
     for _ in range(nb):
         hdr    = elem_lines[idx].split(); idx += 1
+        dim    = int(hdr[0])
         entity = int(hdr[1])
         etype  = int(hdr[2])
         n_el   = int(hdr[3])
+        marker = entity_to_marker.get((dim, entity), 0)
         for _ in range(n_el):
             p    = elem_lines[idx].split(); idx += 1
             conn = [int(x)-1 for x in p[1:]]
-            if   etype == 5: hexes.append((eid, conn, entity))
-            elif etype == 3: quads.append((eid, conn, entity))
+            if   etype == 5: hexes.append((eid, conn, marker))
+            elif etype == 3: quads.append((eid, conn, marker))
             eid += 1
 
     return nodes, hexes, quads
 
 
 # ---------------------------------------------------------------------------
-# 4. Write XML — exactly matching cook_hex*_k1.xml format
+# 4. Reorder hex nodes to match cook_hex*_k1.xml convention
+# ---------------------------------------------------------------------------
+# GMSH hex connectivity (after extrude from z=0 upward):
+#   bottom face (z=0): [0, 1, 2, 3]
+#   top    face (z=h): [4, 5, 6, 7]
+#
+# Reference cook_hex*_k1.xml convention (column-major, alternating z):
+#   Each (x,y) column stores z=h node BEFORE z=0 node.
+#   For a hex with bottom face nodes b0,b1,b2,b3 (z=0)
+#                  and top  face nodes t0,t1,t2,t3 (z=h):
+#
+#   v0=t0  v1=t1  v2=b1  v3=b0   <- first  quad column (z=h, z=h, z=0, z=0)
+#   v4=t3  v5=t2  v6=b2  v7=b3   <- second quad column
+#
+# This permutation maps GMSH [b0,b1,b2,b3,t0,t1,t2,t3]
+#                      to ref [t0,t1,b1,b0,t3,t2,b2,b3]
+#
+# Permutation index: ref[i] = gmsh[perm[i]]
+GMSH_TO_REF = [4, 5, 1, 0, 7, 6, 2, 3]
+
+
+def reorder_hex(conn):
+    """Reorder GMSH hex node list to cook_hex*_k1.xml convention."""
+    return [conn[i] for i in GMSH_TO_REF]
+
+
+def reorder_quad(conn, nodes):
+    """
+    Reorder boundary quad nodes to match cook_hex*_k1.xml convention.
+    The reference boundary quads on the shear face are ordered so that
+    the z=0 nodes come first (v0,v1) then z=h nodes (v2,v3), matching
+    the pattern seen in cook_hex1_k1.xml boundary elements.
+    """
+    # Split into z=0 and z=h nodes
+    z0 = [v for v in conn if abs(nodes[v][2]) < 1e-10]
+    zh = [v for v in conn if abs(nodes[v][2]) >= 1e-10]
+    # Reference order: v0,v1 are z=0; v2,v3 are z=h (bottom to top in Y)
+    z0_sorted = sorted(z0, key=lambda v: nodes[v][1])
+    zh_sorted = sorted(zh, key=lambda v: nodes[v][1], reverse=True)
+    return z0_sorted + zh_sorted
+
+
+# ---------------------------------------------------------------------------
+# 5. Write XML — exactly matching cook_hex*_k1.xml format
 # ---------------------------------------------------------------------------
 def write_xml(xml_path, nodes, hexes, quads,
               mu, kappa, t1, ninc,
@@ -334,7 +445,6 @@ def write_xml(xml_path, nodes, hexes, quads,
     lines.append("      Cook's problem")
     lines.append("-->")
     lines.append('<?xml version="1.0"?>')
-    lines.append("<problem>")
 
     # --- elasticity block ---
     lines.append('<elasticity type="THREE_DIM">')
@@ -351,15 +461,14 @@ def write_xml(xml_path, nodes, hexes, quads,
     lines.append('  </neumann>')
     lines.append('')
 
-    # prescribed_displacement
+    # prescribed_displacement — match cook_hex*_k1.xml ordering:
+    # first all clamped nodes dir 0 and dir 1, then all nodes dir 2
     lines.append('  <prescribed_displacement>')
 
-    # Left face clamped: fix directions 0 (X) and 1 (Y)
     for nid in sorted(clamped_nodes):
         lines.append(f'    <node id="{nid}" direction="0" value="0.000000" />')
         lines.append(f'    <node id="{nid}" direction="1" value="0.000000" />')
 
-    # All nodes: fix direction 2 (Z) — plane strain (thin slab)
     for nid in sorted(all_ids):
         lines.append(f'    <node id="{nid}" direction="2" value="0.000000" />')
 
@@ -376,27 +485,23 @@ def write_xml(xml_path, nodes, hexes, quads,
     lines.append('  </nodes>')
     lines.append('')
 
+    # Elements — apply hex reordering to match cook_hex*_k1.xml convention
     lines.append(f'  <elements size="{n_hexes}">')
     for i, (_, conn, _marker) in enumerate(hexes):
-        verts = " ".join(f'v{j}="{v}"' for j, v in enumerate(conn))
+        reordered = reorder_hex(conn)
+        verts = " ".join(f'v{j}="{v}"' for j, v in enumerate(reordered))
         lines.append(f'    <element id="{i}" {verts} />')
     lines.append('  </elements>')
     lines.append('')
 
-    lines.append('  <element_data type="fiber_isotropic">')
-    lines.append('  </element_data>')
-    lines.append('')
-
-    # boundary: right face quads only (shear_marker), matching reference
+    # Boundary — shear face quads with marker=10, reordered to match reference
     lines.append('  <boundary celltype="quadrilateral" dim="2">')
-    bnd_id = 0
-    for conn in shear_quads:
-        verts = " ".join(f'v{j}="{v}"' for j, v in enumerate(conn))
+    for bnd_id, conn in enumerate(shear_quads):
+        reordered = reorder_quad(conn, nodes)
+        verts = " ".join(f'v{j}="{v}"' for j, v in enumerate(reordered))
         lines.append(f'    <element id="{bnd_id}" marker="{shear_marker}" {verts} />')
-        bnd_id += 1
     lines.append('  </boundary>')
     lines.append('</mesh>')
-    lines.append('</problem>')
 
     with open(xml_path, "w") as f:
         f.write("\n".join(lines) + "\n")

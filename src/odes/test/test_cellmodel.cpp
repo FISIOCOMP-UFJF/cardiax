@@ -3,16 +3,16 @@
 #include <string>
 #include <cstdlib>
 #include <fstream>
-#include "cells.hpp"
-#include "cellmodel.hpp"
-#include "ode_solver.hpp"
-#include "fitz_hugh_nagumo.hpp"
-#include "ten_tusscher2006.hpp"
-#include "ten_tusscher_ta.hpp"
-#include "rice_ten_tusscher.hpp"
-#include "luo_rudy.hpp"
-#include "mv.hpp"
-#include "torord_land.hpp"
+#include "../cells.hpp"
+#include "../cellmodel.hpp"
+#include "../ode_solver.hpp"
+#include "../fitz_hugh_nagumo.hpp"
+#include "../ten_tusscher2006.hpp"
+#include "../ten_tusscher_ta.hpp"
+#include "../rice_ten_tusscher.hpp"
+#include "../luo_rudy.hpp"
+#include "../mv.hpp"
+#include "../torord_land.hpp"
 #include "util/command_line_args.h"
 
 

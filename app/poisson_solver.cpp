@@ -12,7 +12,7 @@ void usage()
   std::cout << std::endl;
   std::cout << " Usage: poisson <options>\n";
   std::cout << " Options: " << std::endl;
-  std::cout << "    -m    \t mesh file" << std::endl;
+  std::cout << "    -f    \t mesh file" << std::endl;
   std::cout << "    -p    \t parameter file" << std::endl;
   std::cout << "    -o    \t output file name" << std::endl;
   std::cout << "    -text \t write to text (instead of VTK)" << std::endl;
@@ -61,7 +61,7 @@ int main(int argc, const char* argv[])
   string filename, parfile, output, problem;
 
   problem     = CommandLineArgs::read("-type","poisson");
-  filename    = CommandLineArgs::read("-m","null");
+  filename    = CommandLineArgs::read("-f","null");
   parfile     = CommandLineArgs::read("-p","null");
   output      = CommandLineArgs::read("-o","output");
 

@@ -602,10 +602,18 @@ std::pair<PetscInt, PetscReal> LinearSolver::solve(petsc::Matrix &A,
                                                   const double tol)
 {
     // Specify the desired AMGX configuration name
-    const std::string amgxConfigName = CommandLineArgs::read("-amgx", "./configs/AMG_CLASSICAL_PMIS.json");
+    const std::string amgxConfigName = CommandLineArgs::read("-amgx", "./configs/CG_DILU.json");
 
     int its;
     double rnorm;
+
+    const std::string fallbackConfig = 
+      "{\"config_version\": 2, \"solver\": {"
+      "\"preconditioner\": {\"scope\": \"precond\", \"solver\": \"MULTICOLOR_DILU\"},"
+      "\"store_res_history\": 1, \"solver\": \"CG\", \"print_solve_stats\": 0,"
+      "\"obtain_timings\": 1, \"max_iters\": 2000, \"monitor_residual\": 1,"
+      "\"scope\": \"main\", \"tolerance\": 1e-05, \"norm\": \"L2\"}}";
+
 
     // Initialize AMGX
     AMGX_SAFE_CALL(AMGX_initialize());
@@ -615,13 +623,19 @@ std::pair<PetscInt, PetscReal> LinearSolver::solve(petsc::Matrix &A,
     AMGX_resources_handle rsrc;
     AMGX_solver_handle amgx_solver;
 
-    //const char *amgxConfig = getConfig(amgxConfigName);
+    const std::string amgxConfigPath = CommandLineArgs::read("-amgx", "./configs/CG_DILU.json");
+    
+    std::ifstream fileCheck(amgxConfigPath);
+    if (fileCheck.good()) {
+        fileCheck.close();
+        std::cout << "[AMGX] Using config file: " << amgxConfigPath << std::endl;
+        AMGX_SAFE_CALL(AMGX_config_create_from_file(&config, amgxConfigPath.c_str()));
+    } else {
+        std::cout << "[AMGX] AVISO: file '" << amgxConfigPath << "' not founded." << std::endl;
+        std::cout << "[AMGX] Using fallback configuration (CG + MULTICOLOR_DILU)." << std::endl;
+        AMGX_SAFE_CALL(AMGX_config_create(&config, fallbackConfig.c_str()));
+    }
 
-    std::string config_path_str = amgxConfigName;
-    const char* config_path = config_path_str.c_str();
-
-    //AMGX_SAFE_CALL(AMGX_config_create(&config, amgxConfig));
-    AMGX_SAFE_CALL(AMGX_config_create_from_file(&config, config_path))
     AMGX_SAFE_CALL(AMGX_resources_create_simple(&rsrc, config));
 
     // Create and configure AMGX matrix

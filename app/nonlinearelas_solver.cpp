@@ -13,7 +13,7 @@ using namespace std;
 void usage()
 {
   cout << "\n Usage: nonlinear_elasticity_solver [OPTIONS]" << endl << endl;
-  cout << "    -m   \t mesh file" << endl;
+  cout << "    -f   \t mesh file" << endl;
   cout << "    -p   \t parameter file" << endl;
   cout << "    -o   \t output directory" << endl;
   cout << "    -s   \t solution method: ul or tl" << endl;
@@ -32,7 +32,7 @@ int main(int argc, const char* argv[])
 
   CommandLineArgs::init(argc, argv);
   outdir  = CommandLineArgs::read("-o","output/");
-  mshfile = CommandLineArgs::read("-m","null");
+  mshfile = CommandLineArgs::read("-f","null");
   parfile = CommandLineArgs::read("-p","null");
   smethod = CommandLineArgs::read("-s","tl");
 

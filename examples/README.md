@@ -41,15 +41,15 @@ cardiac tissue.
 
 USAGE:
 ```
-  ../build/app/nonlinearelas -m prob1_100.xml -s ul -amgx ../configs/CG_DILU.json
-  ../build/app/nonlinearelas -m prob2_12x27x2_k300.xml -s ul -amgx ../configs/CG_DILU.json
-  ../build/app/nonlinearelas -m prob3_24x54x6_k1000.xml -s ul -amgx ../configs/CG_DILU.json
+  ../build/app/nonlinearelas -f prob1_100.xml -s ul -amgx ../configs/CG_DILU.json
+  ../build/app/nonlinearelas -f prob2_12x27x2_k300.xml -s ul -amgx ../configs/CG_DILU.json
+  ../build/app/nonlinearelas -f prob3_24x54x6_k1000.xml -s ul -amgx ../configs/CG_DILU.json
 ```
 
 FLAGS:
 
 ```
-  -m   : Specifies the mesh/configuration file.
+  -f   : Specifies the mesh/configuration file.
   -s   : Specifies the formulation strategy (e.g., 'ul' for Updated Lagrangian).
   -amgx: Specifies the path to the AMGX configuration JSON file (linear solver settings).
 ```

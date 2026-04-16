@@ -11,7 +11,7 @@ void usage()
   std::cout << std::endl;
   std::cout << " Usage: poisson <options>\n";
   std::cout << " Options: " << std::endl;
-  std::cout << "    -m    \t mesh file" << std::endl;
+  std::cout << "    -f    \t mesh file" << std::endl;
   std::cout << "    -p    \t parameter file" << std::endl;
   std::cout << "    -o    \t output file name" << std::endl;
   std::cout << std::endl;
@@ -25,7 +25,7 @@ int main(int argc, const char* argv[])
   bool output_text;
   string filename, output;
 
-  filename    = CommandLineArgs::read("-m","null");
+  filename    = CommandLineArgs::read("-f","null");
   output      = CommandLineArgs::read("-o","output");
   output_text = CommandLineArgs::read("-text",0);
 

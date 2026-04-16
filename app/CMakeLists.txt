@@ -9,6 +9,7 @@ set(PROGRAMS
     monodomain
     bidomain
     electromech
+    coupled_electromech
 )
 
 # Build them all

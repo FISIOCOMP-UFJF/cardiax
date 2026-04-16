@@ -81,8 +81,10 @@ USAGE:
 
 ## 4. COUPLED ELECTROMECH
 
-* WORK IN PROGRESS *
+```
 
+../build/app/coupled_electromech -f ./examples/monodomain_ToRORdLand.xml -c ToRORdLand -m ExplicitEuler -ep mono -dt 0.001 -dt_mech 0.01 -t 500 -amgx ../configs/CG_DILU.json
+```
 
 --------------------------------------------------------------------------------
 5. PETSC TIPS

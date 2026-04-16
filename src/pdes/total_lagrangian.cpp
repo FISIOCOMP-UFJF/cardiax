@@ -144,8 +144,8 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
       Ta.zeros();
       for(int j=0; j<nnode; j++)
       {	
-        // int node = ( dnums[j] - 2) / 3 ; // global node number
-        int node = dnums[j];
+        int node = ( dnums[j] - 2) / 3 ; // global node number
+        // int node = dnums[j];
 
 //cout << "j: " << j << " node: " << node <<endl;
 
@@ -159,7 +159,7 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
           for(int jj=0; jj<3; jj++)
 	          Ta(ii,jj) += shape(j) * T(ii,jj); //Ta(1,1) += shape(j) * is(k);
       }
-      cout << Ta << endl;
+      // cout << Ta << endl;
 
       // Total Lagrangian formulation, thus
       // since Ta is Cauchy stress, we need to convert to PK2

@@ -49,9 +49,9 @@ public:
   void map_to_global(MaterialData *md, arma::mat &S);
 
   //! Increment active stress
-  void set_active_stress(int iel, arma::mat &S, double loadFactor);
+  void set_active_stress(arma::mat &S, double loadFactor);
 
-  void set_active_stress(int iel, MaterialData *md, arma::mat &S, double loadFactor);
+  void set_active_stress(MaterialData *md, arma::mat &S, double loadFactor);
 
   //! Map local elastensor to global
   void map_elas_to_global(MaterialData *md, Tensor4 &Am, Tensor4 &As);
@@ -61,14 +61,14 @@ public:
   void map_to_local(MaterialData *md, arma::mat &S);
 
   //! Computes PK2 stress derivative (4th order tensor) using finite difference
-  void calc_fd_elastensor(int iel, MaterialData *md, arma::mat &D);
+  void calc_fd_elastensor(MaterialData *md, arma::mat &D);
 
   //! Computes PK2 stress derivative (4th order tensor) using finite difference
-  void calc_fd_elastensor(int iel, MaterialData *md, Tensor4 &A);
+  void calc_fd_elastensor(MaterialData *md, Tensor4 &A);
 
   void calc_fd_active_elastensor(MaterialData *md, Tensor4 &A);
 
-  void calc_fd_elastensorNovo(MaterialData *md, Tensor4 &A);
+  void calc_fd_elastensorNovo(MaterialData *md, Tensor4 &A); // LAURA! Tirar!
 
   //! PENALTY TERM: Computes PK2 stress using finite difference
   void calc_fd_stress_penalty(MaterialData *md, arma::mat &S);
@@ -95,9 +95,9 @@ public:
   //! Volumetric penalty term
   double penalty_term(MaterialData *md, const arma::mat &) const;
 
-  void active_stress_elastensor(int iel, int nincs, arma::vec3 fib, Tensor4 &A) const;
+  void active_stress_elastensor(int nincs, arma::vec3 fib, Tensor4 &A) const;
 
-  void active_stress_elastensor(int iel, int nincs, MaterialData *md, Tensor4 &A);
+  void active_stress_elastensor(int nincs, MaterialData *md, Tensor4 &A);
 
   // Interface -----------------------------------------------------------------
 

@@ -303,13 +303,13 @@ void UpdatedLagrangian::calc_elmat_const(const int iel, const MxFE *fe,
         im->map_elas_to_global(md, elastensorM, elastensorM_global);
 
         if (md->get_marker() == 0)
-          im->active_stress_elastensor(iel, lc.get_nincs(), md->fiber(), elastensorM_global); //Deu pau aqui
+          im->active_stress_elastensor(lc.get_nincs(), md->fiber(), elastensorM_global); //Deu pau aqui
 
         im->push_forward(F, elastensorM_global, elastensor);
       }
       else
       {
-        im->calc_fd_elastensor(iel, md, elastensorM);
+        im->calc_fd_elastensor(md, elastensorM);
         // im->active_stress_elastensor(lc.get_nincs(), md, elastensorM);
         im->push_forward(F, elastensorM, elastensor);
       }
@@ -406,7 +406,7 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
       {
         im->piola2_stress(md, S);
         if (md->get_marker() == 0)
-          im->set_active_stress(iel, S, lc.load());
+          im->set_active_stress(S, lc.load());
         im->map_to_global(md, S);
         im->push_forward(*F, S, sigma);
       }
@@ -429,12 +429,12 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
         im->deviatoric_elastensor(md, elastensorM);
         im->map_elas_to_global(md, elastensorM, elastensorM_global);
         if (md->get_marker() == 0)
-          im->active_stress_elastensor(iel, lc.get_nincs(), md->fiber(), elastensorM_global);
+          im->active_stress_elastensor(lc.get_nincs(), md->fiber(), elastensorM_global);
         im->push_forward(*F, elastensorM_global, elastensor);
       }
       else
       {
-        im->calc_fd_elastensor(iel, md, elastensorM);
+        im->calc_fd_elastensor(md, elastensorM);
         // im->active_stress_elastensor(lc.get_nincs(), md, elastensorM);
         im->push_forward(*F, elastensorM, elastensor);
       }
@@ -640,7 +640,7 @@ void UpdatedLagrangian::elem_resid(const int iel, const MxFE *fe,
       {
         im->piola2_stress(md, S);
         if (md->get_marker() == 0)
-          im->set_active_stress(iel, S, lc.load());
+          im->set_active_stress(S, lc.load());
         im->map_to_global(md, S);
         im->push_forward(*F, S, sigma);
       }
@@ -887,7 +887,7 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
       {
         im->piola2_stress(md, S);
         if (md->get_marker() == 0){
-          im->set_active_stress(iel, S, lc.load());
+          im->set_active_stress(S, lc.load());
         }
         im->map_to_global(md, S);
         im->push_forward(*F, S, sigma);
@@ -918,12 +918,12 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
         im->deviatoric_elastensor(md, elastensorM);
         im->map_elas_to_global(md, elastensorM, elastensorM_global);
         if (md->get_marker() == 0)
-          im->active_stress_elastensor(iel, lc.get_nincs(), md->fiber(), elastensorM_global);
+          im->active_stress_elastensor(lc.get_nincs(), md->fiber(), elastensorM_global);
         im->push_forward(*F, elastensorM_global, elastensor);
       }
       else
       {
-        im->calc_fd_elastensor(iel, md, elastensorM);
+        im->calc_fd_elastensor(md, elastensorM);
         // cout << "C: " << elastensorM(0,1,2,0) << endl;
         // im->active_stress_elastensor(lc.get_nincs(), md, elastensorM);
         // cout << "Ca: " << elastensorM(0,1,2,0) << endl << endl;

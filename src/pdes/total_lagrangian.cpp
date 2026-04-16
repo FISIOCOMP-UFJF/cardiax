@@ -232,7 +232,7 @@ void TotalLagrangian::calc_elmat_const (const int iel, const MxFE * fe,
 
     // compute elasticity tensor using FD
     MaterialData * md = new MaterialData(msh.get_element(iel), *F);
-    material->calc_fd_elastensor(iel, md, D);
+    material->calc_fd_elastensor(md, D);
     
     // assemble element matrix
     elmat += (Bl.t() * D * Bl) * detJxW;
@@ -302,7 +302,7 @@ void TotalLagrangian::calc_elmatvec (const int iel, const MxFE * fe,
     // Compute stress and stress derivatives using FD
     MaterialData * md = new MaterialData(msh.get_element(iel), *F);
     material->calc_fd_stress(iel, md, S);
-    material->calc_fd_elastensor(iel, md, D);
+    material->calc_fd_elastensor(md, D);
 
     // stress
     voigtvec(ndim, S, Sv); 
@@ -365,7 +365,7 @@ void TotalLagrangian::elem_stiff(const int iel, const MxFE * fe,
     // Compute stress and stress derivatives using FD
     MaterialData * md = new MaterialData(msh.get_element(iel), *F);
     material->calc_fd_stress(iel, md, S);
-    material->calc_fd_elastensor(iel, md, D);
+    material->calc_fd_elastensor(md, D);
     Sb = arma::kron(I, S.submat(0, 0, ndim-1, ndim-1));
 
     // computations in matricial form

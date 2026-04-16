@@ -14,8 +14,6 @@ HyperelasticMaterial::HyperelasticMaterial(const std::vector<double> & prm)
     parameters.push_back(prm[i]);
 
   // initialize active stress
-  // active_stress.zeros(); 
-
   active_stress = 0.0;
 }
 
@@ -47,27 +45,26 @@ void HyperelasticMaterial::calc_fd_stress(int iel, MaterialData * md, arma::mat 
     for(int j=0; j<=i; j++)
       S(j,i) = S(i,j);
 
-  set_active_stress(iel, md,S,1);
+  set_active_stress(md,S,1);
 }
 
 
-void HyperelasticMaterial::set_active_stress(int iel, arma::mat & S, double loadFactor)
+void HyperelasticMaterial::set_active_stress(arma::mat & S, double loadFactor)
 {
   S(0,0) += active_stress*loadFactor;
 }
 
-void HyperelasticMaterial::set_active_stress(int iel, MaterialData * md, arma::mat & S, double loadFactor)
+void HyperelasticMaterial::set_active_stress(MaterialData * md, arma::mat & S, double loadFactor)
 {
   arma::vec3 f = md->fiber();
   //arma::vec3 s = md->sheet();
   //f = f / arma::norm(f,2);
   //S += active_stress*loadFactor*f*f.t();
-  cout << "Active stress: " << active_stress << endl;
   S += md->get_J()*active_stress*loadFactor*(f*f.t()); //+ 0.4*s*s.t());
   //S += active_stress*loadFactor*f*f.t();
 }
 
-void HyperelasticMaterial::active_stress_elastensor(int iel, int nincs, arma::vec3 fib,
+void HyperelasticMaterial::active_stress_elastensor(int nincs, arma::vec3 fib,
                                                       Tensor4 & A) const
 {
   arma::mat delta = fib*fib.t();
@@ -76,13 +73,13 @@ void HyperelasticMaterial::active_stress_elastensor(int iel, int nincs, arma::ve
       for(int k=0; k<ndim; k++)
         for(int l=0; l<ndim; l++)
         {
-          A(i,j,k,l) += -(delta_active_stress/nincs) * delta(i,j) * delta(k,l); // bug: delta_active_stress
+          A(i,j,k,l) += -(delta_active_stress/nincs) * delta(i,j) * delta(k,l); 
 
         }
 
 }
 
-void HyperelasticMaterial::active_stress_elastensor(int iel, int nincs, MaterialData * md,
+void HyperelasticMaterial::active_stress_elastensor(int nincs, MaterialData * md,
                                                     Tensor4 & A)
 {
   arma::vec3 f = md->fiber();
@@ -178,7 +175,7 @@ void HyperelasticMaterial::calc_fd_active_elastensor(MaterialData * md, Tensor4 
           A(i,j,l,k) = A(i,j,k,l);
 }
 
-void HyperelasticMaterial::calc_fd_elastensor(int iel, MaterialData * md, Tensor4 & A)
+void HyperelasticMaterial::calc_fd_elastensor(MaterialData * md, Tensor4 & A)
 {
   const double eps  = 1.0e-4;
   const double eps2 = eps*eps;
@@ -234,15 +231,15 @@ void HyperelasticMaterial::calc_fd_elastensor(int iel, MaterialData * md, Tensor
         for(int l=0; l<=k; l++) 
           A(i,j,l,k) = A(i,j,k,l);
 
-  active_stress_elastensor(iel, 1,md,A);
+  active_stress_elastensor(1,md,A);
 
 }
 
-void HyperelasticMaterial::calc_fd_elastensor(int iel, MaterialData * md, arma::mat & D)
+void HyperelasticMaterial::calc_fd_elastensor(MaterialData * md, arma::mat & D)
 {
   // first compute using finite difference
   Tensor4 A;
-  calc_fd_elastensor(iel, md, A);
+  calc_fd_elastensor(md, A);
   //active_stress_elastensor(1,md,A);
 
   // then transform 4th order tensor to matrix (Voigt) form

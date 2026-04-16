@@ -1,0 +1,170 @@
+<!--
+      Nonlinear elasticity test problem
+      Cook's problem
+-->
+<?xml version="1.0"?>
+<elasticity type="THREE_DIM">
+  <parameters> 
+    <material>NeoHookean</material>
+    <coefficients>80.1938, 400942.0, 400942.0</coefficients>
+    <ninc>10</ninc>
+  </parameters>
+
+  <neumann>
+    <node id="1" marker="10" t0="0.0" t1="6.25" t2="0.0" />
+  </neumann>
+
+  <prescribed_displacement>
+    <node id="0" direction="0" value="0.000000" />
+    <node id="0" direction="1" value="0.000000" />
+    <node id="3" direction="0" value="0.000000" />
+    <node id="3" direction="1" value="0.000000" />
+    <node id="4" direction="0" value="0.000000" />
+    <node id="4" direction="1" value="0.000000" />
+    <node id="7" direction="0" value="0.000000" />
+    <node id="7" direction="1" value="0.000000" />
+    <node id="17" direction="0" value="0.000000" />
+    <node id="17" direction="1" value="0.000000" />
+    <node id="18" direction="0" value="0.000000" />
+    <node id="18" direction="1" value="0.000000" />
+    <node id="19" direction="0" value="0.000000" />
+    <node id="19" direction="1" value="0.000000" />
+    <node id="29" direction="0" value="0.000000" />
+    <node id="29" direction="1" value="0.000000" />
+    <node id="30" direction="0" value="0.000000" />
+    <node id="30" direction="1" value="0.000000" />
+    <node id="31" direction="0" value="0.000000" />
+    <node id="31" direction="1" value="0.000000" />
+    <node id="0" direction="2" value="0.000000" />
+    <node id="1" direction="2" value="0.000000" />
+    <node id="2" direction="2" value="0.000000" />
+    <node id="3" direction="2" value="0.000000" />
+    <node id="4" direction="2" value="0.000000" />
+    <node id="5" direction="2" value="0.000000" />
+    <node id="6" direction="2" value="0.000000" />
+    <node id="7" direction="2" value="0.000000" />
+    <node id="8" direction="2" value="0.000000" />
+    <node id="9" direction="2" value="0.000000" />
+    <node id="10" direction="2" value="0.000000" />
+    <node id="11" direction="2" value="0.000000" />
+    <node id="12" direction="2" value="0.000000" />
+    <node id="13" direction="2" value="0.000000" />
+    <node id="14" direction="2" value="0.000000" />
+    <node id="15" direction="2" value="0.000000" />
+    <node id="16" direction="2" value="0.000000" />
+    <node id="17" direction="2" value="0.000000" />
+    <node id="18" direction="2" value="0.000000" />
+    <node id="19" direction="2" value="0.000000" />
+    <node id="20" direction="2" value="0.000000" />
+    <node id="21" direction="2" value="0.000000" />
+    <node id="22" direction="2" value="0.000000" />
+    <node id="23" direction="2" value="0.000000" />
+    <node id="24" direction="2" value="0.000000" />
+    <node id="25" direction="2" value="0.000000" />
+    <node id="26" direction="2" value="0.000000" />
+    <node id="27" direction="2" value="0.000000" />
+    <node id="28" direction="2" value="0.000000" />
+    <node id="29" direction="2" value="0.000000" />
+    <node id="30" direction="2" value="0.000000" />
+    <node id="31" direction="2" value="0.000000" />
+    <node id="32" direction="2" value="0.000000" />
+    <node id="33" direction="2" value="0.000000" />
+    <node id="34" direction="2" value="0.000000" />
+    <node id="35" direction="2" value="0.000000" />
+    <node id="36" direction="2" value="0.000000" />
+    <node id="37" direction="2" value="0.000000" />
+    <node id="38" direction="2" value="0.000000" />
+    <node id="39" direction="2" value="0.000000" />
+    <node id="40" direction="2" value="0.000000" />
+    <node id="41" direction="2" value="0.000000" />
+    <node id="42" direction="2" value="0.000000" />
+    <node id="43" direction="2" value="0.000000" />
+    <node id="44" direction="2" value="0.000000" />
+    <node id="45" direction="2" value="0.000000" />
+    <node id="46" direction="2" value="0.000000" />
+    <node id="47" direction="2" value="0.000000" />
+    <node id="48" direction="2" value="0.000000" />
+    <node id="49" direction="2" value="0.000000" />
+  </prescribed_displacement>
+</elasticity>
+
+<mesh celltype="hexahedron" dim="3">
+  <nodes size="50">
+    <node id="0" x="0.000000" y="0.000000" z="0.000000" />
+    <node id="1" x="48.000000" y="44.000000" z="0.000000" />
+    <node id="2" x="48.000000" y="60.000000" z="0.000000" />
+    <node id="3" x="0.000000" y="44.000000" z="0.000000" />
+    <node id="4" x="0.000000" y="0.000000" z="1.000000" />
+    <node id="5" x="48.000000" y="44.000000" z="1.000000" />
+    <node id="6" x="48.000000" y="60.000000" z="1.000000" />
+    <node id="7" x="0.000000" y="44.000000" z="1.000000" />
+    <node id="8" x="12.000000" y="11.000000" z="0.000000" />
+    <node id="9" x="24.000000" y="22.000000" z="0.000000" />
+    <node id="10" x="36.000000" y="33.000000" z="0.000000" />
+    <node id="11" x="48.000000" y="48.000000" z="0.000000" />
+    <node id="12" x="48.000000" y="52.000000" z="0.000000" />
+    <node id="13" x="48.000000" y="56.000000" z="0.000000" />
+    <node id="14" x="36.000000" y="56.000000" z="0.000000" />
+    <node id="15" x="24.000000" y="52.000000" z="0.000000" />
+    <node id="16" x="12.000000" y="48.000000" z="0.000000" />
+    <node id="17" x="0.000000" y="33.000000" z="0.000000" />
+    <node id="18" x="0.000000" y="22.000000" z="0.000000" />
+    <node id="19" x="0.000000" y="11.000000" z="0.000000" />
+    <node id="20" x="12.000000" y="11.000000" z="1.000000" />
+    <node id="21" x="24.000000" y="22.000000" z="1.000000" />
+    <node id="22" x="36.000000" y="33.000000" z="1.000000" />
+    <node id="23" x="48.000000" y="48.000000" z="1.000000" />
+    <node id="24" x="48.000000" y="52.000000" z="1.000000" />
+    <node id="25" x="48.000000" y="56.000000" z="1.000000" />
+    <node id="26" x="36.000000" y="56.000000" z="1.000000" />
+    <node id="27" x="24.000000" y="52.000000" z="1.000000" />
+    <node id="28" x="12.000000" y="48.000000" z="1.000000" />
+    <node id="29" x="0.000000" y="33.000000" z="1.000000" />
+    <node id="30" x="0.000000" y="22.000000" z="1.000000" />
+    <node id="31" x="0.000000" y="11.000000" z="1.000000" />
+    <node id="32" x="12.000000" y="20.250000" z="0.000000" />
+    <node id="33" x="12.000000" y="29.500000" z="0.000000" />
+    <node id="34" x="12.000000" y="38.750000" z="0.000000" />
+    <node id="35" x="24.000000" y="29.500000" z="0.000000" />
+    <node id="36" x="24.000000" y="37.000000" z="0.000000" />
+    <node id="37" x="24.000000" y="44.500000" z="0.000000" />
+    <node id="38" x="36.000000" y="38.750000" z="0.000000" />
+    <node id="39" x="36.000000" y="44.500000" z="0.000000" />
+    <node id="40" x="36.000000" y="50.250000" z="0.000000" />
+    <node id="41" x="12.000000" y="20.250000" z="1.000000" />
+    <node id="42" x="12.000000" y="29.500000" z="1.000000" />
+    <node id="43" x="12.000000" y="38.750000" z="1.000000" />
+    <node id="44" x="24.000000" y="29.500000" z="1.000000" />
+    <node id="45" x="24.000000" y="37.000000" z="1.000000" />
+    <node id="46" x="24.000000" y="44.500000" z="1.000000" />
+    <node id="47" x="36.000000" y="38.750000" z="1.000000" />
+    <node id="48" x="36.000000" y="44.500000" z="1.000000" />
+    <node id="49" x="36.000000" y="50.250000" z="1.000000" />
+  </nodes>
+
+  <elements size="16">
+    <element id="0" v0="4" v1="20" v2="8" v3="0" v4="31" v5="41" v6="32" v7="19" />
+    <element id="1" v0="31" v1="41" v2="32" v3="19" v4="30" v5="42" v6="33" v7="18" />
+    <element id="2" v0="30" v1="42" v2="33" v3="18" v4="29" v5="43" v6="34" v7="17" />
+    <element id="3" v0="29" v1="43" v2="34" v3="17" v4="7" v5="28" v6="16" v7="3" />
+    <element id="4" v0="20" v1="21" v2="9" v3="8" v4="41" v5="44" v6="35" v7="32" />
+    <element id="5" v0="41" v1="44" v2="35" v3="32" v4="42" v5="45" v6="36" v7="33" />
+    <element id="6" v0="42" v1="45" v2="36" v3="33" v4="43" v5="46" v6="37" v7="34" />
+    <element id="7" v0="43" v1="46" v2="37" v3="34" v4="28" v5="27" v6="15" v7="16" />
+    <element id="8" v0="21" v1="22" v2="10" v3="9" v4="44" v5="47" v6="38" v7="35" />
+    <element id="9" v0="44" v1="47" v2="38" v3="35" v4="45" v5="48" v6="39" v7="36" />
+    <element id="10" v0="45" v1="48" v2="39" v3="36" v4="46" v5="49" v6="40" v7="37" />
+    <element id="11" v0="46" v1="49" v2="40" v3="37" v4="27" v5="26" v6="14" v7="15" />
+    <element id="12" v0="22" v1="5" v2="1" v3="10" v4="47" v5="23" v6="11" v7="38" />
+    <element id="13" v0="47" v1="23" v2="11" v3="38" v4="48" v5="24" v6="12" v7="39" />
+    <element id="14" v0="48" v1="24" v2="12" v3="39" v4="49" v5="25" v6="13" v7="40" />
+    <element id="15" v0="49" v1="25" v2="13" v3="40" v4="26" v5="6" v6="2" v7="14" />
+  </elements>
+
+  <boundary celltype="quadrilateral" dim="2">
+    <element id="0" marker="10" v0="1" v1="11" v2="23" v3="5" />
+    <element id="1" marker="10" v0="11" v1="12" v2="24" v3="23" />
+    <element id="2" marker="10" v0="12" v1="13" v2="25" v3="24" />
+    <element id="3" marker="10" v0="13" v1="2" v2="6" v3="25" />
+  </boundary>
+</mesh>

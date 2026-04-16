@@ -68,8 +68,6 @@ public:
 
   void calc_fd_active_elastensor(MaterialData *md, Tensor4 &A);
 
-  void calc_fd_elastensorNovo(MaterialData *md, Tensor4 &A); // LAURA! Tirar!
-
   //! PENALTY TERM: Computes PK2 stress using finite difference
   void calc_fd_stress_penalty(MaterialData *md, arma::mat &S);
 

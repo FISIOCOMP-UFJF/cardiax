@@ -95,11 +95,10 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
   std::vector<int> dnums;
 
   tmp_fext.zeros();
-//cout << "passou 1\n";
 
   for(int i=0; i<ne; i++)
   {
-//cout << "elem: " << i <<endl;
+    cout << "elem: " << i <<endl;
     double detJxW, J;
     arma::vec shape;
     arma::vec3 pt, qpt;
@@ -114,7 +113,6 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
 
     elvec.zeros();  
     fespace.get_element_dofs_u(i,dnums);
-//cout << "passou 2\n";
 
     for(int q=0; q<nint; q++)
     {
@@ -130,26 +128,25 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
       F = vecF[i*nint + q];
       rcg_tensor(gradn, x0, J, F, C);
       Bl_matrix (gradn, F, Bl);            
-//cout << "passou 3\n";      
       // interpolation of active stress from nodal to integration points
       arma::mat33 T;                        // active stress tensor 
-      arma::mat33 Tl(arma::fill::zeros);    // active local stress tensor
+      //arma::mat33 Tl(arma::fill::zeros);    // active local stress tensor
       arma::mat33 & M  = *(vfibcoords[i]);  // change of basis matrix
       arma::mat33 & Ta = *(vstrs[i]);       // anisotropic Cauchy active stress
       arma::mat33 Fi   = arma::inv(*F);     // inverse of F
-//cout << "passou 4\n";
       arma::vec3 f0 = M.col(0);
       arma::vec3 f  = (*F) * f0;
       double lambda2 = pow(arma::norm(f,2),2);
 
       Ta.zeros();
-//cout << "passou 5\n";
       for(int j=0; j<nnode; j++)
       {	
         int node = ( dnums[j] - 2) / 3 ; // global node number
-//cout << "j: " << j << " node: " << node <<endl;
+        // int node = dnums[j];
 
-        Tl(0,0) = is(node);  // local active tension in fiber direction	
+        cout << "j: " << j << " node: " << node <<endl;
+
+        //Tl(0,0) = is(node);  // local active tension in fiber direction	
         //T = M * Tl * M.t();  // global active tension
         //T = (Tl(0,0)/lambda2) * (f0 * f0.t());
         T = is(node)*(f * f.t());
@@ -159,7 +156,8 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
           for(int jj=0; jj<3; jj++)
 	          Ta(ii,jj) += shape(j) * T(ii,jj); //Ta(1,1) += shape(j) * is(k);
       }
-//cout << "passou 6\n";
+      exit(-1); 
+
 
       // Total Lagrangian formulation, thus
       // since Ta is Cauchy stress, we need to convert to PK2

@@ -162,10 +162,11 @@ void UpdatedLagrangian::assemble_active(const arma::vec & is,
     get_element_x0(iel, x0);
 
     // Tava assim!!!//////////////////////////////////
-    Mapping em = fe->get_mapping(iel, x0);
+    // TODO: testar de novo (deve ser o xe mesmo)
+    // Mapping em = fe->get_mapping(iel, x0);
 
     // TESTE...estava com o x0 antes
-    //Mapping em = fe->get_mapping(iel, xe);
+    Mapping em = fe->get_mapping(iel, xe);
     //////////////////////////////////////////////////
 
     fespace.get_element_dofs_u(iel, dnums);
@@ -199,7 +200,8 @@ void UpdatedLagrangian::assemble_active(const arma::vec & is,
 
       for(int j=0; j<nnode; j++)
       {
-        int k = dnums[j];    // global node number
+        // int k = dnums[j];    // global node number
+        int k = ( dnums[j] - 2) / 3 ; // ENTENDER ISSO!! 
 
         //Tl(0,0) = is(k);     // local active tension in fiber direction
         //T = M * Tl * M.t();  // global active tension in fiber direction
@@ -228,7 +230,7 @@ void UpdatedLagrangian::assemble_active(const arma::vec & is,
       //      elvec(i+id*nnode) += Ta(id,jd) * gradn(i,jd) * detJxW;
       
       // matrix form
-      elvec += (B.t() * sigma_voigt) * detJxW;
+      elvec += (B.t() * sigma_voigt) * detJxW; // aqui pode ser que ao invés desse sigma_void seja o Ta (ou algo assim.)
     } 
 
     // assemble into vector

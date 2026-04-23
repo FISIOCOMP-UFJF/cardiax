@@ -1,0 +1,144 @@
+else if (configName == "AGGREGATION_MULTI_PAIRWISE"){
+    cfg = "{\"config_version\":2,\"solver\":{\"use_scalar_norm\":1,\"min_coarse_rows\":32,\"matrix_coloring_scheme\":\"PARALLEL_GREEDY\",\"smoother\":\"BLOCK_JACOBI\",\"print_solve_stats\":1,\"obtain_timings\":1,\"relaxation_factor\":0.5,\"weight_formula\":1,\"tolerance\":0.001,\"norm\":\"L2\",\"postsweeps\":3,\"merge_singletons\":2,\"presweeps\":0,\"selector\":\"MULTI_PAIRWISE\",\"scope\":\"main\",\"convergence\":\"RELATIVE_MAX_CORE\",\"cycle\":\"F\",\"print_grid_stats\":1,\"algorithm\":\"AGGREGATION\",\"solver\":\"AMG\",\"aggregation_passes\":1,\"max_uncolored_percentage\":0.05,\"coarse_solver\":\"DENSE_LU_SOLVER\",\"max_iters\":1,\"monitor_residual\":1,\"max_levels\":20}}";
+}
+else if (configName == "AGGREGATION_THRUST_BJ"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"algorithm\":\"AGGREGATION\",\"coarseAgenerator\":\"THRUST\",\"solver\":\"AMG\",\"smoother\":\"BLOCK_JACOBI\",\"print_solve_stats\":1,\"presweeps\":1,\"selector\":\"SIZE_2\",\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"scope\":\"main\",\"postsweeps\":1,\"tolerance\":0.1,\"cycle\":\"V\"}}";
+}
+else if (configName == "AGGREGATION_THRUST_DILU"){
+    cfg = "{\"config_version\":2,\"solver\":{\"obtain_timings\":1,\"print_grid_stats\":1,\"max_uncolored_percentage\":0.02,\"algorithm\":\"AGGREGATION\",\"coarseAgenerator\":\"THRUST\",\"solver\":\"AMG\",\"smoother\":\"MULTICOLOR_DILU\",\"print_solve_stats\":1,\"presweeps\":1,\"selector\":\"SIZE_2\",\"coarsest_sweeps\":2,\"max_iters\":2000,\"monitor_residual\":1,\"postsweeps\":1,\"scope\":\"main\",\"max_levels\":1000,\"matrix_coloring_scheme\":\"MIN_MAX\",\"tolerance\":0.1,\"norm\":\"L1\",\"cycle\":\"V\"}}";
+}
+else if (configName == "AGGREGATION_THRUST_GS"){
+    cfg = "{\"config_version\":2,\"solver\":{\"coarsest_sweeps\":2,\"matrix_coloring_scheme\":\"MIN_MAX\",\"smoother\":\"MULTICOLOR_GS\",\"print_solve_stats\":1,\"obtain_timings\":1,\"relaxation_factor\":0.75,\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L1\",\"postsweeps\":2,\"max_uncolored_percentage\":0.15,\"presweeps\":2,\"selector\":\"SIZE_2\",\"convergence\":\"RELATIVE_INI\",\"cycle\":\"V\",\"print_grid_stats\":1,\"algorithm\":\"AGGREGATION\",\"coarseAgenerator\":\"THRUST\",\"solver\":\"AMG\",\"max_iters\":50,\"monitor_residual\":1,\"max_levels\":1000}}";
+}
+else if (configName == "agg_cheb4"){
+    cfg = "{\"config_version\":2,\"determinism_flag\":1,\"solver\":{\"print_grid_stats\":1,\"algorithm\":\"AGGREGATION\",\"obtain_timings\":1,\"error_scaling\":3,\"solver\":\"AMG\",\"smoother\":{\"solver\":\"CHEBYSHEV\",\"preconditioner\":{\"solver\":\"JACOBI_L1\",\"max_iters\":1},\"max_iters\":1,\"chebyshev_polynomial_order\":4,\"chebyshev_lambda_estimate_mode\":2},\"presweeps\":0,\"postsweeps\":1,\"print_solve_stats\":1,\"selector\":\"SIZE_8\",\"coarsest_sweeps\":1,\"max_iters\":2000,\"monitor_residual\":1,\"min_coarse_rows\":2,\"scope\":\"main\",\"max_levels\":1000,\"convergence\":\"RELATIVE_INI_CORE\",\"tolerance\":1e-06,\"norm\":\"L2\",\"cycle\":\"V\"}}";
+}
+else if (configName == "AMG_AGGRREGATION_CG"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"solver\":\"AMG\",\"algorithm\":\"AGGREGATION\",\"selector\":\"SIZE_4\",\"print_solve_stats\":1,\"smoother\":\"JACOBI_L1\",\"presweeps\":0,\"postsweeps\":3,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"max_levels\":100,\"cycle\":\"CG\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "AMG_CLASSICAL_AGGRESSIVE_CHEB_L1_TRUNC"){
+    cfg = "{\"config_version\":2,\"determinism_flag\":1,\"solver\":{\"scope\":\"main\",\"solver\":\"PCG\",\"store_res_history\":1,\"print_solve_stats\":1,\"obtain_timings\":1,\"preconditioner\":{\"print_grid_stats\":1,\"scope\":\"amg_solver\",\"interpolator\":\"D2\",\"solver\":\"AMG\",\"max_levels\":24,\"selector\":\"PMIS\",\"cycle\":\"V\",\"presweeps\":0,\"postsweeps\":3,\"coarsest_sweeps\":2,\"min_coarse_rows\":2,\"coarse_solver\":\"NOSOLVER\",\"max_iters\":1,\"max_row_sum\":0.9,\"strength_threshold\":0.25,\"error_scaling\":3,\"aggressive_levels\":1,\"interp_max_elements\":4,\"smoother\":{\"relaxation_factor\":0.91,\"scope\":\"jacobi\",\"solver\":\"CHEBYSHEV\",\"max_iters\":1,\"preconditioner\":{\"solver\":\"JACOBI_L1\",\"max_iters\":1},\"chebyshev_polynomial_order\":2,\"chebyshev_lambda_estimate_mode\":2}},\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"RELATIVE_INI_CORE\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "AMG_CLASSICAL_AGGRESSIVE_L1"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"store_res_history\":1,\"solver\":\"FGMRES\",\"print_solve_stats\":1,\"obtain_timings\":1,\"preconditioner\":{\"interpolator\":\"D2\",\"print_grid_stats\":1,\"aggressive_levels\":1,\"solver\":\"AMG\",\"smoother\":{\"relaxation_factor\":1,\"scope\":\"jacobi\",\"solver\":\"JACOBI_L1\"},\"presweeps\":1,\"selector\":\"PMIS\",\"coarsest_sweeps\":1,\"coarse_solver\":\"NOSOLVER\",\"max_iters\":1,\"max_row_sum\":0.9,\"strength_threshold\":0.25,\"min_coarse_rows\":2,\"scope\":\"amg_solver\",\"max_levels\":24,\"cycle\":\"V\",\"postsweeps\":1},\"max_iters\":2000,\"monitor_residual\":1,\"gmres_n_restart\":10,\"convergence\":\"RELATIVE_INI_CORE\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "AMG_CLASSICAL_AGGRESSIVE_L1_TRUNC"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"store_res_history\":1,\"solver\":\"FGMRES\",\"print_solve_stats\":1,\"obtain_timings\":1,\"preconditioner\":{\"interpolator\":\"D2\",\"solver\":\"AMG\",\"print_grid_stats\":1,\"aggressive_levels\":1,\"interp_max_elements\":4,\"smoother\":{\"relaxation_factor\":1,\"scope\":\"jacobi\",\"solver\":\"JACOBI_L1\"},\"presweeps\":2,\"selector\":\"PMIS\",\"coarsest_sweeps\":2,\"coarse_solver\":\"NOSOLVER\",\"max_iters\":1,\"max_row_sum\":0.9,\"strength_threshold\":0.25,\"min_coarse_rows\":2,\"scope\":\"amg_solver\",\"max_levels\":24,\"cycle\":\"V\",\"postsweeps\":2},\"max_iters\":2000,\"monitor_residual\":1,\"gmres_n_restart\":10,\"convergence\":\"RELATIVE_INI_CORE\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "AMG_CLASSICAL_CG"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"solver\":\"AMG\",\"print_solve_stats\":1,\"interpolator\":\"D2\",\"presweeps\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"max_levels\":100,\"cycle\":\"CG\",\"tolerance\":1e-06,\"norm\":\"L2\",\"postsweeps\":1}}";
+}
+else if (configName == "AMG_CLASSICAL_L1_AGGRESSIVE_HMIS"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"store_res_history\":1,\"solver\":\"FGMRES\",\"print_solve_stats\":1,\"obtain_timings\":1,\"preconditioner\":{\"interpolator\":\"D2\",\"print_grid_stats\":1,\"aggressive_levels\":1,\"solver\":\"AMG\",\"smoother\":{\"relaxation_factor\":1,\"scope\":\"jacobi\",\"solver\":\"JACOBI_L1\"},\"presweeps\":1,\"selector\":\"HMIS\",\"coarsest_sweeps\":1,\"coarse_solver\":\"NOSOLVER\",\"max_iters\":1,\"max_row_sum\":0.9,\"strength_threshold\":0.25,\"min_coarse_rows\":2,\"scope\":\"amg_solver\",\"max_levels\":24,\"cycle\":\"V\",\"postsweeps\":1},\"max_iters\":2000,\"monitor_residual\":1,\"gmres_n_restart\":10,\"convergence\":\"RELATIVE_INI_CORE\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "AMG_CLASSICAL_L1_TRUNC"){
+    cfg = "{\"config_version\":2,\"print_grid_stats\":1,\"store_res_history\":1,\"solver\":{\"solver\":\"FGMRES\",\"print_solve_stats\":1,\"obtain_timings\":1,\"preconditioner\":{\"interpolator\":\"D2\",\"print_grid_stats\":1,\"solver\":\"AMG\",\"interp_max_elements\":4,\"smoother\":{\"relaxation_factor\":1,\"scope\":\"jacobi\",\"solver\":\"JACOBI_L1\"},\"presweeps\":1,\"coarsest_sweeps\":1,\"coarse_solver\":\"NOSOLVER\",\"max_iters\":1,\"max_row_sum\":0.9,\"scope\":\"amg_solver\",\"max_levels\":25,\"postsweeps\":1,\"cycle\":\"V\"},\"max_iters\":2000,\"monitor_residual\":1,\"gmres_n_restart\":10,\"convergence\":\"RELATIVE_INI_CORE\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "AMG_CLASSICAL_PMIS"){
+    cfg = "{\"config_version\":2,\"determinism_flag\":1,\"solver\":{\"print_grid_stats\":1,\"store_res_history\":1,\"obtain_timings\":1,\"solver\":\"GMRES\",\"print_solve_stats\":1,\"preconditioner\":{\"interpolator\":\"D2\",\"solver\":\"AMG\",\"cycle\":\"V\",\"smoother\":{\"relaxation_factor\":1,\"scope\":\"jacobi\",\"solver\":\"JACOBI_L1\"},\"presweeps\":2,\"postsweeps\":2,\"selector\":\"PMIS\",\"coarsest_sweeps\":2,\"coarse_solver\":\"NOSOLVER\",\"max_iters\":1,\"max_row_sum\":0.9,\"min_coarse_rows\":2,\"scope\":\"amg_solver\",\"max_levels\":24,\"print_grid_stats\":1,\"aggressive_levels\":1,\"interp_max_elements\":4},\"max_iters\":2000,\"monitor_residual\":1,\"gmres_n_restart\":10,\"convergence\":\"RELATIVE_INI_CORE\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "CG_DILU"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"scope\":\"precond\",\"solver\":\"MULTICOLOR_DILU\"},\"solver\":\"CG\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":20,\"monitor_residual\":1,\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "CHEB_SOLVER_NOPREC"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"solver\":\"NOSOLVER\",\"scope\":\"precond\"},\"use_scalar_norm\":1,\"solver\":\"CHEBYSHEV\",\"print_solve_stats\":1,\"obtain_timings\":1,\"monitor_residual\":1,\"convergence\":\"RELATIVE_INI_CORE\",\"scope\":\"main\",\"tolerance\":1e-06,\"max_iters\":2000,\"norm\":\"L2\"}}";
+}
+else if (configName == "CLASSICAL_CG_CYCLE"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"solver\":\"AMG\",\"print_solve_stats\":1,\"presweeps\":1,\"interpolator\":\"D2\",\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"max_levels\":100,\"cycle\":\"CG\",\"tolerance\":1e-06,\"norm\":\"L2\",\"postsweeps\":1}}";
+}
+else if (configName == "CLASSICAL_F_CYCLE"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"solver\":\"AMG\",\"print_solve_stats\":1,\"presweeps\":1,\"obtain_timings\":1,\"interpolator\":\"D2\",\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"max_levels\":100,\"cycle\":\"F\",\"tolerance\":1e-06,\"norm\":\"L2\",\"postsweeps\":1}}";
+}
+else if (configName == "CLASSICAL_V_CYCLE"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"solver\":\"AMG\",\"print_solve_stats\":1,\"presweeps\":1,\"interpolator\":\"D2\",\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"max_levels\":100,\"cycle\":\"V\",\"tolerance\":1e-06,\"norm\":\"L2\",\"postsweeps\":1}}";
+}
+else if (configName == "CLASSICAL_W_CYCLE"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"solver\":\"AMG\",\"print_solve_stats\":1,\"presweeps\":1,\"interpolator\":\"D2\",\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"max_levels\":100,\"cycle\":\"W\",\"tolerance\":1e-06,\"norm\":\"L2\",\"postsweeps\":1}}";
+}
+else if (configName == "F"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"solver\":\"AMG\",\"print_solve_stats\":1,\"presweeps\":1,\"interpolator\":\"D2\",\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"max_levels\":100,\"cycle\":\"F\",\"tolerance\":1e-06,\"norm\":\"L2\",\"postsweeps\":1}}";
+}
+else if (configName == "FGMRES"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"print_grid_stats\":1,\"print_vis_data\":0,\"solver\":\"AMG\",\"print_solve_stats\":0,\"interpolator\":\"D2\",\"presweeps\":1,\"max_iters\":1,\"monitor_residual\":0,\"store_res_history\":0,\"scope\":\"amg\",\"cycle\":\"V\",\"postsweeps\":1},\"solver\":\"FGMRES\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"gmres_n_restart\":20,\"convergence\":\"RELATIVE_INI_CORE\",\"scope\":\"main\",\"tolerance\":0.0001,\"norm\":\"L2\"}}";
+}
+else if (configName == "FGMRES_AGGREGATION_JACOBI"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"error_scaling\":0,\"print_grid_stats\":1,\"algorithm\":\"AGGREGATION\",\"solver\":\"AMG\",\"smoother\":\"BLOCK_JACOBI\",\"presweeps\":0,\"selector\":\"SIZE_2\",\"coarse_solver\":\"NOSOLVER\",\"max_iters\":1,\"min_coarse_rows\":32,\"relaxation_factor\":0.75,\"scope\":\"amg\",\"max_levels\":100,\"postsweeps\":3,\"cycle\":\"V\"},\"use_scalar_norm\":1,\"solver\":\"FGMRES\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"gmres_n_restart\":32,\"convergence\":\"RELATIVE_INI\",\"scope\":\"main\",\"tolerance\":0.0001,\"norm\":\"L2\"}}";
+}
+else if (configName == "FGMRES_CLASSICAL_AGGRESSIVE_HMIS"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"store_res_history\":1,\"solver\":\"FGMRES\",\"print_solve_stats\":1,\"obtain_timings\":1,\"preconditioner\":{\"interpolator\":\"D2\",\"solver\":\"AMG\",\"print_grid_stats\":1,\"aggressive_levels\":1,\"interp_max_elements\":4,\"smoother\":{\"relaxation_factor\":1,\"scope\":\"jacobi\",\"solver\":\"JACOBI_L1\"},\"presweeps\":2,\"selector\":\"HMIS\",\"coarsest_sweeps\":2,\"coarse_solver\":\"NOSOLVER\",\"max_iters\":1,\"max_row_sum\":0.9,\"strength_threshold\":0.25,\"min_coarse_rows\":2,\"scope\":\"amg_solver\",\"max_levels\":24,\"cycle\":\"V\",\"postsweeps\":2},\"max_iters\":2000,\"monitor_residual\":1,\"gmres_n_restart\":100,\"convergence\":\"RELATIVE_INI_CORE\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "FGMRES_CLASSICAL_AGGRESSIVE_PMIS"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"store_res_history\":1,\"solver\":\"FGMRES\",\"print_solve_stats\":1,\"obtain_timings\":1,\"preconditioner\":{\"interpolator\":\"D2\",\"solver\":\"AMG\",\"print_grid_stats\":1,\"aggressive_levels\":1,\"interp_max_elements\":4,\"smoother\":{\"relaxation_factor\":1,\"scope\":\"jacobi\",\"solver\":\"JACOBI_L1\"},\"presweeps\":2,\"selector\":\"PMIS\",\"coarsest_sweeps\":2,\"coarse_solver\":\"NOSOLVER\",\"max_iters\":1,\"max_row_sum\":0.9,\"strength_threshold\":0.25,\"min_coarse_rows\":2,\"scope\":\"amg_solver\",\"max_levels\":24,\"cycle\":\"V\",\"postsweeps\":2},\"max_iters\":2000,\"monitor_residual\":1,\"gmres_n_restart\":100,\"convergence\":\"RELATIVE_INI_CORE\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "FGMRES_NOPREC"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"scope\":\"amg\",\"solver\":\"NOSOLVER\"},\"use_scalar_norm\":1,\"solver\":\"FGMRES\",\"print_solve_stats\":1,\"obtain_timings\":1,\"monitor_residual\":1,\"convergence\":\"RELATIVE_INI_CORE\",\"scope\":\"main\",\"tolerance\":0.1,\"norm\":\"L2\"}}";
+}
+else if (configName == "GMRES"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"scope\":\"amg\",\"solver\":\"NOSOLVER\"},\"use_scalar_norm\":1,\"solver\":\"GMRES\",\"print_solve_stats\":1,\"obtain_timings\":1,\"monitor_residual\":1,\"convergence\":\"RELATIVE_INI_CORE\",\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "GMRES_AMG_D2"){
+    cfg = "{\"config_version\":2,\"determinism_flag\":1,\"exception_handling\":1,\"solver\":{\"print_grid_stats\":1,\"store_res_history\":1,\"solver\":\"GMRES\",\"print_solve_stats\":1,\"obtain_timings\":1,\"preconditioner\":{\"interpolator\":\"D2\",\"print_grid_stats\":1,\"solver\":\"AMG\",\"smoother\":\"JACOBI_L1\",\"presweeps\":2,\"selector\":\"PMIS\",\"coarsest_sweeps\":2,\"coarse_solver\":\"NOSOLVER\",\"max_iters\":1,\"interp_max_elements\":4,\"min_coarse_rows\":2,\"scope\":\"amg_solver\",\"max_levels\":24,\"cycle\":\"V\",\"postsweeps\":2},\"max_iters\":2000,\"monitor_residual\":1,\"gmres_n_restart\":10,\"convergence\":\"RELATIVE_INI_CORE\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "IDRMSYNC_DILU"){
+    cfg = "{\"config_version\":2,\"solver\":{\"max_iters\":4000,\"preconditioner\":{\"scope\":\"precond\",\"max_iters\":1,\"solver\":\"MULTICOLOR_DILU\"},\"use_scalar_norm\":1,\"solver\":\"IDRMSYNC\",\"print_solve_stats\":1,\"obtain_timings\":1,\"subspace_dim_s\":1,\"monitor_residual\":1,\"convergence\":\"RELATIVE_INI_CORE\",\"scope\":\"main\",\"tolerance\":1e-08,\"norm\":\"L2\"}}";
+}
+else if (configName == "IDR_DILU"){
+    cfg = "{\"config_version\":2,\"solver\":{\"max_iters\":4000,\"print_grid_stats\":1,\"preconditioner\":{\"scope\":\"precond\",\"max_iters\":1,\"solver\":\"MULTICOLOR_DILU\"},\"use_scalar_norm\":1,\"solver\":\"IDR\",\"print_solve_stats\":1,\"obtain_timings\":1,\"subspace_dim_s\":1,\"monitor_residual\":1,\"convergence\":\"RELATIVE_INI_CORE\",\"scope\":\"main\",\"tolerance\":1e-08,\"norm\":\"L2\"}}";
+}
+else if (configName == "JACOBI"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"scope\":\"amg\",\"solver\":\"NOSOLVER\"},\"use_scalar_norm\":1,\"solver\":\"BLOCK_JACOBI\",\"print_solve_stats\":1,\"obtain_timings\":1,\"monitor_residual\":1,\"convergence\":\"RELATIVE_INI_CORE\",\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "PBICGSTAB"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"print_vis_data\":0,\"solver\":\"AMG\",\"smoother\":{\"scope\":\"jacobi\",\"solver\":\"BLOCK_JACOBI\",\"monitor_residual\":0,\"print_solve_stats\":0},\"print_solve_stats\":0,\"interpolator\":\"D2\",\"presweeps\":1,\"max_iters\":1,\"monitor_residual\":0,\"store_res_history\":0,\"scope\":\"amg\",\"max_levels\":100,\"cycle\":\"V\",\"postsweeps\":1},\"solver\":\"PBICGSTAB\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "PBICGSTAB_CLASSICAL_JACOBI"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"print_vis_data\":0,\"solver\":\"AMG\",\"smoother\":{\"scope\":\"jacobi\",\"solver\":\"BLOCK_JACOBI\",\"monitor_residual\":0,\"print_solve_stats\":0},\"print_solve_stats\":0,\"presweeps\":1,\"interpolator\":\"D2\",\"max_iters\":1,\"monitor_residual\":0,\"store_res_history\":0,\"scope\":\"amg\",\"max_levels\":100,\"cycle\":\"V\",\"postsweeps\":1},\"solver\":\"PBICGSTAB\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "PBICGSTAB_NOPREC"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"scope\":\"amg_solver\",\"solver\":\"NOSOLVER\"},\"use_scalar_norm\":1,\"solver\":\"PBICGSTAB\",\"print_solve_stats\":1,\"obtain_timings\":1,\"monitor_residual\":1,\"convergence\":\"RELATIVE_INI_CORE\",\"scope\":\"main\",\"tolerance\":0.1,\"norm\":\"L2\"}}";
+}
+else if (configName == "PCGF_CLASSICAL_V_JACOBI"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"print_grid_stats\":1,\"print_vis_data\":0,\"solver\":\"AMG\",\"smoother\":{\"scope\":\"jacobi\",\"solver\":\"BLOCK_JACOBI\",\"monitor_residual\":0,\"print_solve_stats\":0},\"print_solve_stats\":0,\"presweeps\":1,\"interpolator\":\"D2\",\"max_iters\":1,\"monitor_residual\":0,\"store_res_history\":0,\"scope\":\"amg\",\"max_levels\":100,\"cycle\":\"V\",\"postsweeps\":1},\"solver\":\"PCGF\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "PCGF_V"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"print_grid_stats\":1,\"print_vis_data\":0,\"solver\":\"AMG\",\"smoother\":{\"scope\":\"jacobi\",\"solver\":\"BLOCK_JACOBI\",\"monitor_residual\":0,\"print_solve_stats\":0},\"print_solve_stats\":0,\"presweeps\":1,\"max_iters\":1,\"interpolator\":\"D2\",\"monitor_residual\":0,\"store_res_history\":0,\"scope\":\"amg\",\"max_levels\":100,\"cycle\":\"V\",\"postsweeps\":1},\"solver\":\"PCGF\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "PCG_AGGREGATION_JACOBI"){
+    cfg = "{\"config_version\":2,\"determinism_flag\":1,\"solver\":{\"preconditioner\":{\"print_grid_stats\":1,\"algorithm\":\"AGGREGATION\",\"print_vis_data\":0,\"solver\":\"AMG\",\"smoother\":{\"relaxation_factor\":0.8,\"scope\":\"jacobi\",\"solver\":\"BLOCK_JACOBI\",\"monitor_residual\":0,\"print_solve_stats\":0},\"print_solve_stats\":0,\"presweeps\":0,\"interpolator\":\"D2\",\"selector\":\"SIZE_2\",\"coarse_solver\":\"NOSOLVER\",\"max_iters\":1,\"monitor_residual\":0,\"store_res_history\":0,\"scope\":\"amg\",\"max_levels\":100,\"postsweeps\":3,\"cycle\":\"V\"},\"solver\":\"PCG\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"RELATIVE_INI\",\"scope\":\"main\",\"tolerance\":0.0001,\"norm\":\"L2\"}}";
+}
+else if (configName == "PCG_CLASSICAL_F_JACOBI"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"print_grid_stats\":1,\"print_vis_data\":0,\"solver\":\"AMG\",\"smoother\":{\"scope\":\"jacobi\",\"solver\":\"BLOCK_JACOBI\",\"monitor_residual\":0,\"print_solve_stats\":0},\"print_solve_stats\":0,\"presweeps\":1,\"max_iters\":1,\"interpolator\":\"D2\",\"monitor_residual\":0,\"store_res_history\":0,\"scope\":\"amg\",\"max_levels\":100,\"cycle\":\"F\",\"postsweeps\":1},\"solver\":\"PCG\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "PCG_CLASSICAL_V_JACOBI"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"print_grid_stats\":1,\"print_vis_data\":0,\"solver\":\"AMG\",\"smoother\":{\"scope\":\"jacobi\",\"solver\":\"BLOCK_JACOBI\",\"monitor_residual\":0,\"print_solve_stats\":0},\"print_solve_stats\":0,\"aggressive_levels\":2,\"presweeps\":1,\"interpolator\":\"D2\",\"max_iters\":1,\"monitor_residual\":0,\"store_res_history\":0,\"scope\":\"amg\",\"max_levels\":100,\"cycle\":\"V\",\"postsweeps\":1},\"solver\":\"PCG\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "PCG_DILU"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"scope\":\"precond\",\"solver\":\"MULTICOLOR_DILU\"},\"solver\":\"PCG\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":20,\"monitor_residual\":1,\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "PCG_F"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"print_grid_stats\":1,\"print_vis_data\":0,\"solver\":\"AMG\",\"smoother\":{\"scope\":\"jacobi\",\"solver\":\"BLOCK_JACOBI\",\"monitor_residual\":0,\"print_solve_stats\":0},\"print_solve_stats\":0,\"presweeps\":1,\"interpolator\":\"D2\",\"max_iters\":1,\"monitor_residual\":0,\"store_res_history\":0,\"scope\":\"amg\",\"max_levels\":100,\"cycle\":\"F\",\"postsweeps\":1},\"solver\":\"PCG\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "PCG_NOPREC"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"scope\":\"amg\",\"solver\":\"NOSOLVER\"},\"use_scalar_norm\":1,\"solver\":\"PCG\",\"print_solve_stats\":1,\"obtain_timings\":1,\"monitor_residual\":1,\"convergence\":\"RELATIVE_INI_CORE\",\"scope\":\"main\",\"tolerance\":0.1,\"norm\":\"L2\"}}";
+}
+else if (configName == "PCG_V"){
+    cfg = "{\"config_version\":2,\"solver\":{\"preconditioner\":{\"print_grid_stats\":1,\"print_vis_data\":0,\"solver\":\"AMG\",\"smoother\":{\"scope\":\"jacobi\",\"solver\":\"BLOCK_JACOBI\",\"monitor_residual\":0,\"print_solve_stats\":0},\"print_solve_stats\":0,\"presweeps\":1,\"interpolator\":\"D2\",\"max_iters\":1,\"monitor_residual\":0,\"store_res_history\":0,\"scope\":\"amg\",\"max_levels\":100,\"cycle\":\"V\",\"postsweeps\":1},\"solver\":\"PCG\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"tolerance\":1e-06,\"norm\":\"L2\"}}";
+}
+else if (configName == "V-cheby-aggres-L1-trunc-userLambda"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"solver\":\"AMG\",\"interpolator\":\"D2\",\"interp_max_elements\":4,\"aggressive_levels\":1,\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"coarse_solver\":\"NOSOLVER\",\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"max_levels\":100,\"error_scaling\":3,\"cycle\":\"V\",\"smoother\":{\"solver\":\"CHEBYSHEV\",\"preconditioner\":{\"solver\":\"JACOBI_L1\",\"max_iters\":1},\"max_iters\":1,\"chebyshev_polynomial_order\":2,\"chebyshev_lambda_estimate_mode\":3,\"cheby_max_lambda\":0.92,\"cheby_min_lambda\":0.07},\"tolerance\":1e-06,\"norm\":\"L2\",\"presweeps\":0,\"postsweeps\":1}}";
+}
+else if (configName == "V-cheby-aggres-L1-trunc"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"solver\":\"AMG\",\"interpolator\":\"D2\",\"interp_max_elements\":4,\"aggressive_levels\":1,\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"coarse_solver\":\"NOSOLVER\",\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"max_levels\":100,\"error_scaling\":3,\"cycle\":\"V\",\"smoother\":{\"solver\":\"CHEBYSHEV\",\"preconditioner\":{\"solver\":\"JACOBI_L1\",\"max_iters\":1},\"max_iters\":1,\"chebyshev_polynomial_order\":2,\"chebyshev_lambda_estimate_mode\":2},\"tolerance\":1e-06,\"norm\":\"L2\",\"presweeps\":0,\"postsweeps\":1}}";
+}
+else if (configName == "V-cheby-smoother"){
+    cfg = "{\"config_version\":2,\"determinism_flag\":1,\"solver\":{\"scope\":\"main\",\"print_grid_stats\":1,\"solver\":\"AMG\",\"scaling\":\"DIAGONAL_SYMMETRIC\",\"interpolator\":\"D2\",\"aggressive_levels\":0,\"interp_max_elements\":4,\"coarse_solver\":\"NOSOLVER\",\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"max_levels\":100,\"cycle\":\"V\",\"smoother\":{\"solver\":\"CHEBYSHEV\",\"preconditioner\":{\"solver\":\"NOSOLVER\",\"max_iters\":1},\"max_iters\":1,\"chebyshev_polynomial_order\":4,\"chebyshev_lambda_estimate_mode\":2},\"tolerance\":1e-06,\"norm\":\"L2\",\"presweeps\":0,\"postsweeps\":1}}";
+}
+else if (configName == "V-cheby_poly-smoother"){
+    cfg = "{\"config_version\":2,\"determinism_flag\":1,\"solver\":{\"scope\":\"main\",\"print_grid_stats\":1,\"solver\":\"AMG\",\"scaling\":\"NONE\",\"interpolator\":\"D2\",\"aggressive_levels\":0,\"interp_max_elements\":4,\"max_row_sum\":0.9,\"print_solve_stats\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"max_levels\":100,\"cycle\":\"V\",\"smoother\":{\"scope\":\"cheb_smoother\",\"solver\":\"CHEBYSHEV_POLY\",\"chebyshev_polynomial_order\":2,\"max_iters\":1,\"preconditioner\":{\"solver\":\"JACOBI_L1\"},\"tolerance\":0.0001},\"tolerance\":1e-06,\"norm\":\"L2\",\"presweeps\":0,\"postsweeps\":3}}";
+}
+else if (configName == "V"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"solver\":\"AMG\",\"print_solve_stats\":1,\"presweeps\":1,\"obtain_timings\":1,\"max_iters\":2000,\"interpolator\":\"D2\",\"monitor_residual\":1,\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"max_levels\":100,\"cycle\":\"V\",\"tolerance\":1e-06,\"norm\":\"L2\",\"postsweeps\":1}}";
+}
+else if (configName == "W"){
+    cfg = "{\"config_version\":2,\"solver\":{\"print_grid_stats\":1,\"solver\":\"AMG\",\"print_solve_stats\":1,\"presweeps\":1,\"obtain_timings\":1,\"max_iters\":2000,\"monitor_residual\":1,\"interpolator\":\"D2\",\"convergence\":\"ABSOLUTE\",\"scope\":\"main\",\"max_levels\":100,\"cycle\":\"W\",\"tolerance\":1e-06,\"norm\":\"L2\",\"postsweeps\":1}}";
+}

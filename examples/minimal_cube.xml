@@ -1,0 +1,128 @@
+<?xml version="1.0"?>
+
+<elasticity type="THREE_DIM">
+
+  <parameters>
+    <material>Guccione</material>
+    <coefficients>2, 8, 2, 4, 0, 70</coefficients>
+    <ninc>10</ninc>
+  </parameters>
+
+  <pressure>
+    <node id="1" marker="11" value="-0.004" />
+  </pressure>
+
+    <prescribed_displacement>
+        <node id="0" direction="0" value="0.000000" />
+        <node id="1" direction="0" value="0.000000" />
+        <node id="2" direction="0" value="0.000000" />
+        <node id="3" direction="0" value="0.000000" />
+        <node id="4" direction="0" value="0.000000" />
+        <node id="5" direction="0" value="0.000000" />
+        <node id="6" direction="0" value="0.000000" />
+        <node id="7" direction="0" value="0.000000" />
+        <node id="8" direction="0" value="0.000000" />
+
+        <node id="0" direction="1" value="0.000000" />
+        <node id="1" direction="1" value="0.000000" />
+        <node id="2" direction="1" value="0.000000" />
+        <node id="3" direction="1" value="0.000000" />
+        <node id="4" direction="1" value="0.000000" />
+        <node id="5" direction="1" value="0.000000" />
+        <node id="6" direction="1" value="0.000000" />
+        <node id="7" direction="1" value="0.000000" />
+        <node id="8" direction="1" value="0.000000" />
+
+        <node id="0" direction="2" value="0.000000" />
+        <node id="1" direction="2" value="0.000000" />
+        <node id="2" direction="2" value="0.000000" />
+        <node id="3" direction="2" value="0.000000" />
+        <node id="4" direction="2" value="0.000000" />
+        <node id="5" direction="2" value="0.000000" />
+        <node id="6" direction="2" value="0.000000" />
+        <node id="7" direction="2" value="0.000000" />
+        <node id="8" direction="2" value="0.000000" />
+
+  </prescribed_displacement>
+</elasticity>
+
+<mesh celltype="hexahedron" dim="3">
+    <nodes size="27">
+        <node id="0" x="0.0" y="0.0" z="0.0" />
+        <node id="1" x="0.0" y="0.5" z="0.0" />
+        <node id="2" x="0.0" y="1.0" z="0.0" />
+        <node id="3" x="0.5" y="1.0" z="0.0" />
+        <node id="4" x="1.0" y="1.0" z="0.0" />
+        <node id="5" x="1.0" y="0.5" z="0.0" />
+        <node id="6" x="1.0" y="0.0" z="0.0" />
+        <node id="7" x="0.5" y="0.0" z="0.0" />
+        <node id="8" x="0.5" y="0.5" z="0.0" />
+
+        <node id="9" x="0.0" y="0.0" z="0.5" />
+        <node id="10" x="0.0" y="0.5" z="0.5" />
+        <node id="11" x="0.0" y="1.0" z="0.5" />
+        <node id="12" x="0.5" y="1.0" z="0.5" />
+        <node id="13" x="1.0" y="1.0" z="0.5" />
+        <node id="14" x="1.0" y="0.5" z="0.5" />
+        <node id="15" x="1.0" y="0.0" z="0.5" />
+        <node id="16" x="0.5" y="0.0" z="0.5" />
+        <node id="17" x="0.5" y="0.5" z="0.5" />
+
+        <node id="18" x="0.0" y="0.0" z="1.0" />
+        <node id="19" x="0.0" y="0.5" z="1.0" />
+        <node id="20" x="0.0" y="1.0" z="1.0" />
+        <node id="21" x="0.5" y="1.0" z="1.0" />
+        <node id="22" x="1.0" y="1.0" z="1.0" />
+        <node id="23" x="1.0" y="0.5" z="1.0" />
+        <node id="24" x="1.0" y="0.0" z="1.0" />
+        <node id="25" x="0.5" y="0.0" z="1.0" />
+        <node id="26" x="0.5" y="0.5" z="1.0" />
+
+
+    </nodes>
+    <elements size="8">
+        <element id="0" v0="0" v1="1" v2="8" v3="7" v4="9" v5="10" v6="17" v7="16" />
+        <element id="1" v0="1" v1="2" v2="3" v3="8" v4="10" v5="11" v6="12" v7="17" />
+        <element id="2" v0="8" v1="3" v2="4" v3="5" v4="17" v5="12" v6="13" v7="14" />
+        <element id="3" v0="7" v1="8" v2="5" v3="6" v4="16" v5="17" v6="14" v7="15" />
+        
+        <element id="4" v0="9" v1="10" v2="17" v3="16" v4="18" v5="19" v6="26" v7="25" />
+        <element id="5" v0="10" v1="11" v2="12" v3="17" v4="19" v5="20" v6="21" v7="26" />
+        <element id="6" v0="17" v1="12" v2="13" v3="14" v4="26" v5="21" v6="22" v7="23" />
+        <element id="7" v0="16" v1="17" v2="14" v3="15" v4="25" v5="26" v6="23" v7="24" />
+    </elements>
+    <element_data type="fiber_isotropic">
+    </element_data>
+
+    <boundary celltype="quadrilateral" dim="2">
+        <element id="0" marker="11" v0="0" v1="1" v2="8" v3="7" />
+        <element id="1" marker="11" v0="1" v1="2" v2="3" v3="8" />
+        <element id="2" marker="11" v0="8" v1="3" v2="4" v3="5" />
+        <element id="3" marker="11" v0="7" v1="8" v2="5" v3="6" />
+
+        <element id="4" marker="11" v0="18" v1="19" v2="26" v3="25" />
+        <element id="5" marker="11" v0="19" v1="20" v2="21" v3="26" />
+        <element id="6" marker="11" v0="26" v1="21" v2="22" v3="23" />
+        <element id="7" marker="11" v0="25" v1="26" v2="23" v3="24" />
+
+        <element id="8" marker="11" v0="0" v1="1" v2="10" v3="9" />
+        <element id="9" marker="11" v0="1" v1="2" v2="11" v3="10" />
+        <element id="10" marker="11" v0="9" v1="10" v2="19" v3="18" />
+        <element id="11" marker="11" v0="10" v1="11" v2="20" v3="19" />
+
+        <element id="12" marker="11" v0="6" v1="5" v2="14" v3="15" />
+        <element id="13" marker="11" v0="5" v1="4" v2="13" v3="14" />
+        <element id="14" marker="11" v0="15" v1="14" v2="23" v3="24" />
+        <element id="15" marker="11" v0="14" v1="13" v2="22" v3="23" />
+
+        <element id="16" marker="11" v0="0" v1="7" v2="16" v3="9" />
+        <element id="17" marker="11" v0="7" v1="6" v2="15" v3="16" />
+        <element id="18" marker="11" v0="9" v1="16" v2="25" v3="18" />
+        <element id="19" marker="11" v0="16" v1="15" v2="24" v3="25" />
+
+        <element id="20" marker="11" v0="2" v1="3" v2="12" v3="11" />
+        <element id="21" marker="11" v0="3" v1="4" v2="13" v3="12" />
+        <element id="22" marker="11" v0="11" v1="12" v2="21" v3="20" />
+        <element id="23" marker="11" v0="12" v1="13" v2="22" v3="21" />
+    </boundary>
+</mesh>

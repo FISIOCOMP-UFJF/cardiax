@@ -1681,8 +1681,8 @@ void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double p
 {
   pressure_map[mlv] = plv;
   pressure_map[mrv] = prv;
-  material->set_Ta(ta);
-  material->set_dTa(dta);
+  // material->set_Ta(ta);
+  // material->set_dTa(dta);
 }
 
 void NonlinearElasticity::run()

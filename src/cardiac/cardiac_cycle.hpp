@@ -5,109 +5,72 @@
 #include "monodomain_deformation.hpp"
 #include "pdes/total_lagrangian.hpp"
 #include "pdes/updated_lagrangian.hpp"
-
-/*!
- * Class for coupled electromechanics problem:
- *  - Electrics: Monodomain or Bidomain models
- *  - Mechanics: TotalLagrangian or UpdatedLagrangian formulations
- *               for non-linear elasticity
- */
+#include "eikonal.hpp"
+#include <fstream>
 
 class CardiacElectromechanic
 {
-
 public:
+  CardiacElectromechanic(const std::string &epmodel);
 
-  //! Constructor
-  CardiacElectromechanic(const std::string & epmodel);
-
-  //! Destructor 
   ~CardiacElectromechanic();
 
-  //! Configure both problems
-  void config(const string & basename);
+  void config(const string &basename);
 
-  //! The CardiacProblem solver
-  MonodomainDeformation & ref() { return ephy; }
-  //BidomainDeformation & ref() { return ephy; }
-
-  //! Solve monodomain and elasticity problems
+  // MonodomainDeformation &ref() { return ephy; }
+  Eikonal &ref() { return ephy; }
   void solve();
 
- private:
+public:
+  void saveActiveStressToFile(const std::string &filename)
+  {
+    std::ofstream outFile(filename);
+    if (!outFile.is_open())
+    {
+      std::cerr << "Erro: Nao foi possivel abrir o arquivo" << filename << std::endl;
+    }
+    for (size_t i = 0; i < activeStressCurve.size(); ++i)
+    {
+      outFile << timePoints[i] << " " << activeStressCurve[i] << "\n";
+    }
+    outFile.close();
+    std::cout << "Dados da tensão ativa salvos em: " << filename << std::endl;
+  }
 
-  //! Time step for mechanical problem (miliseconds)
+private:
+  double T_ref;
   double dt_mech;
-
   int n_cycles = 1;
-
   double Ta0 = 0.0;
   double P0;
-
   double dTa0;
-
-  double c_art;
-  double c_ven;
-
-  double Rmv;
-  double Rven;
-  double Rao;
-  double Rper;
-
-  double V_art_zero;
-  double V_ven_zero;
-
+  double c_art, c_ven, Rmv, Rven, Rao, Rper;
+  double V_art_zero, V_ven_zero;
   double E_es_LA, A_LA, B_LA, Tmax, tau;
-
-  double P_o;
-  double part;
-  double pven;
-  double stroke_volume;
-
+  double P_o, part, pven, stroke_volume;
   string filename;
-
-  //! Cardiac problem
-  //CardiacProblem * ep;
-  MonodomainDeformation ephy;
-  //BidomainDeformation ephy;
-
-  //! Mechanical problem
-  //TotalLagrangian elas;
-  UpdatedLagrangian elas; //! TODO: Updated Lagrangian is not working!
-
-  //! Vector of stress tensors (used to load cardiac EP problem)
-  std::vector<arma::mat33*> vec_stress;
-
-  //! Vector with the current fibers directions (f,s,n)
-  std::vector<arma::mat33*> vec_fib;
-
-  //! Vector with the reference fibers directions (f0,s0,n0)
-  std::vector<arma::mat33*> vec_fib0;
-
-  //! Timer for sections
+  // MonodomainDeformation ephy;
+  Eikonal ephy; 
+  TotalLagrangian elas;
+  std::vector<arma::mat33 *> vec_stress;
+  std::vector<arma::mat33 *> vec_fib;
+  std::vector<arma::mat33 *> vec_fib0;
   TimerSection timer;
-
-  //std::vector< std::pair<double, double> > p_Ta_list;
   std::vector<double> curr_time;
   std::vector<double> recorded_time;
-  std::vector<double> p_lv;
-  std::vector<double> p_rv;
-  std::vector<double> Ta_list;
+  std::vector<double> p_lv, p_rv, Ta_list, volume, p_art, p_ven, p_LA;
+  
+  arma::vec dta;
+  arma::vec ta;
+  arma::vec lat;
 
-  std::vector<double> volume;
-  std::vector<double> p_art;
-  std::vector<double> p_ven;
-  std::vector<double> p_LA;
+  void Solve_System(double tt, double pressure, double pressure2);
 
-  void Solve_System(double active_stress, double pressure, double pressure2);
- 
-  double Isovolumetric_PressureUpdate(int i, double volume_constraint);
 
-  double PressureUpdatePhase3(int i, double V_ED);
-
-  double fullLumpedModel(int i, double volume_constraint);
-
+  std::vector<double> activeStressCurve;
+  std::vector<double> timePoints;
+  bool curveCalculated = false;
+  bool has_eikonal = false; 
 };
 
 #endif
-

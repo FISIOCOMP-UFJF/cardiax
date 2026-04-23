@@ -29,6 +29,35 @@ void LinearSolver::init()
 
 #ifdef AMGX_SOLVER
   AMGX_SAFE_CALL(AMGX_register_print_callback(&callback));
+
+  AMGX_SAFE_CALL(AMGX_initialize());
+
+  const std::string amgxConfigPath = CommandLineArgs::read("-amgx", "./configs/CG_DILU.json");
+  const std::string fallbackConfig = 
+      "{\"config_version\": 2, \"solver\": {"
+      "\"preconditioner\": {\"scope\": \"precond\", \"solver\": \"MULTICOLOR_DILU\"},"
+      "\"store_res_history\": 1, \"solver\": \"CG\", \"print_solve_stats\": 0,"
+      "\"obtain_timings\": 1, \"max_iters\": 2000, \"monitor_residual\": 1,"
+      "\"scope\": \"main\", \"tolerance\": 1e-05, \"norm\": \"L2\"}}";
+
+  std::ifstream fileCheck(amgxConfigPath);
+  if (fileCheck.good()) {
+      fileCheck.close();
+      std::cout << "[AMGX] Using config file: " << amgxConfigPath << std::endl;
+      AMGX_SAFE_CALL(AMGX_config_create_from_file(&_amgx_config, amgxConfigPath.c_str()));
+  } else {
+      std::cout << "[AMGX] AVISO: file '" << amgxConfigPath << "' not found." << std::endl;
+      std::cout << "[AMGX] Using fallback configuration (CG + MULTICOLOR_DILU)." << std::endl;
+      AMGX_SAFE_CALL(AMGX_config_create(&_amgx_config, fallbackConfig.c_str()));
+  }
+
+  AMGX_SAFE_CALL(AMGX_resources_create_simple(&_amgx_rsrc, _amgx_config));
+
+  AMGX_SAFE_CALL(AMGX_matrix_create(&_amgx_A, _amgx_rsrc, AMGX_mode_dDDI));
+  AMGX_SAFE_CALL(AMGX_vector_create(&_amgx_b, _amgx_rsrc, AMGX_mode_dDDI));
+  AMGX_SAFE_CALL(AMGX_vector_create(&_amgx_x, _amgx_rsrc, AMGX_mode_dDDI));
+  AMGX_SAFE_CALL(AMGX_solver_create(&_amgx_solver, _amgx_rsrc, AMGX_mode_dDDI, _amgx_config));
+
 #endif
 }
 
@@ -601,52 +630,8 @@ std::pair<PetscInt, PetscReal> LinearSolver::solve(petsc::Matrix &A,
                                                   petsc::Vector &b,
                                                   const double tol)
 {
-    // Specify the desired AMGX configuration name
-    const std::string amgxConfigName = CommandLineArgs::read("-amgx", "./configs/CG_DILU.json");
-
-    int its;
-    double rnorm;
-
-    const std::string fallbackConfig = 
-      "{\"config_version\": 2, \"solver\": {"
-      "\"preconditioner\": {\"scope\": \"precond\", \"solver\": \"MULTICOLOR_DILU\"},"
-      "\"store_res_history\": 1, \"solver\": \"CG\", \"print_solve_stats\": 0,"
-      "\"obtain_timings\": 1, \"max_iters\": 2000, \"monitor_residual\": 1,"
-      "\"scope\": \"main\", \"tolerance\": 1e-05, \"norm\": \"L2\"}}";
-
-
-    // Initialize AMGX
-    AMGX_SAFE_CALL(AMGX_initialize());
-
-    // Create and configure AMGX resources and solver
-    AMGX_config_handle config;
-    AMGX_resources_handle rsrc;
-    AMGX_solver_handle amgx_solver;
-
-    const std::string amgxConfigPath = CommandLineArgs::read("-amgx", "./configs/CG_DILU.json");
-    
-    std::ifstream fileCheck(amgxConfigPath);
-    if (fileCheck.good()) {
-        fileCheck.close();
-        std::cout << "[AMGX] Using config file: " << amgxConfigPath << std::endl;
-        AMGX_SAFE_CALL(AMGX_config_create_from_file(&config, amgxConfigPath.c_str()));
-    } else {
-        std::cout << "[AMGX] AVISO: file '" << amgxConfigPath << "' not founded." << std::endl;
-        std::cout << "[AMGX] Using fallback configuration (CG + MULTICOLOR_DILU)." << std::endl;
-        AMGX_SAFE_CALL(AMGX_config_create(&config, fallbackConfig.c_str()));
-    }
-
-    AMGX_SAFE_CALL(AMGX_resources_create_simple(&rsrc, config));
-
-    // Create and configure AMGX matrix
-    AMGX_matrix_handle amgx_A;
-    AMGX_SAFE_CALL(AMGX_matrix_create(&amgx_A, rsrc, AMGX_mode_dDDI));
-
-    AMGX_vector_handle amgx_b, amgx_x;
-    AMGX_SAFE_CALL(AMGX_vector_create(&amgx_b, rsrc, AMGX_mode_dDDI));
-    AMGX_SAFE_CALL(AMGX_vector_create(&amgx_x, rsrc, AMGX_mode_dDDI));
-
-    AMGX_SAFE_CALL(AMGX_solver_create(&amgx_solver, rsrc, AMGX_mode_dDDI, config));
+    int its = 0;
+    double rnorm = 0.0;
 
     int n, nnz, *row_ptrs, *col_indices;
     double *values;
@@ -659,71 +644,40 @@ std::pair<PetscInt, PetscReal> LinearSolver::solve(petsc::Matrix &A,
 
     A.get_CSR(&n, row_ptrs, col_indices, values);
 
-    for(int i = 0; i < n + 1; i++)
-    {
+    for(int i = 0; i < n + 1; i++) {
       row_ptrs[i] -= 1;
     }
-
-    for(int i = 0; i < nnz; i++)
-    {
+    for(int i = 0; i < nnz; i++) {
       col_indices[i] -= 1;
     }
 
+    AMGX_SAFE_CALL(AMGX_matrix_upload_all(_amgx_A, n, nnz, 1, 1, row_ptrs, col_indices, values, NULL));
 
-    AMGX_SAFE_CALL(AMGX_matrix_upload_all(amgx_A, n, nnz, 1, 1, row_ptrs, col_indices, values, NULL));
+    double *b_values = b.get_array();
+    double *x_values = x.get_array();
+    AMGX_SAFE_CALL(AMGX_vector_upload(_amgx_b, b.size(), 1, b_values));
+    AMGX_SAFE_CALL(AMGX_vector_upload(_amgx_x, x.size(), 1, x_values));
 
-    // Create AMGX vectors for b and x
-    double *b_values, *x_values;
+    AMGX_SAFE_CALL(AMGX_solver_setup(_amgx_solver, _amgx_A));
 
-    b_values = b.get_array();
-    x_values = x.get_array();
-    AMGX_SAFE_CALL(AMGX_vector_upload(amgx_b, b.size(), 1, b_values));
-    AMGX_SAFE_CALL(AMGX_vector_upload(amgx_x, x.size(), 1, x_values));
+    AMGX_SAFE_CALL(AMGX_solver_solve(_amgx_solver, _amgx_b, _amgx_x));
 
-    // Set up the AMGX solver
-    AMGX_SAFE_CALL(AMGX_solver_setup(amgx_solver, amgx_A));
-
-    // Solve the system using AMGX
-    AMGX_SAFE_CALL(AMGX_solver_solve(amgx_solver, amgx_b, amgx_x));
-
-    // Copy the solution back to Petsc
     double *data = new double[x.size()];
-    AMGX_SAFE_CALL(AMGX_vector_download(amgx_x, data));
+    AMGX_SAFE_CALL(AMGX_vector_download(_amgx_x, data));
     x.set_data(data);
     delete[] data;
-    // Get iteration count and residual norm
-    AMGX_SAFE_CALL(AMGX_solver_get_iterations_number(amgx_solver, &its)); // alt: AMGX_solver_get_iterations_number(AMGX_solver_handle obj, int *n)
-    AMGX_SAFE_CALL(AMGX_solver_get_iteration_residual(amgx_solver, its, 0, &rnorm)); // AMGX_solver_get_iteration_residual(AMGX_solver_handle obj, int iter,int idx, double *res);
-
-    // Cleanup and finalize AMGX
-    AMGX_SAFE_CALL(AMGX_solver_destroy(amgx_solver));
-    AMGX_SAFE_CALL(AMGX_vector_destroy(amgx_x));
-    AMGX_SAFE_CALL(AMGX_vector_destroy(amgx_b));
-    AMGX_SAFE_CALL(AMGX_matrix_destroy(amgx_A));
-    AMGX_SAFE_CALL(AMGX_resources_destroy(rsrc));
-    AMGX_SAFE_CALL(AMGX_config_destroy(config));
-    AMGX_SAFE_CALL(AMGX_finalize());
-
+    
+    AMGX_SAFE_CALL(AMGX_solver_get_iterations_number(_amgx_solver, &its)); 
+    AMGX_SAFE_CALL(AMGX_solver_get_iteration_residual(_amgx_solver, its, 0, &rnorm));
 
     delete[] row_ptrs;
     delete[] col_indices;
     delete[] values;
 
-    // Tamanho do array de caracteres para o nome do arquivo
-    //const int filenameSize = 100; // Ajuste conforme necessário
-
-    // Array de caracteres para o nome do arquivo
-    //char filename[filenameSize];
-
-    // Construindo o nome do arquivo
-    //snprintf(filename, filenameSize, "solution_%s.txt", amgxConfigName.c_str());
-
-    // Chamando a função save_array com o array de caracteres
-    //x.save_array(filename);
-
     // Return iteration count and residual norm
     return std::make_pair((PetscInt)its, (PetscReal)rnorm);
 }
+
 #endif
 
 #ifdef PETSC_SOLVER

@@ -95,7 +95,7 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
 
   arma::vec tmp_fext(fespace.get_ndofs());
   arma::vec elvec(n);
-  std::vector<int> dnums;
+  std::vector<int> dnums, pnums;
 
   tmp_fext.zeros();
 
@@ -115,6 +115,8 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
 
     elvec.zeros();  
     fespace.get_element_dofs_u(i,dnums);
+    msh.get_element_pt_nums(i, pnums);
+    
 //cout << "passou 2\n";
 
     for(int q=0; q<nint; q++)
@@ -144,8 +146,8 @@ void TotalLagrangian::assemble_active(const arma::vec & is,
       Ta.zeros();
       for(int j=0; j<nnode; j++)
       {	
-        int node = ( dnums[j] - 2) / 3 ; // global node number
-        // int node = dnums[j];
+        // int node = ( dnums[j] - 2) / 3 ; // global node number
+        int node = pnums[j];
 
 //cout << "j: " << j << " node: " << node <<endl;
 

@@ -4,10 +4,12 @@
 //
 
 #include "cardiac/bidomain.hpp"
-#include "boost/filesystem.hpp"   
+#include <filesystem>
 
 using namespace std;
-using namespace boost::filesystem; 
+namespace fs = std::filesystem;
+
+
 static char help[] = "Bidomain Cardiac Solver.\n\n";
 
 void usage()
@@ -45,14 +47,14 @@ int main(int argc, const char *argv[])
   typefile  = filename + ".typ"; 
   
   // check and clean output directory
-  if ( exists("output") )
+  if ( fs::exists("output") ) 
   {
-    remove_all("output");
-    assert(!exists("output"));
+    fs::remove_all("output");
+    assert(!fs::exists("output"));
   }
   
-  create_directory("output");
-  create_directories("output/vm_text/");
+  fs::create_directory("output");
+  fs::create_directories("output/vm_text/");
 
   // start PETSc
   PetscMPIInt rank;

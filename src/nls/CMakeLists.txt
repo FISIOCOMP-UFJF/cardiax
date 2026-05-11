@@ -31,7 +31,7 @@ target_link_libraries(NLS PUBLIC
 
 # [MODIFICADO] Define o executável de teste
 # Ele compila os fontes de teste
-add_executable(testSimple
+add_executable(testSimple EXCLUDE_FROM_ALL
     test/simple.cpp
     test/test_simple.cpp
 )

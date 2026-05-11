@@ -451,7 +451,7 @@ void Bidomain::setup_nodes()
   num_bath_elems = k;
 
   // remove tissue nodes present at bathset
-  boost::unordered_set<uint>::iterator b;
+  std::unordered_set<uint>::iterator b;
   for(b=bathset.begin(); b!=bathset.end(); ++b)
   {
     if (tissueset.find(*b) != tissueset.end())

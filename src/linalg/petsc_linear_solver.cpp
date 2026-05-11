@@ -17,20 +17,17 @@ void LinearSolver::init()
 
   set_solver_type();
 
-  // Set runtime options, e.g.,
-  // -ksp_type <type> -pc_type <type> -ksp_monitor -ksp_rtol <rtol>
-  //
-  // These options will override those specified above as long as
-  // KSPSetFromOptions() is called _after_ any other customization
-  // routines.
-
   ierr = KSPSetFromOptions (_ksp);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
 
 #ifdef AMGX_SOLVER
-  AMGX_SAFE_CALL(AMGX_register_print_callback(&callback));
-
-  AMGX_SAFE_CALL(AMGX_initialize());
+  static bool amgx_initialized = false;
+  if (!amgx_initialized) {
+      AMGX_SAFE_CALL(AMGX_initialize());
+      AMGX_SAFE_CALL(AMGX_register_print_callback(&callback));
+      
+      amgx_initialized = true;
+  }
 
   const std::string amgxConfigPath = CommandLineArgs::read("-amgx", "./configs/CG_DILU.json");
   const std::string fallbackConfig = 

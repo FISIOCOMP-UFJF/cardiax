@@ -22,18 +22,28 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# --- Custom Installation Paths ---
+set(PETSC_DIR "" CACHE PATH "Manual path to PETSc installation")
+set(AMGX_DIR "" CACHE PATH "Manual path to AMGX installation")
+set(ARMADILLO_DIR "" CACHE PATH "Manual path to Armadillo installation")
+set(CUDA_DIR "" CACHE PATH "Manual path to CUDA Toolkit")
+set(MATH_LIBS_DIR "" CACHE PATH "Manual path to BLAS/LAPACK")
+
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
 
 # --- Create Interface library ---
 add_library(ext_libs INTERFACE)
 
-# --- PETSC (via pkg-config, conda-forge compatible) ---
+# --- PETSC (via pkg-config) ---
 find_package(PkgConfig REQUIRED)
 
-if(NOT DEFINED ENV{PKG_CONFIG_PATH})
-  set(ENV{PKG_CONFIG_PATH} "$ENV{CONDA_PREFIX}/lib/pkgconfig")
-else()
+if(PETSC_DIR)
+  # Se o usuário passou um diretório manual, injeta ele no pkg-config
+  set(ENV{PKG_CONFIG_PATH} "${PETSC_DIR}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+  message(STATUS "Using custom PETSC_DIR: ${PETSC_DIR}")
+elseif(DEFINED ENV{CONDA_PREFIX})
+  # Fallback para o Conda se existir
   set(ENV{PKG_CONFIG_PATH} "$ENV{CONDA_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
 endif()
 
@@ -57,13 +67,13 @@ find_package(HDF5 REQUIRED)
 # --- BLAS/LAPACK (conda Netlib — must match Armadillo's build) ---
 find_library(BLAS_LIBRARY
   NAMES blas
-  HINTS $ENV{CONDA_PREFIX}
+  HINTS ${MATH_LIBS_DIR} $ENV{CONDA_PREFIX}
   PATH_SUFFIXES lib lib64
   NO_CMAKE_SYSTEM_PATH)
 
 find_library(LAPACK_LIBRARY
   NAMES lapack
-  HINTS $ENV{CONDA_PREFIX}
+  HINTS ${MATH_LIBS_DIR} $ENV{CONDA_PREFIX}
   PATH_SUFFIXES lib lib64
   NO_CMAKE_SYSTEM_PATH)
 
@@ -86,10 +96,10 @@ endif()
 # --- Armadillo ---
 find_library(ARMADILLO_LIBRARY
   NAMES armadillo
-  HINTS $ENV{ARMADILLO_ROOT} $ENV{CONDA_PREFIX}
+  HINTS ${ARMADILLO_DIR} $ENV{ARMADILLO_ROOT} $ENV{CONDA_PREFIX}
   PATH_SUFFIXES lib lib64)
 find_path(ARMADILLO_INCLUDE_DIR armadillo
-  HINTS $ENV{ARMADILLO_ROOT} $ENV{CONDA_PREFIX}
+  HINTS ${ARMADILLO_DIR} $ENV{ARMADILLO_ROOT} $ENV{CONDA_PREFIX}
   PATH_SUFFIXES include)
 if(NOT ARMADILLO_LIBRARY)
   message(FATAL_ERROR "Armadillo not found. Set ARMADILLO_ROOT or run: conda install -c conda-forge armadillo")
@@ -100,19 +110,21 @@ endif()
 # --- AmgX ---
 find_library(AMGX_LIBRARY
   NAMES amgx
-  HINTS $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
+  HINTS ${AMGX_DIR} $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
   PATH_SUFFIXES lib lib64)
 find_path(AMGX_INCLUDE_DIR amgx_c.h
-  HINTS $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
+  HINTS ${AMGX_DIR} $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
   PATH_SUFFIXES include)
 
 # --- CUDA ---
-find_library(CUDART_LIB   cudart     HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(CUSPARSE_LIB cusparse   HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(CUSOLVER_LIB cusolver   HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(NVTX_LIB     nvToolsExt HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(CUBLAS_LIB   cublas     HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUDART_LIB   cudart     HINTS ${CUDA_DIR} $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUSPARSE_LIB cusparse   HINTS ${CUDA_DIR} $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUSOLVER_LIB cusolver   HINTS ${CUDA_DIR} $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(NVTX_LIB     nvToolsExt HINTS ${CUDA_DIR} $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUBLAS_LIB   cublas     HINTS ${CUDA_DIR} $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
 set(CUDA_LIBRARIES ${CUDART_LIB} ${CUSPARSE_LIB} ${CUSOLVER_LIB} ${NVTX_LIB} ${CUBLAS_LIB})
+
+option(FORCE_PETSC_SOLVER "Force PETSc solver even if AMGX is found" OFF)
 
 # All cuda libraries found?
 if(CUDART_LIB AND CUSPARSE_LIB AND CUSOLVER_LIB AND NVTX_LIB AND CUBLAS_LIB)
@@ -122,7 +134,11 @@ else()
 endif()
 
 # --- Defining Solver ---
-if(AMGX_LIBRARY AND AMGX_INCLUDE_DIR)
+if(FORCE_PETSC_SOLVER)
+    # Se a flag foi ativada, ignora o AMGx completamente
+    message(STATUS "FORCE_PETSC_SOLVER is ON. Bypassing AMGx and forcing PETSC_SOLVER.")
+    add_compile_definitions(PETSC_SOLVER)
+elseif(AMGX_LIBRARY AND AMGX_INCLUDE_DIR)
     # AMGx foi found. What about CUDA?
     message(STATUS "AMGx found: ")
     message(STATUS "  Includes : ${AMGX_INCLUDE_DIR}")
@@ -152,39 +168,6 @@ else()
     
     add_compile_definitions(PETSC_SOLVER)
 endif()
-
-# # Eigen
-# find_package(Eigen3 REQUIRED)
-# if(Eigen3_FOUND)
-#   message(STATUS "Eigen3 found via find_package: ${EIGEN3_INCLUDE_DIR}")
-# else()
-#   find_path(EIGEN3_INCLUDE_DIR Eigen/Core
-#     HINTS $ENV{CONDA_PREFIX}/include/eigen3
-#           $ENV{CONDA_PREFIX}/include
-#     NO_CMAKE_SYSTEM_PATH)
-#   if(EIGEN3_INCLUDE_DIR)
-#     message(STATUS "Eigen3 found manually: ${EIGEN3_INCLUDE_DIR}")
-#   else()
-#     message(FATAL_ERROR "Eigen3 not found. Run: conda install -c conda-forge eigen")
-#   endif()
-# endif()
-
-
-
-# # autodiff (header-only, precisa do Eigen)
-# find_package(autodiff REQUIRED)
-# if(autodiff_FOUND)
-#   message(STATUS "autodiff found via find_package")
-# else()
-#   find_path(AUTODIFF_INCLUDE_DIR autodiff/forward/dual.hpp
-#     HINTS $ENV{CONDA_PREFIX}/include
-#     NO_CMAKE_SYSTEM_PATH)
-#   if(AUTODIFF_INCLUDE_DIR)
-#     message(STATUS "autodiff found manually: ${AUTODIFF_INCLUDE_DIR}")
-#   else()
-#     message(FATAL_ERROR "autodiff not found. Run: conda install -c conda-forge autodiff")
-#   endif()
-# endif()
 
 
 # --- Build Interface library --- 

@@ -26,6 +26,7 @@ public:
   //! Strain energy function
   double strain_energy(MaterialData * md, const arma::mat &) const;
 
+  //! Active strain energy function
   double active_strain_energy(MaterialData * md, const arma::mat & E) const;
 
   //! Add pressure to the stress tensor 
@@ -58,13 +59,6 @@ public:
   virtual void deviatoric_elastensor(MaterialData * md, Tensor4 & A) const=0;
 
   // Some helpful functions ----------------------------------------------------
-
-  //double dUdJ   (double J) { return log(J)/J; }
-  //double d2UdJJ (double J) { return (1.0-log(J))/(J*J); }
-  //double h      (double J) { return log(J); }
-  //double dhdp   (double J) { return 1.0 / J; }
-  //double d2hdpp (double J) { return -1.0 / (J*J); }
-
   double dUdJ   (double J) { return (J-1.0); }
   double d2UdJJ (double J) { return 1; }
   double h      (double J) { return (J-1.0); }

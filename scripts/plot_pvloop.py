@@ -4,7 +4,6 @@ import sys
 
 filename = sys.argv[1]
 data = np.loadtxt(filename)
-
 plt.plot(data[:,2], data[:,1])
 
 # plt.figure(0)

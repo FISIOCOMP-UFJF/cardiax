@@ -79,13 +79,13 @@ public:
     v_bs.push_back(prm[6]);
     v_bfs.push_back(prm[7]); 
     name = "HolzapfelOgden";
-    active_stress = prm[8];
+    active_stress = prm[8]; 
+
     parameters = prm;
     map_mat.push_back(0);
   }
 
   double strain_energy(MaterialData * md, const arma::mat &) const;
-  double active_strain_energy(int iel, MaterialData * md, const arma::mat & E) const;
   void deviatoric_stress(MaterialData * md, arma::mat & stress) const;
   void deviatoric_elastensor(MaterialData * md, Tensor4 & A) const;
   void piola2_stress(MaterialData * md, arma::mat & pk2) const;

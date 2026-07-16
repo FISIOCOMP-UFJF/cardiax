@@ -51,7 +51,7 @@ void UpdatedLagrangian::al_update(int increment)
       // Update the value of the penalty parameter
       for (int ie = 0; ie < ne; ie++)
       {
-        // kappa adaptativo
+        // adaptative kappa
         // eps(ie) = fabs( eps0(ie) * ( eL(ie) / eL0(ie) ) );
       }
     }
@@ -127,121 +127,6 @@ void UpdatedLagrangian::assemble_stiff()
   delete fe;
 }
 
-void UpdatedLagrangian::assemble_active(const arma::vec &is,
-                                        std::vector<arma::mat33 *> &vstrs,
-                                        std::vector<arma::mat33 *> &vfibcoords)
-{
-  MixedFiniteElement *fe = fespace.createFE();
-  Quadrature *qd = Quadrature::create(0, fe->get_type());
-
-  int n = msh.get_n_dim() * msh.get_nen();
-  int ne = msh.get_n_elements();
-  int ndim = fe->get_ndim();
-  int ndof = fe->get_ndofs_u();
-  int nint = qd->get_num_ipoints();
-  int nnode = ndof / ndim;
-
-  arma::vec tmp_fext(fespace.get_ndofs());
-  arma::vec elvec(n);
-  std::vector<int> dnums;
-
-  tmp_fext.zeros();
-
-  for (int iel = 0; iel < ne; iel++)
-  {
-    // Begin of element calculation
-    double detJxW, J;
-    arma::vec shape;
-    arma::mat sigma_voigt(nvoig, 1), B(nvoig, ndof);
-    arma::mat dshape, gradn(ndof, ndim), jacinv(ndim, ndim);
-    arma::mat33 b, *F;
-    arma::vec3 qpt;
-    std::vector<arma::vec3> xe(ndof);
-    std::vector<arma::vec3> x0(ndof);
-    get_element_x(iel, xe);
-    get_element_x0(iel, x0);
-
-    // Tava assim!!!//////////////////////////////////
-    Mapping em = fe->get_mapping(iel, x0);
-
-    // TESTE...estava com o x0 antes
-    // Mapping em = fe->get_mapping(iel, xe);
-    //////////////////////////////////////////////////
-
-    fespace.get_element_dofs_u(iel, dnums);
-
-    elvec.zeros();
-
-    for (int q = 0; q < nint; q++)
-    {
-      qpt = qd->get_point(q);
-      fe->calc_shape_u(qpt, shape);
-      fe->calc_deriv_shape_u(qpt, dshape);
-      em.calc_jacobian(dshape, nnode);
-      detJxW = qd->get_weight(q) * em.get_det_jacobian();
-      jacinv = em.get_inv_jacobian();
-      gradn = (dshape * jacinv);
-
-      F = vecF[iel * nint + q];
-      lcg_tensor(gradn, x0, &J, F, b);
-      calc_B_matrix(gradn, B);
-
-      // interpolation of active stress from nodal to integration points
-      arma::mat33 T;                       // active stress tensor
-      arma::mat33 Tl(arma::fill::zeros);   // local active stress tensor
-      arma::mat33 &M = *(vfibcoords[iel]); // change of basis matrix
-      arma::mat33 &Ta = *(vstrs[iel]);     // anisotropic Cauchy active stress
-      arma::mat33 Fi = arma::inv(*F);
-
-      const arma::vec3 f = (*F) * M.col(0);
-
-      Ta.zeros();
-
-      for (int j = 0; j < nnode; j++)
-      {
-        int k = dnums[j]; // global node number
-
-        // Tl(0,0) = is(k);     // local active tension in fiber direction
-        // T = M * Tl * M.t();  // global active tension in fiber direction
-        T = is(k) * (f * f.t());
-
-        // interpolate
-        for (int ii = 0; ii < 3; ii++)
-          for (int jj = 0; jj < 3; jj++)
-            Ta(ii, jj) += shape(j) * T(ii, jj);
-      }
-
-      // UL uses Sigma!!!
-      // voigtvec(ndim, Ta, sigma_voigt);
-
-      // Ta is Cauchy stress, convert to SPK
-      arma::mat33 S = J * (Fi * Ta * Fi.t());
-      // arma::mat33 S = J * ((*F) * Ta * F->t());
-      voigtvec(ndim, S, sigma_voigt);
-
-      // indicial notation
-      // for(int i=0; i<nnode; i++)
-      //  for(int id=0; id<ndim; id++)
-      //    for(int jd=0; jd<ndim; jd++)
-      //      elvec(i+id*nnode) += Ta(id,jd) * gradn(i,jd) * detJxW;
-
-      // matrix form
-      elvec += (B.t() * sigma_voigt) * detJxW;
-    }
-
-    // assemble into vector
-    for (int k = 0; k < n; k++)
-      if (ldgof[dnums[k]])
-        tmp_fext(dnums[k]) -= elvec(k);
-  }
-
-  // copy
-  fext += tmp_fext;
-
-  delete qd;
-  delete fe;
-}
-
 void UpdatedLagrangian::calc_elmat_const(const int iel, const MxFE *fe,
                                          const Quadrature *qd, arma::mat &Ke)
 {
@@ -289,31 +174,17 @@ void UpdatedLagrangian::calc_elmat_const(const int iel, const MxFE *fe,
     calc_B_matrix(gradn, B);
 
     MaterialData *md = new MaterialData(msh.get_element(iel), F);
+    md->set_active_stress(0.0); 
+
     if (material->is_incompressible())
     {
 
       IncompressibleMaterial *im;
       im = static_cast<IncompressibleMaterial *>(material);
-      // elasticity tensor - deviatoric part
-      //
-
-      if (im->get_name() == "Guccione")
-      {
-        im->deviatoric_elastensor(md, elastensorM);
-        im->map_elas_to_global(md, elastensorM, elastensorM_global);
-
-        if (md->get_marker() == 0)
-          im->active_stress_elastensor(lc.get_nincs(), md->fiber(), elastensorM_global); //Deu pau aqui
-
-        im->push_forward(F, elastensorM_global, elastensor);
-      }
-      else
-      {
-        im->calc_fd_elastensor(md, elastensorM);
-        // im->active_stress_elastensor(lc.get_nincs(), md, elastensorM);
-        im->push_forward(F, elastensorM, elastensor);
-      }
-
+      
+      im->calc_fd_elastensor(md, elastensorM);
+      im->push_forward(F, elastensorM, elastensor);
+      
       // converts to Voigt notation
       elastensor.get_matrix(D);
     }
@@ -356,6 +227,7 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
 
   std::vector<arma::vec3> elem_xe(nubf);
   std::vector<arma::vec3> elem_x0(nubf);
+  std::vector<int> pnums(nubf);
   get_element_x(iel, elem_xe);
   get_element_x0(iel, elem_x0);
 
@@ -364,6 +236,13 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
   Ke.zeros();
   Re.zeros();
   press = 0;
+
+  arma::vec Ta_e(nubf);
+  msh.get_element_pt_nums(iel, pnums);
+  const arma::vec &Ta = material->get_Ta(); 
+  for(int i=0;i<nubf;i++)
+    Ta_e(i) = Ta(pnums[i]);
+
 
   // mean dilatation method
   if (material->is_incompressible())
@@ -386,61 +265,35 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
     calc_B_matrix(gradn, B);
     calc_H_matrix(gradn, H);
 
+    double Ta_ip  =0.0; 
+    for (int j = 0; j < nubf; ++j)
+    {
+        Ta_ip += shape(j) * Ta_e(j);
+    }
+
     // compute stress and elasticity tensor
     MaterialData *md = new MaterialData(msh.get_element(iel), *F);
+    if(md->get_marker() == 0)
+      md->set_active_stress(Ta_ip*lc.load());
+    else
+      md->set_active_stress(0.0);
 
     if (material->is_incompressible())
     {
       IncompressibleMaterial *im;
       im = static_cast<IncompressibleMaterial *>(material);
 
-      // im->deviatoric_stress(md, sigma);
-      // im->add_pressure(press, sigma);
-      // im->deviatoric_elastensor(md, elastensor);
-      // im->sp_volumetric_elastensor(press, elastensor);
-      // elastensor.get_matrix(D);
-
-      // stress
-      // im->calc_fd_stress(md, S);
-      if (im->get_name() == "Guccione")
-      {
-        im->piola2_stress(md, S);
-        if (md->get_marker() == 0)
-          im->set_active_stress(S, lc.load());
-        im->map_to_global(md, S);
-        im->push_forward(*F, S, sigma);
-      }
-      else
-      {
-        im->calc_fd_stress(iel, md, S);
-        // im->set_active_stress(md, S, lc.load());
-        im->push_forward(*F, S, sigma);
-        // im->set_active_stress(md, sigma, lc.load());
-      }
+      im->calc_fd_stress(iel, md, S);
+      im->push_forward(*F, S, sigma);
+      
 
       im->add_pressure(press, sigma);
-
-      // elasticity tensor - deviatoric part
-      // im->calc_fd_elastensor(md, elastensorM);
-
-      // TODO: improve this, needs to be general
-      if (im->get_name() == "Guccione")
-      {
-        im->deviatoric_elastensor(md, elastensorM);
-        im->map_elas_to_global(md, elastensorM, elastensorM_global);
-        if (md->get_marker() == 0)
-          im->active_stress_elastensor(lc.get_nincs(), md->fiber(), elastensorM_global);
-        im->push_forward(*F, elastensorM_global, elastensor);
-      }
-      else
-      {
-        im->calc_fd_elastensor(md, elastensorM);
-        // im->active_stress_elastensor(lc.get_nincs(), md, elastensorM);
-        im->push_forward(*F, elastensorM, elastensor);
-      }
+      im->calc_fd_elastensor(md, elastensorM);
+      im->push_forward(*F, elastensorM, elastensor);
 
       // elasticity tensor - volumetric part
       im->sp_volumetric_elastensor(press, elastensor);
+
       // converts to Voigt notation
       elastensor.get_matrix(D);
     }
@@ -449,7 +302,7 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
       material->cauchy_stress(md, sigma);
       material->sp_elastensor(md, D);
     }
-
+    
     // create and convert sigma stress tensor to
     // appropriate formats for matricial manipulation
     sigma2 = arma::kron(arma::eye(ndim, ndim), sigma.submat(0, 0, ndim - 1, ndim - 1));
@@ -467,9 +320,7 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
     // store stresses
     stressdb.tube(iel, q) = arma::vectorise(sigma, 1);
     straindb.tube(iel, q) = arma::vectorise(md->lagrangian_strain(), 1);
-    // S = arma::det(*F) * arma::inv(*F) * sigma * arma::inv(*F).t();
-    // stressdb.tube(iel, q) = arma::vectorise(S,1);
-
+    
     delete md;
   }
 }
@@ -596,6 +447,8 @@ void UpdatedLagrangian::elem_resid(const int iel, const MxFE *fe,
 
   std::vector<arma::vec3> elem_xe(nubf);
   std::vector<arma::vec3> elem_x0(nubf);
+  std::vector<int> pnums(nubf);
+
   get_element_x(iel, elem_xe);
   get_element_x0(iel, elem_x0);
 
@@ -604,6 +457,12 @@ void UpdatedLagrangian::elem_resid(const int iel, const MxFE *fe,
   Ke.zeros();
   Re.zeros();
   press = 0;
+
+  arma::vec Ta_e(nubf);
+  msh.get_element_pt_nums(iel, pnums);
+  const arma::vec &Ta = material->get_Ta(); 
+  for(int i=0;i<nubf;i++)
+    Ta_e(i) = Ta(pnums[i]);
 
   // Mean dilatation method
   if (material->is_incompressible())
@@ -626,47 +485,30 @@ void UpdatedLagrangian::elem_resid(const int iel, const MxFE *fe,
     calc_B_matrix(gradn, B);
     calc_B_matrix(gradn, B);
 
+    
+    double Ta_ip  =0.0; 
+    for (int j = 0; j < nubf; ++j)
+    {
+        Ta_ip += shape(j) * Ta_e(j);
+    }
+
+
     // Compute stress and elasticity tensor
     MaterialData *md = new MaterialData(msh.get_element(iel), *F);
+    if(md->get_marker() == 0)
+      md->set_active_stress(Ta_ip*lc.load());
+    else
+      md->set_active_stress(0.0);
+
     if (material->is_incompressible())
     {
-
       IncompressibleMaterial *im;
       im = static_cast<IncompressibleMaterial *>(material);
 
-      // finite difference
-      // im->calc_fd_stress(md, S);
-      if (im->get_name() == "Guccione")
-      {
-        im->piola2_stress(md, S);
-        if (md->get_marker() == 0)
-          im->set_active_stress(S, lc.load());
-        im->map_to_global(md, S);
-        im->push_forward(*F, S, sigma);
-      }
-      else
-      {
-        im->calc_fd_stress(iel, 
-        md, S);
-        // im->set_active_stress(md, S, lc.load());
-        im->push_forward(*F, S, sigma);
-        /*
-                  arma::vec f = md->fiber();
-                  cout << "Sa " << sigma <<endl;
-                  im->calc_fd_stress(md, S);
-                  im->push_forward(*F, S, sigma);
-                  sigma = sigma + 1000.*((*F)*f)*((*F)*f).t();
-                  cout << "Sigma_a " << sigma <<endl<<endl;
-        */
-        // exit(0);
-        // im->set_active_stress(md, sigma, lc.load());
-      }
+      im->calc_fd_stress(iel, md, S);
+      im->push_forward(*F, S, sigma);
 
       im->add_pressure(press, sigma);
-
-      // analytic
-      // im->deviatoric_stress(md, sigma);
-      // im->add_pressure(press, sigma);
     }
     else
     {
@@ -683,127 +525,9 @@ void UpdatedLagrangian::elem_resid(const int iel, const MxFE *fe,
     stressdb.tube(iel, q) = arma::vectorise(sigma, 1);
     straindb.tube(iel, q) = arma::vectorise(md->lagrangian_strain(), 1);
 
-    // S = arma::det(*F) * arma::inv(*F) * sigma * arma::inv(*F).t();
-    // stressdb.tube(iel, q) = arma::vectorise(S,1);
-
     delete md;
   }
 }
-
-/*
-void UpdatedLagrangian::elem_stiff (const int iel, const MxFE * fe,
-                                    const Quadrature * qd, arma::mat & Ke)
-{
-    int ndim = fe->get_ndim();
-    int ndof = fe->get_ndofs_u();
-    int nubf = ndof/ndim;
-    int nint = qd->get_num_ipoints();
-    double detJxW, detF, press;
-
-    arma::vec shape;
-    arma::mat dshape;
-    arma::mat gradn(ndof,ndim);
-    arma::mat jacinv(ndim,ndim);
-    arma::mat sigma_voigt(nvoig,1);
-    arma::mat sigma2(ndim*ndim, ndim*ndim);
-    arma::mat B(nvoig,ndof), D(nvoig,nvoig), H(ndim*ndim,ndof);
-    arma::mat33 btens, *F, S, sigma;
-    arma::vec3 qpt;
-
-    Tensor4 elastensorM, elastensor;
-
-    std::vector<arma::vec3> elem_xe(nubf);
-    std::vector<arma::vec3> elem_x0(nubf);
-    get_element_x(iel, elem_xe);
-    get_element_x0(iel, elem_x0);
-
-    Mapping em = fe->get_mapping(iel, elem_xe);
-
-    Ke.zeros();
-    press = 0;
-
-    // mean dilatation method
-    if(material->is_incompressible())
-    {
-        mean_dilatation(iel, fe, qd, press, Ke);
-    }
-
-    // loop over integration points
-    for(int q=0; q<qd->get_num_ipoints(); q++)
-    {
-        qpt = qd->get_point(q);
-        fe->calc_shape_u(qpt,shape);
-        fe->calc_deriv_shape_u(qpt,dshape);
-        em.calc_jacobian(dshape, nubf);
-        detJxW = qd->get_weight(q) * em.get_det_jacobian();
-
-        double jacdet = em.get_det_jacobian();
-        if( !(jacdet>0) )
-        {
-            cerr << "Negative Jacobian determinant at element = " << iel << endl;
-            exit(1);
-        }
-
-        jacinv = em.get_inv_jacobian();
-        gradn  = (dshape * jacinv);
-
-        F = vecF[iel*nint + q];
-
-        lcg_tensor(gradn, elem_x0, &detF, F, btens);
-        calc_B_matrix (gradn, B);
-        calc_H_matrix (gradn, H);
-
-        // Compute stress and elasticity tensor
-        MaterialData * md = new MaterialData(msh.get_element(iel), *F);
-
-        if( material->is_incompressible() )
-        {
-            IncompressibleMaterial * im;
-            im = static_cast<IncompressibleMaterial*>(material);
-
-            // stress - finite difference
-            im->calc_fd_stress(md, S);
-            im->push_forward(*F, S, sigma);
-            im->add_pressure(press, sigma);
-
-            // stress - analytical
-            //im->deviatoric_stress(md, sigma);
-            //im->add_pressure(press, sigma);
-
-
-
-            // elasticity tensor - deviatoric part
-            im->calc_fd_elastensor(md, elastensorM);
-            im->push_forward(*F, elastensorM, elastensor);
-
-            // elasticity tensor (deviatoric and volumetric) - analytical version
-            //im->deviatoric_elastensor(md, elastensor);
-            //im->sp_volumetric_elastensor(press, elastensor);
-
-            // converts to Voigt notation
-            elastensor.get_matrix(D);
-        }
-        else
-        {
-            material->cauchy_stress(md, sigma);
-            material->sp_elastensor(md, D);
-        }
-
-        // create and convert sigma stress tensor to matrix
-        sigma2 = arma::kron(arma::eye(ndim,ndim), sigma.submat(0,0,ndim-1,ndim-1));
-        voigtvec(ndim, sigma, sigma_voigt);
-
-        // material stiffness matrix - constitutive contribution (elmat_const)
-        Ke += (B.t() * D * B) * detJxW;
-        // geometrical stiffness matrix - stress contribution (elmat_sigma)
-        Ke += (H.t() * sigma2 * H) * detJxW;
-
-        delete md;
-    }
-}
-
-*/
-
 
 void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
                                    const Quadrature *qd, arma::mat &Ke)
@@ -831,6 +555,8 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
 
   std::vector<arma::vec3> elem_xe(nubf);
   std::vector<arma::vec3> elem_x0(nubf);
+  std::vector<int> pnums(nubf);
+
   get_element_x(iel, elem_xe);
   get_element_x0(iel, elem_x0);
 
@@ -839,13 +565,17 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
   Ke.zeros();
   press = 0;
 
+  arma::vec Ta_e(nubf);
+  msh.get_element_pt_nums(iel, pnums);
+  const arma::vec &Ta = material->get_Ta(); 
+  for(int i=0;i<nubf;i++){
+    Ta_e(i) = Ta(pnums[i]);
+  }
   // mean dilatation method
   if (material->is_incompressible())
   {
     mean_dilatation(iel, fe, qd, press, Ke);
   }
-
-  // cout << "Element: " << iel << endl;
 
   // loop over integration points
   for (int q = 0; q < qd->get_num_ipoints(); q++)
@@ -871,66 +601,33 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
     lcg_tensor(gradn, elem_x0, &detF, F, btens);
     calc_B_matrix(gradn, B);
     calc_H_matrix(gradn, H);
+   
+    double Ta_ip  =0.0; 
+    for (int j = 0; j < nubf; ++j)
+    {
+        Ta_ip += shape(j) * Ta_e(j);
+    }
 
     // Compute stress and elasticity tensor
     MaterialData *md = new MaterialData(msh.get_element(iel), *F);
-
+    if(md->get_marker() == 0)
+      md->set_active_stress(Ta_ip*lc.load());
+    else
+      md->set_active_stress(0.0);
+    
     if (material->is_incompressible())
     {
       IncompressibleMaterial *im;
       im = static_cast<IncompressibleMaterial *>(material);
 
-      // stress - finite difference
-      // im->calc_fd_stress(md, S);
-      // guccione analittical
-      if (im->get_name() == "Guccione")
-      {
-        im->piola2_stress(md, S);
-        if (md->get_marker() == 0){
-          im->set_active_stress(S, lc.load());
-        }
-        im->map_to_global(md, S);
-        im->push_forward(*F, S, sigma);
-      }
-      else
-      {
-        // cout << "ZZZ" << endl;
-        im->calc_fd_stress(iel, md, S);
-        // im->set_active_stress(md, S, lc.load());
-        im->push_forward(*F, S, sigma);
-        // im->set_active_stress(md, sigma, lc.load());
-      }
+      im->calc_fd_stress(iel, md, S);
+      // im->set_active_stress(md, S, lc.load());
+      im->push_forward(*F, S, sigma);
 
       im->add_pressure(press, sigma);
 
-      // stress - analytical
-      // im->deviatoric_stress(md, sigma);
-      // im->add_pressure(press, sigma);
-
-      // elasticity tensor - deviatoric part
-      // im->calc_fd_elastensor(md, elastensorM);
-      // im->push_forward(*F, elastensorM, elastensor);
-
-      // elasticity tensor (deviatoric and volumetric) - analytical version
-
-      if (im->get_name() == "Guccione")
-      {
-        im->deviatoric_elastensor(md, elastensorM);
-        im->map_elas_to_global(md, elastensorM, elastensorM_global);
-        if (md->get_marker() == 0)
-          im->active_stress_elastensor(lc.get_nincs(), md->fiber(), elastensorM_global);
-        im->push_forward(*F, elastensorM_global, elastensor);
-      }
-      else
-      {
-        im->calc_fd_elastensor(md, elastensorM);
-        // cout << "C: " << elastensorM(0,1,2,0) << endl;
-        // im->active_stress_elastensor(lc.get_nincs(), md, elastensorM);
-        // cout << "Ca: " << elastensorM(0,1,2,0) << endl << endl;
-        im->push_forward(*F, elastensorM, elastensor);
-
-        // cout << "XXX" << endl;
-      }
+      im->calc_fd_elastensor(md, elastensorM);
+      im->push_forward(*F, elastensorM, elastensor);
 
       // analytical
       im->sp_volumetric_elastensor(press, elastensor);
@@ -1084,36 +781,20 @@ void UpdatedLagrangian::pre_solve()
 {
 
   cout << "Solving nonlinear problem (UL) using NonlinearSolver" << endl;
-  // std::cout.precision(16);
   cout << "Initial inner volume: " << calc_volume(true) << endl;
   static bool start = true;
 
   if (start)
   {
     start = false;
-    // body_forces();
-    // assemble_traction();
-    // assemble_const();
+    
     int nelem = msh.get_n_elements();
-    cout << "YYY " << nelem << endl;
+    cout << "Number of Elements " << nelem << endl;
 
-    int iel = msh.get_n_elements();
-    // arma::vec dta = arma::ones<arma::vec>(iel) * (material->get_Ta() / lc.get_nincs());
-
-    double dta = (material->get_Ta() / lc.get_nincs());
+    arma::vec dta = (material->get_Ta() / lc.get_nincs());
     material->set_dTa(dta); 
-
-
-    // PLACEHOLDER:
-    // arma::vec ta = arma::ones<arma::vec>(iel) * (material->get_Ta());
-    // ISSO NÃO FAZ SENTIDO, FAZ? ACHAR DINHEIRO NO BOLSO
-    double ta = (material->get_Ta());
-    material->set_Ta(ta);
-  
-    //material->set_dTa(material->get_Ta() / lc.get_nincs());
-    //cout << "Active stress: " << material->get_Ta() << endl;
   }
-  cout << "OKKKK" << endl;
+  cout << "End of UL pre solve" << endl;
 }
 
 void UpdatedLagrangian::solve()
@@ -1130,10 +811,6 @@ void UpdatedLagrangian::solve()
     nls = new NewtonLineSearch(this);
     nls->init();
   }
-
-  // cout << "Solving nonlinear problem (UL) using NonlinearSolver" << endl;
-  // std::cout.precision(16);
-  // cout << "Initial volume: " << calc_volume(true) << endl;
 
   body_forces();
   assemble_traction();
@@ -1153,8 +830,6 @@ void UpdatedLagrangian::solve()
     int al_iter = 0;
 
     double al_tol = 0.01;
-    // double al_tol = 0.05;
-
     double al_norm = 0;
     double al_norm0 = 0;
     double al_reln;
@@ -1165,9 +840,7 @@ void UpdatedLagrangian::solve()
     {
       al_iter++;
       evaluate_forces(((Newton *)nls)->residual());
-      ////assemble_pressure();
-      // cout<<"Cavity volume: "<<total_volume_cavity()<<endl;
-
+      
       if (num_nz_prescribed > 0)
       {
         cout << "Prescribing non-zero displacements" << endl;
@@ -1201,15 +874,11 @@ void UpdatedLagrangian::solve()
     al_update(lc.increment());
   }
 
-  // cout << "Cavity volume: " << total_volume_cavity() << endl;
-
   // prepare to leave
   cont += 1;     // counter for output
   fext0 += fext; // save nodal loads
   log << calc_volume() << endl;
   
-  // std::cout.precision(16);
-
   cout << "End inner volume: " << calc_volume() << endl;
   nls->timer.summary();
 

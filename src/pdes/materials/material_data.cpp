@@ -9,6 +9,8 @@ MaterialData::MaterialData(const Element & el, const arma::mat33 & ftens)
   s = el.get_trans();
   n = el.get_normal();
   marker = el.get_index();
+
+  active_stress = 0.0; 
 }
 
 arma::mat33 MaterialData::left_cauchy_green()

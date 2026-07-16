@@ -864,9 +864,6 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
     material = HyperelasticMaterial::create(mtype, elastype, matprop);
     cout << "Hyperelastic material: " << mtype << endl;
 
-    int nelem = msh.get_n_elements();
-    // material->allocate_Ta(nelem);
-
     // setup mesh filename
     assert(file_exists(mshfile.c_str()));
     std::string::size_type idx = mshfile.rfind(".msh");
@@ -949,8 +946,6 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
       cout << " Material properties: ";
       cout << " Multiple materials were defined. ";
 
-      int nelem = msh.get_n_elements();
-      // material->allocate_Ta(nelem);
     }
     else
     {
@@ -977,7 +972,6 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
         cout << endl;
 
         int nelem = msh.get_n_elements();
-        // material->allocate_Ta(nelem);
       }
     }
 
@@ -1069,6 +1063,10 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
   cout << " Number of dirichlet boundary conds:" << dirichlet_map.size() << endl;
   cout << " Number of normal pressure loads: " << pressure_map.size() << endl;
   cout << " Number of spring boundary conds: " << spring_map.size() << endl;
+
+  int npoints= msh.get_n_points();
+  material->allocate_Ta(npoints);
+
 }
 
 void NonlinearElasticity::elem_resid (const int iel, const MxFE * fe,
@@ -1671,13 +1669,7 @@ void NonlinearElasticity::prescribe_displacements()
 
 void NonlinearElasticity::reset()
 {
-  // Gambiarra
   K.assemble();
-  //--------------
-  //for(int i=0; i<x.size(); i++) x0[i] = x[i];
-  //r=0.0;
-  //fext.zeros();
-  //fext0.zeros();
 
   K = 0.0;
   u = 0.0;
@@ -1685,7 +1677,7 @@ void NonlinearElasticity::reset()
   lc.reset();
 }
 
-void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double prv, const double ta, const double dta)
+void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double prv, arma::vec ta, arma::vec dta)
 {
   pressure_map[mlv] = plv;
   pressure_map[mrv] = prv;
@@ -1695,7 +1687,7 @@ void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double p
 
 void NonlinearElasticity::run(const string & mshfile, const string & parfile)
 {
-  // TO-DO: esta fixo para formato XML, mas pensando em remover codigo do .par
+  // TODO: esta fixo para formato XML, mas pensando em remover codigo do .par
 
   // setup mesh filename
   assert(file_exists(mshfile.c_str()));
@@ -1766,8 +1758,6 @@ void NonlinearElasticity::update_vectors(const ArrayMat33 & matfib0,
   MixedFiniteElement * fe = fespace.createFE();
   Quadrature * qd = Quadrature::create(0, fe->get_type());
 
-  //Quadrature * qd = Quadrature::create(2, fe->get_type());
-
   ndim  = msh.get_n_dim();
   nelem = msh.get_n_elements();
   ndofs = fe->get_ndofs_u();
@@ -1823,12 +1813,6 @@ void NonlinearElasticity::update_vectors(const ArrayMat33 & matfib0,
     s = s / arma::norm(s,2);
     n = n / arma::norm(n,2);
 
-    //arma::mat33 R,U;
-    //polar_decomposition(F,R,U);
-    //f = R * (matfib0[iel])->col(0);
-    //s = R * (matfib0[iel])->col(1);
-    //n = R * (matfib0[iel])->col(2);
-
     (matfib[iel])->col(0) = f;
     (matfib[iel])->col(1) = s;
     (matfib[iel])->col(2) = n;
@@ -1839,17 +1823,13 @@ void NonlinearElasticity::update_vectors(const ArrayMat33 & matfib0,
 }
 
 // ---------- NONLINEAR PROBLEM ------------------------------------------------
-
 bool NonlinearElasticity::converged(petsc::Vector & du)
 {
   double rnorm=0, enorm=0, dnorm=0;
   double etol   = parameters["tol_energy"];
   double rtol   = parameters["tol_residual"];
   double dtol   = parameters["tol_displacement"];
-  //double enorm0 = parameters["energy_norm0"];
-  //double rnorm0 = parameters["residual_norm0"];
 
-  // TROCANDO fext por tload
   // tload - external load including pressure
   // fext - external load
 
@@ -1880,16 +1860,8 @@ bool NonlinearElasticity::converged(petsc::Vector & du)
     cout << endl;
  }
 
-  //cout << endl;
-  //cout << "fext norm = " << arma::norm(fext,2) << endl;
-  //cout << "tload norm = " << arma::norm(tload,2) << endl;
-
   // convergence criterion
   bool check;
-  //rnorm = rnorm/(rnorm0 + 1e-10);
-  //check  = fabs(enorm) < (etol * fabs(enorm0));
-  //check |= fabs(rnorm) < (rtol * fabs(rnorm0));
-  //check |= (dnorm < dtol);
   check  = enorm < etol;
   check |= rnorm < rtol;
   check |= dnorm < dtol;
@@ -1918,7 +1890,7 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   std::vector<int> dnums;
   MxFE * fe = fespace.createFE();
   Quadrature * qd = Quadrature::create(0, fe->get_type());
-  //Quadrature * qd = Quadrature::create(2, fe->get_type());
+
   for(int i=0; i<n_elem; i++)
   {
     elem_resid (i, fe, qd, Re);
@@ -1944,7 +1916,6 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   MixedFiniteElement * bfe = fespace.create_boundary_FE();
   if (bfe != NULL && pressure_map.size() > 0)
   {
-    //cout << endl << "Assemble pressure forces" << endl;
     int nu  = bfe->get_ndofs_u();
     int nb = msh.get_n_boundary_elements();
     double xlamb = lc.load();
@@ -1993,7 +1964,6 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
 
   MxFE * fe = fespace.createFE();
   Quadrature * qd = Quadrature::create(0, fe->get_type());
-  //Quadrature * qd = Quadrature::create(2, fe->get_type());
 
   for(int i=0; i<n_elem; i++)
   {
@@ -2050,32 +2020,6 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
   Kstiff.assemble();
   apply_boundary(Kstiff);
 
-  /*
-  int tam = 3*x.size();
-  double *values = new double[tam], *p;
-  int *idx = new int[tam], id=0;
-
-  for(std::vector<arma::vec3>::iterator j=x.begin(); j<x.end(); j++)
-  {
-
-    idx[3*id + 0] = 3*id + 0;
-    idx[3*id + 1] = 3*id + 1;
-    idx[3*id + 2] = 3*id + 2;
-
-    p = j->memptr();
-    values[3*id + 0] = p[0];
-    values[3*id + 1] = p[1];
-    values[3*id + 2] = p[2];
-
-    id++;
-  }
-
-  petsc::Vector *coord = new petsc::Vector();
-  coord->create(tam);
-  coord->set(tam, idx, values);
-  Kstiff.setNullSpace(coord);
- */
-
   timer.leave();
 }
 
@@ -2118,38 +2062,3 @@ void NonlinearElasticity::update(petsc::Vector & uu, double s)
         x[i][d] = x[i][d] + s * umat(i,d);
     }
 }
-
-
-
-
-/*
-void NonlinearElasticity::update(petsc::Vector & uu, double s)
-{
-  const int n_dim   = msh.get_n_dim();
-  const int n_nodes = msh.get_n_points();
-  arma::mat umat;
-
-  // get data from PETSc vector and copy to udisp
-  uu.get_data( udisp.memptr() );
-  umat = arma::reshape(udisp, n_nodes, n_dim);
-
-  // update total displacement vector
-  U = U + udisp;
-
-  // copy uu to internal u
-  u.copy_values(uu.size(), uu);
-
-  // update geometry
-  for(int d=0; d<n_dim; d++)
-    for(int i=0; i<n_nodes; i++)
-    {
-      //int idx = i + (d * n_nodes);
-      int idx = (i*n_dim) + d;
-
-      // if degree of freedom is free (not fixed/prescribed)
-      // then update x = x + u
-      if( ldgof[idx] )
-        x[i][d] = x[i][d] + s * umat(i,d);
-    }
-}
-*/

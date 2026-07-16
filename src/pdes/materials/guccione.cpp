@@ -35,15 +35,13 @@ double Guccione::strain_energy(MaterialData * md, const arma::mat & E) const
   const double K = parameters[5];
   double term1 = (Cg/2.)*( exp(Q) - 1. );
   double term2 = (K/2.0)*((J-1)*(J-1));
-  return term1 + term2;
+
+  //active term
+  double term3 = active_strain_energy(md, E);
+  
+  return term1 + term2 + term3;
 }
 
-
-double Guccione::active_strain_energy(MaterialData * md,
-                                                    const arma::mat &) const
-{
-  return 0;
-}
 
 void Guccione::cauchy_stress(MaterialData * md, arma::mat & sigma)  const
 {
@@ -244,7 +242,6 @@ void Guccione::deviatoric_elastensor(MaterialData * md, Tensor4 & A) const
   A(2,2,2,0) = 2*Cg*El(2,0)*El(2,2)*bfs*bt*expterm;
   A(2,2,2,1) = 2*Cg*El(2,1)*El(2,2)*pow(bt, 2)*expterm;
   A(2,2,2,2) = 2*Cg*pow(El(2,2), 2)*pow(bt, 2)*expterm + Cg*bt*expterm;
-
 
   /*
   A(0,0,0,0) = 2*Cg*pow(El(0,0), 2)*pow(bf, 2)*exp(pow(El(0,0), 2)*bf + bfs*(pow(El(0,1), 2) + pow(El(0,2), 2) + pow(El(1,0), 2) + pow(El(2,0), 2)) + bt*(pow(El(1,1), 2) + pow(El(1,2), 2) + pow(El(2,1), 2) + pow(El(2,2), 2))) + Cg*bf*exp(pow(El(0,0), 2)*bf + bfs*(pow(El(0,1), 2) + pow(El(0,2), 2) + pow(El(1,0), 2) + pow(El(2,0), 2)) + bt*(pow(El(1,1), 2) + pow(El(1,2), 2) + pow(El(2,1), 2) + pow(El(2,2), 2)));

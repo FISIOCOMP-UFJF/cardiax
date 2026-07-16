@@ -3,26 +3,53 @@ set -e
 
 # --- 1. ARGUMENT PARSING ---
 BUILD_TARGET=""
+FORCE_PETSC_SOLVER=0
 
-if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-    echo "Usage: ./build.sh [TARGET]"
-    echo ""
-    echo "Arguments:"
-    echo "  TARGET       (Optional) Name of the specific binary to build."
-    echo "                  Options:"
-    echo "                       electromech   "
-    echo "                       monodomain    "
-    echo "                       nonlinearelas "
-    echo "                       poisson       "
-    echo "                       l2projection  "
-    echo "                       elasticity    "
-    echo "                       bidomain      "
-    echo "               If omitted, ALL targets will be built."
-    echo ""
-    exit 0
-elif [[ -n "$1" ]]; then
-    BUILD_TARGET="$1"
-fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --force-petsc-solver)
+            FORCE_PETSC_SOLVER=1
+            shift # Avança para o próximo argumento
+            ;;
+        -h|--help)
+            echo "Usage: ./build.sh [TARGET] [OPTIONS]"
+            echo ""
+            echo "Arguments:"
+            echo "  TARGET       (Optional) Name of the specific binary to build."
+            echo "                  Options:"
+            echo "                       electromech   "
+            echo "                       monodomain    "
+            echo "                       nonlinearelas "
+            echo "                       poisson       "
+            echo "                       l2projection  "
+            echo "                       elasticity    "
+            echo "                       bidomain      "
+            echo "               If omitted, ALL targets will be built."
+            echo ""
+            echo "Options:"
+            echo "  -h, --help            Show this help message"
+            echo "  --force-petsc-solver  Force PETSc linear solver (CPU only)"
+            echo ""
+            exit 0
+            ;;
+        -*)
+            # Captura qualquer outra flag que comece com '-' e não foi mapeada
+            echo "Error: Unknown option: $1"
+            echo "Use ./build.sh --help for usage."
+            exit 1
+            ;;
+        *)
+            # Captura o argumento posicional (o TARGET)
+            if [[ -z "$BUILD_TARGET" ]]; then
+                BUILD_TARGET="$1"
+            else
+                echo "Error: Multiple targets specified ('$BUILD_TARGET' and '$1'). Only one is allowed."
+                exit 1
+            fi
+            shift # Avança para o próximo argumento
+            ;;
+    esac
+done
 
 # Conda environment name
 ENV_NAME="cardiax_env"
@@ -84,19 +111,33 @@ fi
 mkdir -p build
 cd build
 
-echo ">>> Configuring CMAKE <<<"
-cmake .. \
-    -DCMAKE_INSTALL_PREFIX=$PREFIX \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DMPI_C_COMPILER=$CC \
-    -DMPI_CXX_COMPILER=$CXX \
-    -DCMAKE_C_COMPILER=$CC \
-    -DCMAKE_CXX_COMPILER=$CXX \
-    -DCMAKE_CUDA_FLAGS="$CUDAFLAGS" \
-    -DBLAS_LIBRARIES="$MATH_LIBS" \
-    -DLAPACK_LIBRARIES="$MATH_LIBS" \
-    -DNVTX_LIB="$NVTX_PATH" \
-    -DBUILD_TESTS=OFF
+if [[ $FORCE_PETSC_SOLVER -eq 1 ]]; then
+    CMAKE_PETSC_FLAG="-DFORCE_PETSC_SOLVER=ON"
+    echo ">>> Forcing PETSc solver (Bypassing AmgX) <<<"
+else
+    CMAKE_PETSC_FLAG="-DFORCE_PETSC_SOLVER=OFF"
+fi
+
+# VERIFICA SE O CMAKE JÁ RODOU ANTERIORMENTE
+if [ ! -f "Makefile" ]; then
+    echo ">>> Configuring CMAKE <<<"
+    cmake .. \
+        -DCMAKE_INSTALL_PREFIX=$PREFIX \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DMPI_C_COMPILER=$CC \
+        -DMPI_CXX_COMPILER=$CXX \
+        -DCMAKE_C_COMPILER=$CC \
+        -DCMAKE_CXX_COMPILER=$CXX \
+        -DCMAKE_CUDA_FLAGS="$CUDAFLAGS" \
+        -DBLAS_LIBRARIES="$MATH_LIBS" \
+        -DLAPACK_LIBRARIES="$MATH_LIBS" \
+        -DNVTX_LIB="$NVTX_PATH" \
+        -DBUILD_TESTS=OFF \
+        $CMAKE_PETSC_FLAG
+else
+    echo ">>> Configuração do CMake encontrada (Makefile existe). Pulando fase do CMake... <<<"
+    echo "    (Para forçar um novo CMake, delete a pasta 'build' e rode o script novamente)"
+fi
 
 echo ">>> Running make: "
 # Compiles using all processor cores + Optional Target

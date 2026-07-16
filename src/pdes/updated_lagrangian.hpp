@@ -2,8 +2,6 @@
 #define UPDATED_LAGRANGIAN_HPP
 
 #include "nonlinear_elasticity.hpp"
-// #include "materials/neo_hookean.hpp"
-// #include "materials/holzapfel_ogden.hpp"
 
 //#define USE_AL
 
@@ -34,7 +32,7 @@ public:
   //! use the second Piola Kirchhoff stress tensor
   void assemble_active(const arma::vec & is,
                        std::vector<arma::mat33*> & vstrs,
-                       std::vector<arma::mat33*> & vfib);
+                       std::vector<arma::mat33*> & vfib) { return; };
 
   //! Solve the nonlinear problem using Newton's method
   void solve();

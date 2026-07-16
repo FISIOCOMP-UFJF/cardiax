@@ -54,19 +54,19 @@ void Eikonal::init()
   stimuli.read_xml(stimuli_filename);
 
   fespace.set_mesh(mesh);
-  ndofs = mesh->get_n_elements(); //Before: get_n_points()
+  ndofs = mesh->get_n_points(); //Before: get_n_points() 
 
   // setup data writer to write at every 1 ms
   // potential field and displacements
   std::size_t pos  = mesh_filename.find(".xml");
   std::string output = mesh_filename.substr(0,pos) + "_output";
-  int nsteps = tip.get_size(); //tip.get_nsteps();// /(1.0/timestep); //troquei para conseguir rodar casos maiores (juvs)
+  int nsteps = tip.get_size(); 
   writer->open(output, nsteps+1, timestep);
 
   // setup model and cells
   cellmodel = CellModel::create(cell_name);
   cellmodel->setup(odesolver, timestep, totaltime, 1.0);
-  cells = new Cells(ndofs,cellmodel);
+  cells = new Cells(ndofs, cellmodel);
 
   cells->init();
 }
@@ -115,30 +115,19 @@ void Eikonal::solve(const string &mshfile)
   pugi::xml_parse_result result = doc.load_file(mshfile.c_str());
   
   lat.set_size(ndofs);
-  pugi::xml_node element_data = doc.child("mesh").child("element_data");
-  bool has_eikonal = false; 
-  if(element_data)
+  
+  pugi::xml_node eikonal_data = doc.child("mesh").child("eikonal");
+  bool has_eikonal = false;
+  if(eikonal_data)
   {
-    for (pugi::xml_node elem = element_data.child("element"); elem; elem = elem.next_sibling("element"))
+    has_eikonal = true; 
+    for(pugi::xml_node node = eikonal_data.child("node"); node; node = node.next_sibling("node"))
     {
-        pugi::xml_node eikonal_p_elem = elem.child("eikonal");
-        if(eikonal_p_elem)
-        {
-          has_eikonal = true; 
-          int index; 
-          index = elem.attribute("id").as_int();
-          lat(index) = std::stod(eikonal_p_elem.text().as_string());
-        }
-        else
-        {
-          if(has_eikonal)
-          {
-            std::cerr << "ERROR: Some elements have a local activation time, and others do not.\n";
-            exit(6);
-          }
-        }
+      int index = node.attribute("id").as_int(); 
+      lat(index) = std::stod(node.attribute("lat").as_string()); 
     }
   }
+
 
   if(has_eikonal)
   {
@@ -147,17 +136,24 @@ void Eikonal::solve(const string &mshfile)
 
     std::cout<<"Local activation time"<<std::endl;
 
-    //TODO: read this information from file? 
-    double begin_active_stress = 0.136;
-    double latest_lat = 0.136 + 0.146;
+    pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
+    double begin_active_stress = 0.0; 
+    if(pvloop_data) begin_active_stress = std::stod(pvloop_data.attribute("passive_time").as_string())/1000.0; 
+    double latest_lat = begin_active_stress + 0.146; 
 
-    lat = begin_active_stress + (lat - min_val) * (latest_lat - begin_active_stress)/ (max_val-min_val);
+    if(max_val-min_val == 0.0) 
+      lat.fill(0.0);
+    else 
+      lat = begin_active_stress + (lat - min_val) * (latest_lat - begin_active_stress)/ (max_val-min_val);
     std::cout << " Earliest activation: " << lat.min() << "  Latest activation: " << lat.max()  << std::endl; 
     std::cout << " Loaded LATs: " << lat.n_elem << " values.\n";
   }
   else
   {
-    lat.fill(0.136); //if there isn't lat in the mesh file, we use 0.136 for all elements.
+    pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
+    double begin_active_stress = 0.0; 
+    if(pvloop_data) begin_active_stress = std::stod(pvloop_data.attribute("passive_time").as_string()); 
+    lat.fill(begin_active_stress); //if there isn't lat in the mesh file, we use the passive_time for all elements. 
   }
 }
 
@@ -191,9 +187,6 @@ void Eikonal::solve()
     arma::uvec non_zero_indices = arma::find(ta != 0.0);
     int count_non_zero = non_zero_indices.n_elem;
     int count_zero = ta.n_elem - count_non_zero;
-
-    cout << "Zeros exatos: " << count_zero << endl;
-    cout << "Diferentes de zero: " << count_non_zero << endl;
 
     timer.leave();
   }  

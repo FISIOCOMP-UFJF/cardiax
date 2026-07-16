@@ -34,11 +34,13 @@ public:
   void set_ndim(int nd) { ndim = nd; }
 
   //! Set the active stress
-  void set_Ta(const double Ta) { active_stress = Ta; }
+  void set_Ta(arma::vec Ta) { active_stress = Ta; }
 
-  double get_Ta() { return active_stress; }
+  arma::vec get_Ta() { return active_stress; }
 
-  void set_dTa(const double val) { delta_active_stress = val; }
+  void set_dTa(arma::vec val) { delta_active_stress = val; }
+
+  void allocate_Ta(int n);
 
   //! Computes PK2 stress using finite difference
   void calc_fd_stress(int iel, MaterialData *md, arma::mat &S);
@@ -130,8 +132,8 @@ protected:
   std::vector<double> parameters;
 
   //! Active stress
-  double active_stress;
-  double delta_active_stress;
+  arma::vec active_stress;
+  arma::vec delta_active_stress;
 
 };
 

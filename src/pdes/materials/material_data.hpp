@@ -21,6 +21,8 @@ public:
   const arma::vec3 & fiber()  const { return f; }
   const arma::vec3 & sheet()  const { return s; }
   const arma::vec3 & normal() const { return n; }
+  void set_active_stress(double act_stress) {active_stress = act_stress; };
+  double get_active_stress() { return active_stress; };
 
   // Kinematics ----------------------------------------------------------------
 
@@ -42,6 +44,7 @@ public:
   //! Calculates the Lagrangian strain tensor E
   arma::mat33 lagrangian_strain(); 
 
+  
 private:
   
   //! Number of dimensions
@@ -55,6 +58,7 @@ private:
 
   //! Local material orientation (orthotropic materials)
   arma::vec3 f, s, n;
+  double active_stress;
 
 };
 

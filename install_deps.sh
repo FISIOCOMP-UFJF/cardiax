@@ -9,6 +9,11 @@ FORCE_AMGX=false
 FORCE_PETSC=false
 CUDA_ARCH=""
 
+IGNORE_HDF5=false
+IGNORE_ARMA=false
+IGNORE_AMGX=false
+IGNORE_PETSC=false
+
 show_help() {
     echo "Usage: ./install_deps.sh [OPTIONS]"
     echo ""
@@ -18,9 +23,13 @@ show_help() {
     echo "  --force-armadillo     Forces recompilation of Armadillo."
     echo "  --force-amgx          Forces recompilation of AMGX."
     echo "  --force-petsc         Forces recompilation of PETSc." 
+    echo "  --ignore-hdf5         Skips HDF5 build and installation."
+    echo "  --ignore-armadillo    Skips Armadillo build and installation."
+    echo "  --ignore-amgx         Skips AMGX build and installation."
+    echo "  --ignore-petsc        Skips PETSc build and installation."
+    echo "  --cuda-arch           Specifies the CUDA architecture."
     echo "  -h, --help            Shows this message. Hi! "
     echo ""
-	
 }
 
 # Loop to read all passed flags
@@ -46,11 +55,26 @@ while [[ $# -gt 0 ]]; do
             FORCE_PETSC=true
             shift
             ;;
-	--cuda-arch)
-            CUDA_ARCH="$2" #this is not working yet, but it will be necessary
-	    shift 2
-	    ;;
-
+        --ignore-hdf5)
+            IGNORE_HDF5=true
+            shift
+            ;;
+        --ignore-armadillo)
+            IGNORE_ARMA=true
+            shift
+            ;;
+        --ignore-amgx)
+            IGNORE_AMGX=true
+            shift
+            ;;
+        --ignore-petsc)
+            IGNORE_PETSC=true
+            shift
+            ;;
+        --cuda-arch)
+            CUDA_ARCH="$2"
+            shift 2
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -68,12 +92,16 @@ echo "   CARDIAX: DEPENDENCY INSTALLATION       "
 if [ "$FORCE_ALL" = true ]; then
     echo "   (MODE: FORCE ALL)                      "
 else
-    echo "   (MODE: INCREMENTAL)            "
+    echo "   (MODE: INCREMENTAL FAST)               "
 fi
 echo "=========================================="
 
 # 2. Initial Configuration
 RECIPES_DIR="./recipes"
+MARKERS_DIR="./.build_markers"
+
+# Cria a pasta de marcadores se ela não existir
+mkdir -p "$MARKERS_DIR"
 
 echo "[1/4] Checking Conda: "
 eval "$(conda shell.bash hook)"
@@ -92,32 +120,25 @@ CONDA_BLD_PATH="$CONDA_PREFIX/conda-bld"
 echo "Build path set to: $CONDA_BLD_PATH"
 
 
-# 4. Smart Build Function
+# 4. Smart Build Function (Otimizada com Marcadores)
 echo "[2/4] Verifying recipes:"
 
 build_recipe_smart() {
     PKG_NAME=$1
     FORCE_THIS=$2 # Receives true/false if this specific package should be forced
     RECIPE_PATH="$RECIPES_DIR/$PKG_NAME"
+    MARKER_FILE="$MARKERS_DIR/${PKG_NAME}.done"
 
     echo "--------------------------------------------------"
     echo "Analyzing: $PKG_NAME"
 
-    # Ask Conda what the final file will be
-    EXPECTED_OUTPUT=$(conda build "$RECIPE_PATH" \
-        --output \
-        -c local -c conda-forge -c nvidia \
-        -m "$RECIPES_DIR/conda_build_config.yaml" \
-        --output-folder "$CONDA_BLD_PATH" \
-        2>/dev/null | tail -n 1 | tr -d '\r')
-
-    # Decision Logic
+    # Decision Logic baseada em arquivos de texto rápidos
     SHOULD_BUILD=false
     REASON=""
 
-    if [ ! -f "$EXPECTED_OUTPUT" ]; then
+    if [ ! -f "$MARKER_FILE" ]; then
         SHOULD_BUILD=true
-        REASON="Package does not exist yet."
+        REASON="Marker not found (Not built yet)."
     elif [ "$FORCE_ALL" = true ]; then
         SHOULD_BUILD=true
         REASON="Flag --force-all activated."
@@ -125,13 +146,13 @@ build_recipe_smart() {
         SHOULD_BUILD=true
         REASON="Flag --force-$PKG_NAME activated."
     fi
-	
+    
     if [ "$SHOULD_BUILD" = true ]; then
         echo "[BUILDING] $PKG_NAME ($REASON)"
         
-        # If forced, remove old file first to ensure clean build
-        if [ -f "$EXPECTED_OUTPUT" ]; then
-            rm "$EXPECTED_OUTPUT"
+        # Remove o marcador antigo caso seja uma recompilação forçada
+        if [ -f "$MARKER_FILE" ]; then
+            rm -f "$MARKER_FILE"
         fi
 
         # Light cleanup
@@ -144,21 +165,45 @@ build_recipe_smart() {
         
         echo "   -> Updating local index..."
         python -m conda_index "$CONDA_BLD_PATH" > /dev/null 2>&1
+
+        # Cria o arquivo marcador para pular essa compilação no futuro.
+        touch "$MARKER_FILE"
+        echo "[SUCCESS] Marker created for $PKG_NAME"
     else
-        echo "[SKIPPING] $PKG_NAME already exists."
+        echo "[SKIPPING] $PKG_NAME already exists (Fast check via marker)."
     fi
 }
 
-build_recipe_smart "hdf5_custom"      "$FORCE_HDF5"
-build_recipe_smart "armadillo_custom" "$FORCE_ARMA"
+# --- Execução Condicional dos Builds ---
+
+if [ "$IGNORE_HDF5" = false ]; then
+    build_recipe_smart "hdf5_custom" "$FORCE_HDF5"
+else
+    echo "[IGNORED] hdf5_custom"
+fi
+
+if [ "$IGNORE_ARMA" = false ]; then
+    build_recipe_smart "armadillo_custom" "$FORCE_ARMA"
+else
+    echo "[IGNORED] armadillo_custom"
+fi
 
 if [ -n "$CUDA_ARCH" ]; then
     echo "CUDA architectures set to: $CUDA_ARCH"
     export CARDIAX_CUDA_ARCH="$CUDA_ARCH"
 fi
 
-build_recipe_smart "amgx_custom"      "$FORCE_AMGX"
-build_recipe_smart "petsc_custom"     "$FORCE_PETSC"
+if [ "$IGNORE_AMGX" = false ]; then
+    build_recipe_smart "amgx_custom" "$FORCE_AMGX"
+else
+    echo "[IGNORED] amgx_custom"
+fi
+
+if [ "$IGNORE_PETSC" = false ]; then
+    build_recipe_smart "petsc_custom" "$FORCE_PETSC"
+else
+    echo "[IGNORED] petsc_custom"
+fi
 
 # 6. Final Indexing
 echo "[3/4] Finalizing index of dependencies:"
@@ -170,10 +215,17 @@ conda deactivate
 
 conda remove -n cardiax_env --all -y > /dev/null 2>&1 || true
 
+# Constrói a string de dependências apenas com o que não foi ignorado
+DEPS=""
+if [ "$IGNORE_HDF5" = false ]; then DEPS="$DEPS hdf5_custom"; fi
+if [ "$IGNORE_ARMA" = false ]; then DEPS="$DEPS armadillo_custom"; fi
+if [ "$IGNORE_AMGX" = false ]; then DEPS="$DEPS amgx_custom"; fi
+if [ "$IGNORE_PETSC" = false ]; then DEPS="$DEPS petsc_custom"; fi
+
 conda create -n cardiax_env \
     -c "file://$CONDA_BLD_PATH" \
     -c conda-forge -c nvidia \
-    hdf5_custom armadillo_custom amgx_custom petsc_custom \
+    $DEPS \
     cuda-nvtx cuda-nvtx-dev cuda-libraries-dev cuda-cudart-dev "cuda-version=12" \
     cmake make gxx_linux-64 gcc_linux-64 gfortran_linux-64 \
     python=3.10 mpich pkg-config -y

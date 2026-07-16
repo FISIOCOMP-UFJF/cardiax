@@ -4,6 +4,7 @@
 *.out
 *.exe
 build/
+.build_markers/
 
 # CMake
 /CMakeFiles/
@@ -24,6 +25,7 @@ temp/
 *.h5
 *.zip
 *.msh
+*.dat
 
 # examples
 examples/*.dat

@@ -3,38 +3,15 @@
 #include "cardiac_cycle.hpp"
 #include "util/pugixml.hpp"
 
+
 CardiacElectromechanic::CardiacElectromechanic(const std::string &epmodel) : dt_mech(1.0), timer(), Ta0(0.0), dTa0(0.0)
 {
-  // TODO: change from EPHY to EP
-  // create electrophysiology model
-  // if (epmodel == "mono")
-  //  ep = new MonodomainDeformation();
-  // else
-  //  ep = new BidomainDeformation();
+  // ~~
 }
 
 CardiacElectromechanic::~CardiacElectromechanic()
 {
-  // freeing memory
-  /*
-  for (uint i = 0; i < vec_stress.size(); i++)
-    delete vec_stress[i];
-  for (uint i = 0; i < vec_fib.size(); i++)
-    delete vec_fib[i];
-  for (uint i = 0; i < vec_fib0.size(); i++)
-    delete vec_fib0[i];
-
-  for (uint i = 0; i < Ta_list.size(); i++)
-    delete Ta_list[i];
-  for (uint i = 0; i < p_lv.size(); i++)
-    delete p_lv[i];
-  for (uint i = 0; i < p_art.size(); i++)
-    delete p_art[i];
-  for (uint i = 0; i < p_ven.size(); i++)
-    delete p_ven[i];
-  for (uint i = 0; i < p_LA.size(); i++)
-    delete p_LA[i];
-  */
+  // ~~
 }
 
 void CardiacElectromechanic::config(const string &basename)
@@ -96,9 +73,6 @@ void CardiacElectromechanic::config(const string &basename)
   stroke_volume = fnodes.attribute("stroke_volume").as_double();
   T_ref = (fnodes.attribute("T_ref")) ? fnodes.attribute("T_ref").as_double() : 1.0;
 
-  //  cout <<"PV-loop parameters:\n";
-  //  cout <<"C_art: " << C_art << " p_art: " << part << " R_per: " << R_per << " P_o: " << P_o << " Stroke volume: " << stroke_volume << "\n";
-
   double press = 0, press2 = 0;
   for (pugi::xml_node node = fnodes.child("step"); node; node = node.next_sibling("step"))
   {
@@ -115,10 +89,7 @@ void CardiacElectromechanic::config(const string &basename)
 
     double ta = node.attribute("active_tension").as_double() * T_ref;
     curr_time.push_back(t * 1000.0);
-    // std::pair<double, double> par;
-    // par.first=press;
-    // par.second= (ta<1e-16) ? 0 : ta;
-    // Ta_list.push_back(ta); //! Comentei aqui para testar
+
     p_lv.push_back(press);
     p_rv.push_back(press2);
 
@@ -131,21 +102,15 @@ void CardiacElectromechanic::config(const string &basename)
   cout << "size: " << size << endl;
   cout << "total time: " << T << endl;
   cout << "Mechanical time step: " << dt_mech << endl;
-  // volume = arma::vec(Ta_list.size());
-  // p_ven = arma::vec(Ta_list.size());
-  // p_art = arma::vec(Ta_list.size());
-  // p_LA = arma::vec(Ta_list.size());
 
   ephy.setup(monofile, cellmodel, odesolver, dt, T, pr, pa);
   ephy.update_matrix(false);
   ephy.init();
-  // ephy.setup_types(typfile);
 
   elas.config(mshfile, parfile);
   elas.set_output_step(false);
   elas.init();
   elas.setup_data_writer(curr_time.size());
-  // elas.set_output_step(false);
 
   // Configure fibers for mechanical problem
   for (int i = 0; i < elas.get_mesh().get_n_elements(); i++)
@@ -206,7 +171,7 @@ void CardiacElectromechanic::Solve_System(double tt, double pressure, double pre
       << endl;
 
 
-  elas.set_pressure_Ta(30, pressure, 20, pressure * 0.2, arma::mean(ta), arma::mean(dta));
+  elas.set_pressure_Ta(30, pressure, 20, pressure * 0.2, ta, dta);
   elas.solve();
   elas.reset();
 
@@ -277,7 +242,6 @@ void CardiacElectromechanic::solve()
     itempo = 0;  
     while (!tip.finished())
     {
-      cout << "Incrementa tempo..." << endl;
       tip.increase_time();
       cout << "\nTime: " << tip.time() << endl;
 
@@ -285,12 +249,10 @@ void CardiacElectromechanic::solve()
       itempo = itempo + 1;
 
       double err = 1.;
-      cout << "Acessa pressao anterior" << endl;
       p_0 = p_lv[i - 1];
 
       if (i >= 5)
       {
-        cout << "Calcula Adams" << endl;
         double dpn = p_lv[i - 1] - p_lv[i - 2];
         double dpn1 = p_lv[i - 2] - p_lv[i - 3];
         double dpn2 = p_lv[i - 3] - p_lv[i - 4];
@@ -309,8 +271,9 @@ void CardiacElectromechanic::solve()
       ephy.advance();
       dta = -ta; 
       ephy.get_cells().get_monitored_values(0, ta);
+      ta = ta * T_ref; 
       dta += ta; 
-
+                  
       Solve_System(tip.time(), p_0, p_0); 
       Vf_0 = elas.total_volume_cavity();
 
@@ -382,7 +345,6 @@ void CardiacElectromechanic::solve()
 
       cout << "Volume: " << volume[i] << endl;
       cout << "Pressure: " << p_lv[i] << endl;
-      cout << "Ta: " << 0.0 << endl; //TODO: Ta value
 
       pv_file << tip.time() + total_time << " " << p_lv[i] << " " << volume[i] << " "
               << Ta0 << " "
@@ -395,7 +357,7 @@ void CardiacElectromechanic::solve()
       if (k == 0)
       {
         ii++;
-        cout << "Salvando XDMF... " << "Passo: " << ii << endl;
+        cout << "XDMF saving... " << "Step: " << ii << endl;
         elas.output_vtk(0, ii);
         elas.storeStress(ii);
       }
@@ -405,8 +367,8 @@ void CardiacElectromechanic::solve()
 
   pv_file.close();
 
-  string stress_filename = filename + "_active_stress.txt";
-  saveActiveStressToFile(stress_filename);
+  // string stress_filename = filename + "_active_stress.txt";
+  // saveActiveStressToFile(stress_filename);
 
   elas.timer.summary();
   timer.summary();

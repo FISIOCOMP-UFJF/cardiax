@@ -66,9 +66,6 @@ public:
 
 
   double strain_energy(MaterialData * md, const arma::mat &) const;
-
-    double active_strain_energy(MaterialData * md, const arma::mat & E) const;
-
     void piola2_stress(MaterialData * md, arma::mat & S) const;
 
     void cauchy_stress(MaterialData * md, arma::mat & sigma) const;

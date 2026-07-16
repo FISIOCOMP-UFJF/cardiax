@@ -55,24 +55,8 @@ double HolzapfelOgden::strain_energy(MaterialData * md, const arma::mat & E) con
   double tfs  = (afs/(2*bfs)) * (exp(bfs*(I8fs*I8fs))-1.0);
   double tvol = (K/2.0)*((J-1.0)*(J-1.0));
 
-  return tiso + tfib + tvol;// + active_stress*I4f;
-  //return tiso + tfib + tshe + tfs + tvol;
-  //return tiso + tvol;
-}
-
-double HolzapfelOgden::active_strain_energy(int iel, MaterialData * md, const arma::mat & E) const
-{
-  const arma::vec3 & f0 = md->fiber();
-  const arma::vec3 & s0 = md->sheet();
-
-  // right Cauchy-Green deformation tensor
-  arma::mat C = 2*E + I;
-  double J = sqrt(arma::det(C));
-
-  arma::mat Cbar = pow(J,-(2.0/3.0)) * C;
-  double I4f  = dot(f0, Cbar*f0);
-
-  return I4f*active_stress;
+  double tactive = active_strain_energy(md, E);
+  return tiso + tfib + tvol + tfs + tshe + tactive;
 }
 
 void HolzapfelOgden::deviatoric_stress(MaterialData * md, arma::mat & sigma) const
@@ -366,28 +350,4 @@ void HolzapfelOgden::piola2_stress(MaterialData * md, arma::mat & pk2) const {
 
 
 }
-/*
-void HolzapfelOgden::deviatoric_elastensor(MaterialData * md, Tensor4 & A) const
-{
-  static const arma::mat33 I = arma::eye(3,3);
-  static const Tensor4 II = unit_tensor();
 
-#ifndef DEBUG
-  const arma::vec3 & f0 = md->fiber();
-  const arma::vec3 & s0 = md->sheet();
-#endif
-
-#ifdef DEBUG
-  arma::vec3 f0;
-  arma::vec3 s0;
-  f0.zeros();
-  s0.zeros();
-  f0(0)=1.;
-  s0(1)=1.;
-#endif
-
-  A.zero();
-
-}
-
-*/

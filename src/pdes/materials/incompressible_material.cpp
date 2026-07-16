@@ -15,9 +15,20 @@ double IncompressibleMaterial::strain_energy(MaterialData * md,
 }
 
 double IncompressibleMaterial::active_strain_energy(MaterialData * md,
-                                             const arma::mat &) const
+                                             const arma::mat & E) const
 {
-  return 0;
+  const arma::vec3 & f0 = md->fiber();
+  const arma::vec3 & s0 = md->sheet();
+  arma::mat I = arma::eye<arma::mat>(3,3);
+
+  // right Cauchy-Green deformation tensor
+  arma::mat C = 2*E + I;
+  double J = sqrt(arma::det(C));
+
+  arma::mat Cbar = pow(J,-(2.0/3.0)) * C;
+  double I4f  = dot(f0, Cbar*f0);
+
+  return 0.5 * md->get_active_stress() * (I4f - 1.0);
 }
 
 void IncompressibleMaterial::add_pressure(double press, 

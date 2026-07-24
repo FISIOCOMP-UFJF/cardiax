@@ -32,7 +32,7 @@ Monodomain::~Monodomain()
   delete cellmodel;
 }
 
-void Monodomain::advance ()
+void Monodomain::advance()
 {
   static int step = 0;
   //static int step_apd = 0;
@@ -50,7 +50,7 @@ void Monodomain::advance ()
     timer.leave();
 
     //write_data_text(vm, &step_apd);
-    write_data(vm, "vm", &step);
+    // write_data(vm, "vm", &step);
   }
 }
 
@@ -305,7 +305,6 @@ void Monodomain::solve()
     
   // loop in time
   int step=0;
-  //int step_apd=0;
 
   stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
   cells->advance(tip.time(), timestep, stim_val, stim_nodes);
@@ -324,8 +323,7 @@ void Monodomain::solve()
     solve_parabolic();
     timer.leave();
         
-    //write_data_text(vm, &step_apd);
-    write_data(vm, "vm_vtu/vm", &step);
+    write_data(vm, "vm", &step);
   }  
 
   timer.summary();

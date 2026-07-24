@@ -151,7 +151,6 @@ void CardiacElectromechanic::config(const string &basename)
   assert(elas.get_mesh().get_n_elements() == ephy.get_mesh().get_n_elements());
 
   ta.zeros(nelem);
-  dta.zeros(nelem); 
 
   //"Solve" the eikonal, to discover the lat in each element
   ephy.solve(basename);
@@ -165,13 +164,10 @@ void CardiacElectromechanic::Solve_System(double tt, double pressure, double pre
 
   P0 = pressure;
   
-  cout << "Pressure: " << pressure << "Ta (mean): " << arma::mean(ta) << " dTA (mean): " <<arma::mean(dta) << " tt: " << tt << endl;
-  cout << "Ta: min=" << ta.min() << " max=" << ta.max() 
-      << " | dTa: min=" << dta.min() << " max=" << dta.max()
-      << endl;
+  cout << "Pressure: " << pressure << " Ta: min=" << ta.min() << " max=" << ta.max() << endl;
 
 
-  elas.set_pressure_Ta(30, pressure, 20, pressure * 0.2, ta, dta);
+  elas.set_pressure_Ta(30, pressure, 20, pressure * 0.2, ta);
   elas.solve();
   elas.reset();
 
@@ -269,10 +265,8 @@ void CardiacElectromechanic::solve()
 
       //Update the active stress value
       ephy.advance();
-      dta = -ta; 
       ephy.get_cells().get_monitored_values(0, ta);
       ta = ta * T_ref; 
-      dta += ta; 
                   
       Solve_System(tip.time(), p_0, p_0); 
       Vf_0 = elas.total_volume_cavity();

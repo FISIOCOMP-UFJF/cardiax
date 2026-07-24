@@ -1,0 +1,78 @@
+Monodomain solver
+Reading parameters file
+Setup of cardiac problem
+Parabolic solver: Crank-Nicolson
+Time discretization information
+ Number of time steps: 10000
+ Time step: 0.001000
+ Start time: 0.000000
+ Final time: 10.000000
+Reading XML mesh file: ./monodomain_ToRORdLand.xml
+Fiber model: fiber_transversely_isotropic
+Number of stimuli: 1
+ Stimulus 1: [1.000000,2.000000, value: 1.000000 ]
+Parameter set "monodomain_parameters"
+ Number of parameters: 7
+ Number of nested parameter sets: 0
+ Parameter=maxnz, type=int, value=40
+ Parameter=pcgtol, type=double, value=1e-16
+ Parameter=sigma_l, type=double, value=0.0001334
+ Parameter=sigma_n, type=double, value=1.76e-05
+ Parameter=sigma_t, type=double, value=1.76e-05
+ Parameter=surface_to_volume, type=double, value=0.14
+ Parameter=theta_method, type=double, value=0.5
+HDF5 Writer
+ HDF5 save rate = 1.000000
+ Number of steps = 10
+ Timestep = 0.001000
+Cell model: MS
+ODE solver: Explicit Euler
+Creating FEM matrices
+AMGX version 2.5.0
+Built on Jan 30 2026, 07:59:33
+Compiled with CUDA Runtime 12.9, using CUDA driver 13.0
+[AMGX] AVISO: file './configs/CG_DILU.json' not found.
+[AMGX] Using fallback configuration (CG + MULTICOLOR_DILU).
+Cells: all cells are of the same type
+
+Simulating
+Setting initial conditions
+Time  1.000e+00  num its 75 rnorm 8.410e-06
+VM Filename: monodomain_ToRORdLand_output.h5
+Time  2.000e+00  num its 74 rnorm 8.967e-06
+VM Filename: monodomain_ToRORdLand_output.h5
+Time  3.000e+00  num its 71 rnorm 7.518e-06
+VM Filename: monodomain_ToRORdLand_output.h5
+Time  4.000e+00  num its 71 rnorm 8.652e-06
+VM Filename: monodomain_ToRORdLand_output.h5
+Time  5.000e+00  num its 73 rnorm 8.467e-06
+VM Filename: monodomain_ToRORdLand_output.h5
+Time  6.000e+00  num its 71 rnorm 8.682e-06
+VM Filename: monodomain_ToRORdLand_output.h5
+Time  7.000e+00  num its 71 rnorm 7.830e-06
+VM Filename: monodomain_ToRORdLand_output.h5
+Time  8.000e+00  num its 71 rnorm 7.507e-06
+VM Filename: monodomain_ToRORdLand_output.h5
+Time  9.000e+00  num its 71 rnorm 8.920e-06
+VM Filename: monodomain_ToRORdLand_output.h5
+Time  1.000e+01  num its 71 rnorm 8.408e-06
+VM Filename: monodomain_ToRORdLand_output.h5
+
++----------------------------------------+------------+------------+
+| Total time elapsed                     |            |            |
+|                                        |            |            |
+| Section                    | no. calls | time (sec) | % of total |
++----------------------------+-----------+------------+------------+
+| Assemble                   |         1 | 2.647e-01s | 4.76e-01 % |
+| ODEs                       |     10000 | 3.739e+00s | 6.72e+00 % |
+| Parabolic                  |     10000 | 5.164e+01s | 9.28e+01 % |
++----------------------------+-----------+------------+------------+
+
+Done.
+WARNING! There are options you set that were not used!
+WARNING! could be spelling mistake, etc!
+There are 4 unused database options. They are:
+Option left: name:-c value: MS source: command line
+Option left: name:-dt value: 0.001 source: command line
+Option left: name:-f value: ./monodomain_ToRORdLand.xml source: command line
+Option left: name:-t value: 10 source: command line

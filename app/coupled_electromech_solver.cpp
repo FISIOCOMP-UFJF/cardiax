@@ -67,7 +67,11 @@ int main(int argc, const char* argv[])
   {
     Electromechanic model(ep_model);
     model.config(basename);
-    model.ref().set_conductivity(condtype);
+    if(ep_model == "monodef")
+    {
+      MonodomainDeformation& monodef = static_cast<MonodomainDeformation&>(model.ref());
+      monodef.set_conductivity(condtype);
+    }
     model.solve();
   }
   // end of PDE solver

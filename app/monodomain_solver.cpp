@@ -50,16 +50,6 @@ int main(int argc, const char *argv[])
 
 	typefile  = mshname + ".typ";
 
-  if ( fs::exists("output") ) 
-  {
-    fs::remove_all("output");
-    assert(!fs::exists("output"));
-  }
-  
-  fs::create_directory("output");
-  fs::create_directories("output/vm_vtu/");
-  fs::create_directories("output/vm_text/");
-
   // Start PETSc
   PetscMPIInt rank;
   PetscMPIInt size;
@@ -76,7 +66,6 @@ int main(int argc, const char *argv[])
 		{
 			Monodomain monodomain;
       msg("Reading parameters file");
-//      monodomain.config(mshname);
 			monodomain.setup(mshname, cellmodel, odesolver, dt, T, tp, tp);
 			monodomain.init();
 			

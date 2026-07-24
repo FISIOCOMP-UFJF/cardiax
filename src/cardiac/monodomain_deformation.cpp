@@ -36,9 +36,6 @@ void MonodomainDeformation::advance(const std::vector<arma::mat33*> & vec_F)
     timer.enter("Parabolic");
     solve_parabolic(vec_F);
     timer.leave();
-
-    //write_data_text(vm, step);
-    //write_data(vm, displ, "vm_vtu/vm", &step);
   }
 }
 

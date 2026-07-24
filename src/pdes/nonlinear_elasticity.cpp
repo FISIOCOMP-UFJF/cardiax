@@ -1677,12 +1677,16 @@ void NonlinearElasticity::reset()
   lc.reset();
 }
 
-void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double prv, arma::vec ta, arma::vec dta)
+void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double prv, arma::vec ta)
 {
   pressure_map[mlv] = plv;
   pressure_map[mrv] = prv;
   material->set_Ta(ta);
-  material->set_dTa(dta);
+}
+
+void NonlinearElasticity::set_active_stress(arma::vec ta)
+{
+  material->set_Ta(ta); 
 }
 
 void NonlinearElasticity::run(const string & mshfile, const string & parfile)

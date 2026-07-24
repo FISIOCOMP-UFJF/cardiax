@@ -61,9 +61,7 @@ private:
   std::vector<double> recorded_time;
   std::vector<double> p_lv, p_rv, Ta_list, volume, p_art, p_ven, p_LA;
   
-  arma::vec dta;
   arma::vec ta;
-  arma::vec lat;
 
   void Solve_System(double tt, double pressure, double pressure2);
 

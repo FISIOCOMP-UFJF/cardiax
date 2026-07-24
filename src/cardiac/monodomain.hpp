@@ -21,7 +21,7 @@ public:
   //! Destructor
   virtual ~Monodomain();
 
-  //! Perform one time step
+  //! Perform one time step withou saving in files
   void advance();
 
   //! Initialize solver (mats, vecs, ics, etc)

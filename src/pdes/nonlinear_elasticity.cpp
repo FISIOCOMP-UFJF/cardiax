@@ -1462,7 +1462,8 @@ void NonlinearElasticity::output_vtk(const int cont, const int step)
 
 void NonlinearElasticity::output_vtk(const int step, const arma::vec & v, const arma::vec & displ)
 {
-  cout << "Escrevendo DADOS\n";
+  // LUCAS: talvez a fonte de ter dois arquivos de saida
+  cout << "Writing Data\n";
   writer.write_vm_step(step, v.memptr());
   writer.write_displ_step(step, displ.memptr());
 }
@@ -1474,11 +1475,6 @@ void NonlinearElasticity::output_vtk(const int cont,
                                      const ArrayMat33 & matfib)
 {
   int np = msh.get_n_points();
-
-  //stringstream ss;
-  //ss << "_" << step;
-  //int idx = basename.rfind('/');
-  //string outname = "output/" + basename.substr(idx + 1) + ss.str() + ".vtu";
 
   // First fiber directions
   arma::vec3 f, s, n;
@@ -1507,20 +1503,12 @@ void NonlinearElasticity::output_vtk(const int cont,
 
   if(output_step)
   {
-    cout << "Escrevendo DADOS\n";
+    cout << "Writing Data\n";
     writer.write_vm_step(step, v.memptr());
     writer.write_displ_step(step, u_field);
   }
 
   delete [] u_field;
-
-  //vtkout.write_point_data(v, name);
-  //vtkout.write_cell_vector(vec_f, "fiber");
-  //vtkout.write_cell_vector(vec_s, "sheet");
-  //vtkout.write_cell_vector(vec_n, "snorm");
-
-  // then everything else
-  //vtkout.write_def_mesh(x, outname);
 }
 
 void NonlinearElasticity::storeLVvolumes(string basename)

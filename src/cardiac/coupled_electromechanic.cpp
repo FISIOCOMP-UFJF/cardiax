@@ -101,6 +101,7 @@ void Electromechanic::config(const string &basename)
     vec_fib.push_back(R);
     vec_fib0.push_back(R0);
   }
+  
   int neln = ephy->get_mesh().get_nen();
   int nelem = elas.get_mesh().get_n_elements();
   int nnodes  = ephy->get_mesh().get_n_points(); 
@@ -198,16 +199,19 @@ void Electromechanic::solve()
       elas.set_active_stress(ta); 
       elas.solve();
       elas.reset();
-
       timer.leave(); 
 
       timer.enter("Writing");
-
       elas.get_displacements(u_field);
       elas.output_vtk(ii, vm, u_field);
+      elas.storeStress(ii);
       ii += 1;
       timer.leave(); 
     }  
+
+    // LUCAS:
+    // if checkpoint:
+    // salvar tudo
   }
   
   elas.timer.summary();

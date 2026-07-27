@@ -96,6 +96,13 @@ else
 fi
 echo "=========================================="
 
+
+# Desativando o conda caso esteja ativado
+eval "$(conda shell.bash hook)"
+while [[ "$CONDA_DEFAULT_ENV" != "" && "$CONDA_DEFAULT_ENV" != "base" ]]; do
+    conda deactivate
+done
+
 # 2. Initial Configuration
 RECIPES_DIR="./recipes"
 MARKERS_DIR="./.build_markers"
@@ -109,15 +116,19 @@ eval "$(conda shell.bash hook)"
 # 3. Setting up build environment
 if ! conda info --envs | grep -q "cardiax_builder"; then
     echo "Creating build environment..."
-    conda create -n cardiax_builder conda-build conda-index -c conda-forge -y
+    conda create -n cardiax_builder -c conda-forge --override-channels conda-build conda-index python=3.10 -y
 else
     echo "Environment 'cardiax_builder' OK."
 fi
 
 conda activate cardiax_builder
 
-CONDA_BLD_PATH="$CONDA_PREFIX/conda-bld"
-echo "Build path set to: $CONDA_BLD_PATH"
+# Cria um diretório LOCAL de build, ignorando o global do Anaconda/Miniconda
+LOCAL_CONDA_BLD="$(pwd)/.conda_bld"
+mkdir -p "$LOCAL_CONDA_BLD"
+
+CONDA_BLD_PATH="$LOCAL_CONDA_BLD"
+echo "Build path set to isolated local directory: $CONDA_BLD_PATH"
 
 
 # 4. Smart Build Function (Otimizada com Marcadores)
@@ -159,8 +170,9 @@ build_recipe_smart() {
         conda build purge > /dev/null 2>&1 || true
 
         conda build "$RECIPE_PATH" \
-            -c local -c conda-forge -c nvidia \
+            -c local -c conda-forge -c nvidia --override-channels \
             -m "$RECIPES_DIR/conda_build_config.yaml" \
+            --croot "$CONDA_BLD_PATH" \
             --output-folder "$CONDA_BLD_PATH"
         
         echo "   -> Updating local index..."

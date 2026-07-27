@@ -181,7 +181,6 @@ void UpdatedLagrangian::calc_elmat_const(const int iel, const MxFE *fe,
 
       IncompressibleMaterial *im;
       im = static_cast<IncompressibleMaterial *>(material);
-      
       im->calc_fd_elastensor(md, elastensorM);
       im->push_forward(F, elastensorM, elastensor);
       
@@ -504,7 +503,7 @@ void UpdatedLagrangian::elem_resid(const int iel, const MxFE *fe,
     {
       IncompressibleMaterial *im;
       im = static_cast<IncompressibleMaterial *>(material);
-
+      
       im->calc_fd_stress(iel, md, S);
       im->push_forward(*F, S, sigma);
 
@@ -621,11 +620,9 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
       im = static_cast<IncompressibleMaterial *>(material);
 
       im->calc_fd_stress(iel, md, S);
-      // im->set_active_stress(md, S, lc.load());
       im->push_forward(*F, S, sigma);
 
       im->add_pressure(press, sigma);
-
       im->calc_fd_elastensor(md, elastensorM);
       im->push_forward(*F, elastensorM, elastensor);
 
@@ -792,7 +789,7 @@ void UpdatedLagrangian::pre_solve()
     cout << "Number of Elements " << nelem << endl;
 
     arma::vec dta = (material->get_Ta() / lc.get_nincs());
-    material->set_dTa(dta); 
+    material->set_dTa(dta);  //TODO; probably this is unecessary
   }
   cout << "End of UL pre solve" << endl;
 }
@@ -811,7 +808,6 @@ void UpdatedLagrangian::solve()
     nls = new NewtonLineSearch(this);
     nls->init();
   }
-
   body_forces();
   assemble_traction();
   assemble_const();

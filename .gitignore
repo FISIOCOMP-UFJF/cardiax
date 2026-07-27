@@ -5,6 +5,7 @@
 *.exe
 build/
 .build_markers/
+.conda_bld/
 
 # CMake
 /CMakeFiles/

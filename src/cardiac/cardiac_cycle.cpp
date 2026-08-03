@@ -267,7 +267,7 @@ void CardiacElectromechanic::solve()
       ephy.advance();
       ephy.get_cells().get_monitored_values(0, ta);
       ta = ta * T_ref; 
-                  
+
       Solve_System(tip.time(), p_0, p_0); 
       Vf_0 = elas.total_volume_cavity();
 

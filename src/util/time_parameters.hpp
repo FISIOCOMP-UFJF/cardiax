@@ -82,6 +82,11 @@ public:
     return (iteration % print_rate == 0) ? true : false;
   }
 
+  inline void restore_state(int saved_iteration, double saved_time)
+  {
+    iteration = saved_iteration;
+    cur_time = saved_time;
+  }
 private:
 
   //! Number of the current iteration

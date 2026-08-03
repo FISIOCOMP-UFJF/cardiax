@@ -156,6 +156,7 @@ protected:
   std::map<int,arma::vec3> neumann_map;         //!< Traction boundary cond
   std::map<int,double> pressure_map;            //!< Pressure boundary cond
   std::map<int,double> spring_map;              //!< Spring boundary cond
+  std::map<int,int>    spring_type_map;          //!< Spring type: 0=normal, 1=isotropic
   std::multimap<int,int> dirichlet_map;         //!< Dirichlet boundary cond
   std::multimap<int,NodalData> fixed_nodes_map; //!< Fixed nodes boundary cond
   std::multimap<int,NodalData> nodal_loads_map; //!< Applied nodal loads

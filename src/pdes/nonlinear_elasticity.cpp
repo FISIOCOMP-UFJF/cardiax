@@ -399,11 +399,11 @@ void NonlinearElasticity::elem_pforce(const int elem_id, const MxFE * fe,
     {
       belvec.zeros();
       press = it->second;
+      int stype = spring_type_map[index]; // 0 = normal, 1 = isotropic
 
-      // create quadrature rule (need to check if order is ok)
+      // create quadrature rule
       Quadrature * qd;
       qd = Quadrature::create(fe->get_order_u(), fe->get_type());
-      //qd = Quadrature::create(2, fe->get_type());
 
       // quadrature loop
       for(int q=0; q<qd->get_num_ipoints(); q++)
@@ -411,40 +411,50 @@ void NonlinearElasticity::elem_pforce(const int elem_id, const MxFE * fe,
         fe->calc_shape_u(qd->get_point(q),shape);
         fe->calc_deriv_shape_u(qd->get_point(q),dshape);
         sm.calc_jacobian(dshape, neln);
-        // trick
         detJxW = qd->get_weight(q);
 
-        // evaluates dx/dxi, dx/deta
-        // for 2D set dx/deta = (0,0,-1)
+        // Compute dx0/dxi, dx0/deta using REFERENCE coordinates
         dxis.zeros();
         if(ndim==2) dxis(2,1) = -1.0;
         for(int id=0; id<ndim; id++)
           for(int jd=0; jd<ndim-1; jd++)
             for(int in=0; in<neln; in++)
             {
-              //int ip = bdof[in];
               int ip = bdof[in]/ndim;
-              dxis(id,jd) = dxis(id,jd) + x[ip][id] * dshape(in,jd);
+              dxis(id,jd) = dxis(id,jd) + x0[ip][id] * dshape(in,jd);
             }
 
-        //
-        // computes pressure force (nodal forces - subroutine pforce)
-        //
         arma::vec3 xnorm = arma::cross(dxis.col(0), dxis.col(1));
-        for(int in=0; in<neln; in++)
+        double norm_xnorm = arma::norm(xnorm, 2);
+
+        // Interpolate displacement u_h at quadrature point
+        arma::vec3 uh;
+        uh.zeros();
+        for(int jn=0; jn<neln; jn++)
         {
-          double vl = press * shape(in) * detJxW;
-          double vl2 = 0;
-          for(int jn=0; jn<neln; jn++)
-            vl += shape(jn)*xnorm(jn);
-          // assemble boundary force to elemental vector (in + id*neln)
-          // belvec data layout
-          // [ bloco_x, bloco_y, bloco_z]
-          // [n1_x, n2_x, ..., nN_x, n1_y, ..., nN_y, n1_z, ..., nN_z]
-          
-          // Tentativa de fazer J*(uh*n)*n*vh
-          for(int id=0; id<ndim; id++)
-            belvec(in + id*neln) += xnorm(id) * vl*vl2;
+          int jp = bdof[jn]/ndim;
+          for(int jd=0; jd<ndim; jd++)
+            uh(jd) += shape(jn) * (x[jp][jd] - x0[jp][jd]);
+        }
+
+        if(stype == 0)
+        {
+          // Normal spring (restoring): traction = -K_epi * (u . n_hat_0) * n_hat_0
+          // belvec = -K_epi * (u_h . cross_0) * cross_0 / ||cross_0|| * N_i * w
+          double un = arma::dot(uh, xnorm);
+          for(int in=0; in<neln; in++)
+            for(int id=0; id<ndim; id++)
+              belvec(in + id*neln) += -press * un * xnorm(id)
+                                      / norm_xnorm * shape(in) * detJxW;
+        }
+        else
+        {
+          // Isotropic spring (restoring): PN + ku = 0  =>  traction = -ku
+          // belvec = -k * u_h * N_i * dGamma_0
+          double dGamma0 = norm_xnorm * detJxW;
+          for(int in=0; in<neln; in++)
+            for(int id=0; id<ndim; id++)
+              belvec(in + id*neln) += -press * uh(id) * shape(in) * dGamma0;
         }
       }
       // end of integration loop
@@ -555,11 +565,11 @@ void NonlinearElasticity::elem_kpress(const int elem_id, const MxFE * fe,
     {
       belmat.zeros();
       press = it->second;
+      int stype = spring_type_map[index]; // 0 = normal, 1 = isotropic
 
-      // create quadrature rule (need to check if order is ok)
+      // create quadrature rule
       Quadrature * qd;
       qd = Quadrature::create(fe->get_order_u(), fe->get_type());
-      //qd = Quadrature::create(2, fe->get_type());
 
       // quadrature loop
       for(int q=0; q<qd->get_num_ipoints(); q++)
@@ -567,52 +577,51 @@ void NonlinearElasticity::elem_kpress(const int elem_id, const MxFE * fe,
         fe->calc_shape_u(qd->get_point(q),shape);
         fe->calc_deriv_shape_u(qd->get_point(q),dshape);
         sm.calc_jacobian(dshape, neln);
-        // trick
         detJxW = qd->get_weight(q);
-        //
-        // computes spring component for stiffness matrix (subroutine kpress)
-        //
-        // evaluates dx/dxi, dx/deta
-        // for 2D set dx/deta = (0,0,-1)
+
+        // Compute dx0/dxi, dx0/deta using REFERENCE coordinates
         dxis.zeros();
         if(ndim==2) dxis(2,1) = -1.0;
         for(int id=0; id<ndim; id++)
           for(int jd=0; jd<ndim-1; jd++)
             for(int in=0; in<neln; in++)
             {
-              //int ip = bdof[in];
               int ip = bdof[in]/ndim;
-              dxis(id,jd) = dxis(id,jd) + x[ip][id] * dshape(in,jd);
+              dxis(id,jd) = dxis(id,jd) + x0[ip][id] * dshape(in,jd);
             }
-          arma::vec3 xnorm = arma::cross(dxis.col(0), dxis.col(1));
 
-          //xnorm = xnorm/arma::norm(xnorm,2);
+        arma::vec3 xnorm = arma::cross(dxis.col(0), dxis.col(1));
+        double norm_xnorm = arma::norm(xnorm, 2);
 
-          arma::mat33 TensorProd = xnorm*xnorm.t();
-
-          //std::cout << xnorm <<  "\n" << std::endl;
-          //std::cout << TensorProd << std::endl;
-        double sum;
-        //double apress = press * lc.load_step();
-
-        for(int in=0; in<neln; in++)
-          for(int jn=0; jn<neln; jn++)
-          {
-            for(int id=0; id<ndim; id++)
-              for(int jd=0; jd<ndim; jd++)
-              {
-                //std::cout << in << " " << jn << " " << id << " " << jd << " " << ndim << " " << neln <<std::endl;
-                sum = -press*shape(jn)*TensorProd(id,jd)*shape(in)*detJxW;
-                
-                // write in the elemental pressure stiffness matrix (in + id*neln)
-                // belmat data layout
-                // [ bloco_x, bloco_y, bloco_z] , [..]
-                // [n1_x, n2_x, ..., nN_x, n1_y, ..., nN_y, n1_z, ..., nN_z], [..]
-                belmat(in + id*neln , jn + jd*neln) += sum;
-              }
-          }
+        if(stype == 0)
+        {
+          // Normal spring (restoring): K = +K_epi * (n̂₀ ⊗ n̂₀) * Ni * Nj * dΓ₀
+          //   Adds stiffness in the normal direction
+          arma::mat33 TensorProd = xnorm * xnorm.t();
+          for(int in=0; in<neln; in++)
+            for(int jn=0; jn<neln; jn++)
+              for(int id=0; id<ndim; id++)
+                for(int jd=0; jd<ndim; jd++)
+                {
+                  double sum = press * shape(in) * shape(jn) * TensorProd(id,jd)
+                               / norm_xnorm * detJxW;
+                  belmat(in + id*neln, jn + jd*neln) += sum;
+                }
+        }
+        else
+        {
+          // Isotropic spring (restoring): K = +k * delta_{id,jd} * Ni * Nj * dΓ₀
+          //   Adds stiffness in all directions
+          double dGamma0 = norm_xnorm * detJxW;
+          for(int in=0; in<neln; in++)
+            for(int jn=0; jn<neln; jn++)
+            {
+              double mass = press * shape(in) * shape(jn) * dGamma0;
+              for(int id=0; id<ndim; id++)
+                belmat(in + id*neln, jn + id*neln) += mass;
+            }
+        }
       }
-      //std::cout << "belmat: \n" << belmat <<std::endl;
       // end of integration loop
       delete qd;
     }
@@ -1029,13 +1038,20 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
       pressure_map.insert(std::pair<int, double>(marker, val));
     }
 
-    // pressure (normal following load) boundary condition
+    // spring (Robin) boundary condition
+    // type="normal"    : FSn0 = K_epi (u . n0) n0  (penalizes normal displacement only)
+    // type="isotropic" : PN + ku = 0               (penalizes all displacement components)
+    // default is "normal" for backward compatibility
     pugi::xml_node snodes = doc.child("elasticity").child("spring");
     for (pugi::xml_node node = snodes.child("node"); node;
          node = node.next_sibling("node")) {
       int marker = node.attribute("marker").as_int();
       double val = node.attribute("value").as_double();
       spring_map.insert(std::pair<int, double>(marker, val));
+      int stype = 0; // default: normal spring
+      std::string type_str = node.attribute("type").as_string("normal");
+      if (type_str == "isotropic") stype = 1;
+      spring_type_map.insert(std::pair<int, int>(marker, stype));
     }
 
     // nodal loads
@@ -1062,7 +1078,15 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
   cout << " Number of traction (Neumann) loads: " << neumann_map.size() << endl;
   cout << " Number of dirichlet boundary conds:" << dirichlet_map.size() << endl;
   cout << " Number of normal pressure loads: " << pressure_map.size() << endl;
-  cout << " Number of spring boundary conds: " << spring_map.size() << endl;
+  cout << " Number of spring boundary conds: " << spring_map.size();
+  if (spring_map.size() > 0)
+  {
+    cout << " (";
+    for (auto &st : spring_type_map)
+      cout << "marker " << st.first << ": " << (st.second == 0 ? "normal" : "isotropic") << " ";
+    cout << ")";
+  }
+  cout << endl;
 
   int npoints= msh.get_n_points();
   material->allocate_Ta(npoints);
@@ -1906,7 +1930,7 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   // pressure forces contribution
   //
   MixedFiniteElement * bfe = fespace.create_boundary_FE();
-  if (bfe != NULL && pressure_map.size() > 0)
+  if (bfe != NULL && (pressure_map.size() > 0 || spring_map.size() > 0))
   {
     int nu  = bfe->get_ndofs_u();
     int nb = msh.get_n_boundary_elements();
@@ -1919,7 +1943,7 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
       fespace.get_boundary_element_dofs_u(i,bdof);
       elem_pforce(i,bfe,bdof,belvec);
 
-      // assembles the nodal forces due to normal pressure
+      // assembles the nodal forces due to normal pressure or spring
       for(int k=0; k<nu; k++)
       {
         if(ldgof[bdof[k]])

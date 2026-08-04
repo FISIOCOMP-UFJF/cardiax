@@ -815,6 +815,15 @@ void UpdatedLagrangian::solve()
   // use augmented lagrangian
   use_alg = false;
 
+  // per-increment PV history: only meaningful for a monotonic load ramp
+  bool first_call = !pv_history_is_open();
+  if (pv_record_increments)
+  {
+    open_pv_history(this->basename);
+    if (first_call)
+      record_pv_history(0);
+  }
+
   if (output_step)
     output_vtk(cont, 0);
 
@@ -868,7 +877,16 @@ void UpdatedLagrangian::solve()
 
     // update penalty parameter
     al_update(lc.increment());
+
+    // record pressure and volume of both cavities for this increment
+    if (pv_record_increments)
+      record_pv_history(lc.increment());
   }
+
+  // NOTE: the PV history file is intentionally left open here. solve() may
+  // be called once per cardiac-cycle step by an outer driver, and closing
+  // it now would truncate the history on the next call. It is closed in
+  // run() (standalone path) or by the driver via close_pv_history().
 
   // prepare to leave
   cont += 1;     // counter for output
@@ -876,6 +894,8 @@ void UpdatedLagrangian::solve()
   log << calc_volume() << endl;
   
   cout << "End inner volume: " << calc_volume() << endl;
+  cout << "End LV cavity volume: " << volume_LV() << endl;
+  cout << "End RV cavity volume: " << volume_RV() << endl;
   nls->timer.summary();
 
   cout << " Done" << endl;

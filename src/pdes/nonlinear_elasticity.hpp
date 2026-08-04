@@ -4,6 +4,8 @@
 #include <map>
 #include <iostream>
 #include <sstream>
+#include <fstream>
+#include <iomanip>
 #include <armadillo>
 #include "fem/fem.h"
 #include "util/util.hpp"
@@ -34,6 +36,13 @@ typedef std::vector<arma::mat33*> ArrayMat33;
 typedef std::map<int,double> BCPressure;
 typedef std::map<int,arma::vec3> BCTraction;
 typedef std::multimap<int,NodalData> BCNode;
+
+//! Boundary markers identifying the ventricular cavities.
+//! Any other marker (epicardium, base, spring/Robin surfaces, ...)
+//! contributes zero to the cavity volume computation.
+const int MARKER_LV = 30;   //!< Left ventricle endocardium
+const int MARKER_RV = 20;   //!< Right ventricle endocardium
+const int MARKER_BASE = 10; //!< Base / valve plane (lid closing the cavities)
 
 /*!
  *  Abstract base class for nonlinear elasticity problems    
@@ -96,8 +105,55 @@ public:
 
   void set_active_stress(arma::vec ta); 
 
-  //! Compute total cavity volume
-  double total_volume_cavity();
+  //! Compute total cavity volume for a given boundary marker.
+  //! Boundary elements with other markers contribute zero.
+  double total_volume_cavity(const int cavity_marker = MARKER_LV);
+
+  //! Convenience wrappers for left/right ventricular cavity volumes
+  double volume_LV();
+  double volume_RV();
+
+  //! Set the lid (valve) plane used to close the open endocardial surfaces.
+  //! offset is e.x0 for any point x0 on the plane.
+  void set_cavity_lid_plane(const arma::vec3 & normal, double offset);
+
+  //! Estimate the lid plane from the boundary elements of base_marker.
+  //! Called automatically on the first cavity-volume evaluation.
+  void detect_cavity_lid_plane(int base_marker = MARKER_BASE);
+
+  //! Print, per boundary marker, whether the surface is closed on its own
+  //! and what each volume formula yields. Useful to validate cavity setup.
+  void report_boundary_closure();
+
+  //! Pressure prescribed for a given cavity.
+  //! apply_load_factor=true scales by the current load factor (monotonic
+  //! ramp, e.g. passive filling); false returns the prescribed target
+  //! pressure as set by set_pressure_Ta() (externally driven stepping).
+  double cavity_pressure(const int cavity_marker,
+                         bool apply_load_factor = true);
+
+  //! Open the pressure-volume history file and write its header.
+  //! Safe to call repeatedly: does nothing if already open.
+  void open_pv_history(const string & basename);
+
+  //! Append one row (increment, P_LV, V_LV, P_RV, V_RV) to the PV history,
+  //! taking the pressures from the current load ramp.
+  void record_pv_history(int increment);
+
+  //! Same, with pressures supplied explicitly by the caller.
+  void record_pv_history(int increment, double plv, double prv);
+
+  //! Close the pressure-volume history file
+  void close_pv_history();
+
+  //! Whether the pressure-volume history file is currently open
+  bool pv_history_is_open() { return pv_file.is_open(); }
+
+  //! Enable/disable per-increment PV recording inside solve().
+  //! Off by default: it is meaningful for a monotonic load ramp (passive
+  //! filling), but not when an outer driver re-ramps the load at every
+  //! cardiac-cycle step, where only the converged end-of-step state matters.
+  void set_pv_record_increments(bool o) { pv_record_increments = o; }
 
   //! Save data at each timestep
   void set_output_step(bool o) { output_step = o; }
@@ -198,6 +254,13 @@ protected:
   //! More
   HyperelasticMaterial * material;//!< Constitutive law
   Log log;                        //!< Logger for history of newton iterations
+  std::ofstream pv_file;          //!< Pressure-volume history (per load increment)
+  int pv_counter = 0;             //!< Number of rows written to pv_file
+  bool pv_record_increments = false; //!< Record PV at every load increment
+
+  arma::vec3 lid_normal = {0.0, 0.0, 1.0}; //!< Unit normal of the valve plane
+  double lid_offset = 0.0;                 //!< e.x0 for x0 on the valve plane
+  bool lid_plane_set = false;              //!< Whether the plane was set/detected
 
   WriterHDF5 writer;              //! Data writer (VTK,HDF5)
 
@@ -233,9 +296,11 @@ protected:
   void calc_pforce_kpress(const int elem_id, const MixedFiniteElement * fe,
                           const std::vector<int> & bdof, arma::vec & belvec,
                           arma::mat & belmat);
-  //! Compute cavity volume in a element
+  //! Compute cavity volume contribution of a boundary element.
+  //! Returns 0 if the element marker differs from cavity_marker.
   double calc_cavity_volume(const int elem_id, const MxFE * fe,
-                                                   const std::vector<int> & bdof);
+                            const std::vector<int> & bdof,
+                            const int cavity_marker = MARKER_LV);
 
   //! Compute stiffness matrix at the element
   virtual void elem_resid (const int iel, const MxFE * fe,
@@ -245,9 +310,12 @@ protected:
   virtual void elem_stiff (const int iel, const MxFE * fe,
                            const Quadrature * qd, arma::mat & Ke);
 
+  //! Boundary force vector. Sets is_spring=true when the element belongs to
+  //! a spring (Robin) surface, so the caller can skip the load-factor ramp.
   void elem_pforce(const int elem_id, const MxFE * fe,
                    const std::vector<int> & bdof,
-                   arma::vec & belvec);
+                   arma::vec & belvec,
+                   bool & is_spring);
 
   void elem_kpress(const int elem_id, const MxFE * fe,
                    const std::vector<int> & bdof,

@@ -133,24 +133,113 @@ void NonlinearElasticity::assemble_pressure()
   delete bfe;
 }
 
-double NonlinearElasticity::total_volume_cavity()
+double NonlinearElasticity::total_volume_cavity(const int cavity_marker)
 {
+  // The endocardial surfaces are open at the base, so a lid plane is needed.
+  if (!lid_plane_set)
+    detect_cavity_lid_plane(MARKER_BASE);
+
   MixedFiniteElement * bfe = fespace.create_boundary_FE();
   double total_endo_volume=0;
 
-  if (bfe != NULL && pressure_map.size() > 0)
+  if (bfe != NULL)
   {
     int nb = msh.get_n_boundary_elements();
     vector<int> bdof;
     for(int i=0; i<nb; i++)
     {
       fespace.get_boundary_element_dofs_u(i, bdof);
-      total_endo_volume += calc_cavity_volume(i, bfe, bdof);
+      total_endo_volume += calc_cavity_volume(i, bfe, bdof, cavity_marker);
     }
   }
   delete bfe;
 
   return total_endo_volume*1e6;
+}
+
+double NonlinearElasticity::volume_LV()
+{
+  return total_volume_cavity(MARKER_LV);
+}
+
+double NonlinearElasticity::volume_RV()
+{
+  return total_volume_cavity(MARKER_RV);
+}
+
+double NonlinearElasticity::cavity_pressure(const int cavity_marker,
+                                            bool apply_load_factor)
+{
+  // Pressure prescribed for the given cavity. Returns 0 if no pressure BC
+  // is defined for that marker.
+  //
+  // apply_load_factor = true  : scales by lc.load(), i.e. the pressure
+  //     actually applied at the current increment. Correct for a monotonic
+  //     ramp such as passive filling driven by NonlinearElasticity::run().
+  // apply_load_factor = false : returns the prescribed target pressure as
+  //     set by set_pressure_Ta(). Correct when an outer driver (e.g.
+  //     CardiacElectromechanic) prescribes the pressure at every step.
+  std::map<int,double>::iterator it = pressure_map.find(cavity_marker);
+  if (it == pressure_map.end())
+    return 0.0;
+
+  return apply_load_factor ? it->second * lc.load() : it->second;
+}
+
+void NonlinearElasticity::open_pv_history(const string & basename)
+{
+  // Guard against truncating the file when solve() is called repeatedly,
+  // as happens when an outer driver steps through the cardiac cycle.
+  if (pv_file.is_open())
+    return;
+
+  string aux = basename + string("_pv_history.dat");
+  pv_file.open(aux.c_str());
+
+  if (pv_file.is_open())
+  {
+    pv_file << "# increment  P_LV  V_LV  P_RV  V_RV\n";
+    pv_file << std::scientific << std::setprecision(8);
+    pv_counter = 0;
+  }
+  else
+    cout << "Warning: could not open PV history file " << aux << endl;
+}
+
+void NonlinearElasticity::record_pv_history(int increment)
+{
+  // Pressure taken from the load ramp: valid for a monotonic increment
+  // loop such as passive filling.
+  record_pv_history(increment,
+                    cavity_pressure(MARKER_LV, true),
+                    cavity_pressure(MARKER_RV, true));
+}
+
+void NonlinearElasticity::record_pv_history(int increment,
+                                            double plv, double prv)
+{
+  if (!pv_file.is_open())
+    return;
+
+  double vlv = volume_LV();
+  double vrv = volume_RV();
+
+  pv_file << increment << " "
+          << plv << " " << vlv << " "
+          << prv << " " << vrv << "\n";
+  pv_file.flush();
+
+  pv_counter++;
+
+  cout << "  [inc " << increment << "]"
+       << " LV: P=" << plv << " V=" << vlv
+       << " | RV: P=" << prv << " V=" << vrv << endl;
+}
+
+void NonlinearElasticity::close_pv_history()
+{
+  if (pv_file.is_open())
+    pv_file.close();
 }
 
 
@@ -318,8 +407,10 @@ void NonlinearElasticity::calc_neumann_elvec(const int eindex, const MxFE * fe,
 
 void NonlinearElasticity::elem_pforce(const int elem_id, const MxFE * fe,
                                       const std::vector<int> & bdof,
-                                      arma::vec & belvec)
+                                      arma::vec & belvec,
+                                      bool & is_spring)
 {
+  is_spring = false;
   int ndim = fe->get_ndim();
   int ndof = fe->get_ndofs_u();
   int neln = ndof/ndim;
@@ -399,6 +490,7 @@ void NonlinearElasticity::elem_pforce(const int elem_id, const MxFE * fe,
     {
       belvec.zeros();
       press = it->second;
+      is_spring = true;
       int stype = spring_type_map[index]; // 0 = normal, 1 = isotropic
 
       // create quadrature rule
@@ -749,7 +841,8 @@ void NonlinearElasticity::calc_pforce_kpress(const int elem_id, const MxFE * fe,
 }
 
 double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * fe,
-					                                     const std::vector<int> & bdof)
+					                                     const std::vector<int> & bdof,
+					                                     const int cavity_marker)
 {
   int ndim = fe->get_ndim();
   int ndof = fe->get_ndofs_u();
@@ -769,14 +862,25 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
   std::map<int,double>::iterator it;
   index = sm.get_index();
 
-  //Return 0 to markers different from LV (30)
-  if(index!=30)
+  // Return 0 for any marker that does not belong to the requested cavity.
+  // Other markers (e.g. epicardium, base, spring/Robin surfaces) contribute
+  // nothing to the cavity volume.
+  if(index != cavity_marker)
 	  return 0;
 
-  double endo_volume;
+  double endo_volume = 0;
 
-
-    endo_volume = 0;
+  // The endocardial surfaces are OPEN at the base, so the closed-surface
+  // identity V = (1/3) int x.n dA does not apply: its result would depend on
+  // the position of the origin. Instead we close the cavity with a flat lid
+  // on the valve plane and use the field F = ((x - x0).e) e, which has
+  // div F = 1 and vanishes on the lid, giving
+  //
+  //    V = int_endo ((x - x0).e) (e.n) dA
+  //
+  // with e the unit normal of the lid plane and x0 any point on it.
+  const arma::vec3 & e = lid_normal;
+  const double d = lid_offset;          // d = e.x0
 
     // create quadrature rule (need to check if order is ok)
     Quadrature * qd;
@@ -803,28 +907,214 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
         for(int jd=0; jd<ndim-1; jd++)
           for(int in=0; in<neln; in++)
 	        {
-	          //int ip = bdof[in];
 		        int ip = bdof[in]/ndim;
 	          dxis(id,jd) = dxis(id,jd) + x[ip][id] * dshape(in,jd);
 	        }
 
+      // area-weighted normal in the current configuration: n dA
       arma::vec3 xnorm = arma::cross(dxis.col(0), dxis.col(1));
 
+      // position at the quadrature point
+      arma::vec3 xq;
+      xq.zeros();
       for(int in=0; in<neln; in++)
-      {
-	      arma::vec3 vl = xe[in] * detJxW * shape(in);
+        xq += shape(in) * xe[in];
 
-        for(int id=0; id<ndim; id++)
-            endo_volume += xnorm(id) * vl[id]/3.;
-        //int id = 0;
-        //endo_volume += xnorm(id) * vl[id];
-      }
-
+      endo_volume += (arma::dot(xq, e) - d) * arma::dot(e, xnorm) * detJxW;
     }
     // end of integration loop
     delete qd;
 
   return endo_volume;
+}
+
+void NonlinearElasticity::report_boundary_closure()
+{
+  // For a CLOSED surface, the integral of the outward normal vanishes:
+  //     || int n dA || / area  ~  0
+  // For an OPEN surface it equals the area vector of the opening, so the
+  // ratio is O(1). This tells whether a given marker, ON ITS OWN, bounds a
+  // closed region -- which is what the cavity volume computation requires.
+  MixedFiniteElement * bfe = fespace.create_boundary_FE();
+  if (bfe == NULL)
+    return;
+
+  int ndim = bfe->get_ndim();
+  int neln = bfe->get_ndofs_u()/ndim;
+  int nb = msh.get_n_boundary_elements();
+
+  std::map<int,arma::vec3> nsum;      // int n dA
+  std::map<int,double>     area;      // int dA
+  std::map<int,double>     vol_div;   // (1/3) int x.n dA
+  std::map<int,double>     vol_lid;   // int ((x-x0).e)(e.n) dA
+  std::map<int,int>        count;
+
+  arma::vec shape;
+  arma::mat dshape, dxis(3,2);
+  vector<int> bdof;
+
+  for (int i = 0; i < nb; i++)
+  {
+    std::vector<arma::vec3> xe(neln);
+    get_boundary_element_x(i, xe);
+    SurfaceMapping sm = bfe->get_boundary_mapping(i, xe);
+    int mk = sm.get_index();
+
+    if (nsum.find(mk) == nsum.end())
+    {
+      nsum[mk].zeros();
+      area[mk] = 0.0; vol_div[mk] = 0.0; vol_lid[mk] = 0.0; count[mk] = 0;
+    }
+    count[mk]++;
+
+    fespace.get_boundary_element_dofs_u(i, bdof);
+
+    Quadrature * qd = Quadrature::create(2, bfe->get_type());
+    for (int q = 0; q < qd->get_num_ipoints(); q++)
+    {
+      bfe->calc_shape_u(qd->get_point(q), shape);
+      bfe->calc_deriv_shape_u(qd->get_point(q), dshape);
+      sm.calc_jacobian(dshape, neln);
+      double w = qd->get_weight(q);
+
+      dxis.zeros();
+      if (ndim == 2) dxis(2,1) = -1.0;
+      for (int id = 0; id < ndim; id++)
+        for (int jd = 0; jd < ndim-1; jd++)
+          for (int in = 0; in < neln; in++)
+          {
+            int ip = bdof[in]/ndim;
+            dxis(id,jd) = dxis(id,jd) + x[ip][id] * dshape(in,jd);
+          }
+
+      arma::vec3 xnorm = arma::cross(dxis.col(0), dxis.col(1));
+      arma::vec3 xq;  xq.zeros();
+      for (int in = 0; in < neln; in++)
+        xq += shape(in) * xe[in];
+
+      nsum[mk]    += xnorm * w;
+      area[mk]    += arma::norm(xnorm,2) * w;
+      vol_div[mk] += arma::dot(xq, xnorm) * w / 3.0;
+      vol_lid[mk] += (arma::dot(xq, lid_normal) - lid_offset)
+                     * arma::dot(lid_normal, xnorm) * w;
+    }
+    delete qd;
+  }
+  delete bfe;
+
+  cout << "\n--- Boundary closure diagnostic ---\n";
+  cout << " marker  nfaces        area   ||int n dA||/area"
+       << "     V_(1/3)x.n [mL]     V_lid [mL]\n";
+  for (auto & kv : area)
+  {
+    int mk = kv.first;
+    double ratio = (kv.second > 0.0)
+                   ? arma::norm(nsum[mk],2)/kv.second : 0.0;
+    cout << setw(7) << mk << setw(8) << count[mk]
+         << setw(12) << kv.second
+         << setw(20) << ratio
+         << setw(20) << vol_div[mk]*1e6
+         << setw(15) << vol_lid[mk]*1e6 << "\n";
+  }
+  cout << " ratio ~ 0 => marker is closed on its own (both volumes agree)\n";
+  cout << " ratio ~ O(1) => marker is open; only V_lid is meaningful,\n"
+       << "                 and only if the opening is planar.\n";
+  cout << "-----------------------------------\n\n";
+}
+
+void NonlinearElasticity::set_cavity_lid_plane(const arma::vec3 & normal,
+                                               double offset)
+{
+  lid_normal = arma::normalise(normal);
+  lid_offset = offset;
+  lid_plane_set = true;
+
+  cout << " Cavity lid plane set: n = (" << lid_normal(0) << ", "
+       << lid_normal(1) << ", " << lid_normal(2) << "), offset = "
+       << lid_offset << endl;
+}
+
+void NonlinearElasticity::detect_cavity_lid_plane(int base_marker)
+{
+  // Estimate the valve/base plane from the boundary elements carrying
+  // base_marker: the plane normal is the (normalised) sum of area-weighted
+  // normals, and the offset is the area-weighted mean of e.x over it.
+  MixedFiniteElement * bfe = fespace.create_boundary_FE();
+  if (bfe == NULL)
+    return;
+
+  int ndim = bfe->get_ndim();
+  int neln = bfe->get_ndofs_u()/ndim;
+  int nb = msh.get_n_boundary_elements();
+
+  arma::vec3 nsum;  nsum.zeros();
+  arma::vec3 csum;  csum.zeros();
+  double asum = 0.0;
+  int nfound = 0;
+
+  arma::vec shape;
+  arma::mat dshape, dxis(3,2);
+  vector<int> bdof;
+
+  for (int i = 0; i < nb; i++)
+  {
+    std::vector<arma::vec3> xe(neln);
+    get_boundary_element_x(i, xe);
+    SurfaceMapping sm = bfe->get_boundary_mapping(i, xe);
+    if (sm.get_index() != base_marker)
+      continue;
+
+    nfound++;
+    fespace.get_boundary_element_dofs_u(i, bdof);
+
+    Quadrature * qd = Quadrature::create(2, bfe->get_type());
+    for (int q = 0; q < qd->get_num_ipoints(); q++)
+    {
+      bfe->calc_shape_u(qd->get_point(q), shape);
+      bfe->calc_deriv_shape_u(qd->get_point(q), dshape);
+      sm.calc_jacobian(dshape, neln);
+      double w = qd->get_weight(q);
+
+      dxis.zeros();
+      if (ndim == 2) dxis(2,1) = -1.0;
+      for (int id = 0; id < ndim; id++)
+        for (int jd = 0; jd < ndim-1; jd++)
+          for (int in = 0; in < neln; in++)
+          {
+            int ip = bdof[in]/ndim;
+            dxis(id,jd) = dxis(id,jd) + x[ip][id] * dshape(in,jd);
+          }
+
+      arma::vec3 xnorm = arma::cross(dxis.col(0), dxis.col(1));
+      arma::vec3 xq;  xq.zeros();
+      for (int in = 0; in < neln; in++)
+        xq += shape(in) * xe[in];
+
+      double da = arma::norm(xnorm, 2) * w;
+      nsum += xnorm * w;
+      csum += xq * da;
+      asum += da;
+    }
+    delete qd;
+  }
+  delete bfe;
+
+  if (nfound == 0 || asum <= 0.0 || arma::norm(nsum,2) <= 0.0)
+  {
+    cout << " Note: no lid plane detected from marker " << base_marker
+         << "; using n = (0,0,1), offset = 0." << endl;
+    cout << "       This is harmless if each cavity marker already bounds a"
+         << " closed surface\n"
+         << "       (the formula is exact for any e and x0 in that case)."
+         << " Call report_boundary_closure()\n"
+         << "       to verify." << endl;
+    lid_plane_set = true;   // avoid retrying every call
+    return;
+  }
+
+  arma::vec3 e  = arma::normalise(nsum);
+  arma::vec3 x0 = csum / asum;
+  set_cavity_lid_plane(e, arma::dot(e, x0));
 }
 
 void NonlinearElasticity::config(const string & mshfile, const string & parfile)
@@ -1541,7 +1831,9 @@ void NonlinearElasticity::storeLVvolumes(string basename)
   string aux = basename + string("_volumes.dat");
   file.open(aux.c_str());
 
-  file << total_volume_cavity() << "\n";
+  file << "# V_LV V_RV V_myocardium\n";
+  file << volume_LV() << "\n";
+  file << volume_RV() << "\n";
   file << calc_volume();
 
   file.close();
@@ -1731,13 +2023,20 @@ void NonlinearElasticity::run(const string & mshfile, const string & parfile)
   init_matvecs();
 
   pre_solve();
-  cout << "Initial cavity volume: " << total_volume_cavity() << "\n";
+  cout << "Initial LV cavity volume: " << volume_LV() << "\n";
+  cout << "Initial RV cavity volume: " << volume_RV() << "\n";
+
+  // standalone run: the load ramp is monotonic, so per-increment PV data
+  // is physically meaningful
+  set_pv_record_increments(true);
 
   solve();
   
   storeStress(lc.get_nincs());
   
   storeLVvolumes(this->basename);
+  
+  close_pv_history();
   
   //cout << "Final cavity volume: " << total_volume_cavity() << "\n";
   
@@ -1940,19 +2239,28 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
 
     for(int i=0; i<nb; i++)
     {
+      bool is_spring = false;
       fespace.get_boundary_element_dofs_u(i,bdof);
-      elem_pforce(i,bfe,bdof,belvec);
+      elem_pforce(i,bfe,bdof,belvec,is_spring);
+
+      // Pressure is an EXTERNAL load and is ramped by the load factor.
+      // The spring is a displacement-dependent RESTORING force: it must not
+      // be ramped, otherwise the residual and the (unramped) spring
+      // stiffness are inconsistent and Newton loses quadratic convergence.
+      double scale = is_spring ? 1.0 : xlamb;
 
       // assembles the nodal forces due to normal pressure or spring
       for(int k=0; k<nu; k++)
       {
         if(ldgof[bdof[k]])
         {
-          r.add(bdof[k], xlamb * belvec(k));
-          tload(bdof[k]) += belvec(k);
+          r.add(bdof[k], scale * belvec(k));
+          // only external loads contribute to the reference load norm
+          if(!is_spring)
+            tload(bdof[k]) += belvec(k);
         }
         else
-          react.add(bdof[k], -xlamb * belvec(k));
+          react.add(bdof[k], -scale * belvec(k));
       }
     }
   }

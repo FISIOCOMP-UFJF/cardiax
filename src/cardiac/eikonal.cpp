@@ -20,7 +20,7 @@ Eikonal::Eikonal()
 {
   cout << "Eikonal" << endl; 
   mesh = new Mesh();
-  writer = new WriterHDF5(mesh);
+  // writer = new WriterHDF5(mesh);
 
   //? Precisa disso? 
   parameters.rename("Eikonal_parameters");
@@ -59,9 +59,9 @@ void Eikonal::init()
   // setup data writer to write at every 1 ms
   // potential field and displacements
   std::size_t pos  = mesh_filename.find(".xml");
-  std::string output = mesh_filename.substr(0,pos) + "_output";
+  // std::string output = mesh_filename.substr(0,pos) + "_output";
   int nsteps = tip.get_size(); 
-  writer->open(output, nsteps+1, timestep);
+  // writer->open(output, nsteps+1, timestep);
 
   // setup model and cells
   cellmodel = CellModel::create(cell_name);

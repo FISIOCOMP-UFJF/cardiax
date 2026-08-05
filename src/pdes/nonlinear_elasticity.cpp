@@ -1386,18 +1386,18 @@ void NonlinearElasticity::output_vtk(const int cont, const int step)
 {
   int np = msh.get_n_points();
   //int ne = msh.get_n_elements();
-  std::stringstream ss;
-  std::string name;
-  std::string vtuname;
+  // std::stringstream ss;
+  // std::string name;
+  // std::string vtuname;
 
-  //arma::vec t11(ne), t22(ne), t33(ne);
-  //arma::vec t12(ne), t13(ne), t23(ne);
-  //t11.zeros(); t22.zeros(); t33.zeros();
-  //t12.zeros(); t13.zeros(); t23.zeros();
+  // //arma::vec t11(ne), t22(ne), t33(ne);
+  // //arma::vec t12(ne), t13(ne), t23(ne);
+  // //t11.zeros(); t22.zeros(); t33.zeros();
+  // //t12.zeros(); t13.zeros(); t23.zeros();
 
-  ss << cont << "_" << step;
-  name = this->basename + "_" + ss.str();
-  vtuname = name + ".vtu";
+  // ss << cont << "_" << step;
+  // name = this->basename + "_" + ss.str();
+  // vtuname = name + ".vtu";
 
   // Displacements
   //cout << "Aloca vetor" << endl;
@@ -1525,9 +1525,6 @@ void NonlinearElasticity::storeLVvolumes(string basename)
 
 void NonlinearElasticity::storeStress(int step)
 {
-  //ofstream sfile, strainfile;
-  //string aux = basename + string("_stress.dat");
-  //sfile.open(aux.c_str());
   //aux = basename + string("_strain.dat");
   //strainfile.open(aux.c_str());
   arma::mat33 sig, E;
@@ -1559,8 +1556,6 @@ void NonlinearElasticity::storeStress(int step)
         mediaE += straindb(id_el, ii, kk);
       }
       mediastress = mediastress / (double) nint;
-      //sfile.setf(ios::scientific);
-      //sfile << mediastress << "\t";
       sig[kk] = mediastress;
 
       mediaE = mediaE / (double) nint;
@@ -1600,8 +1595,6 @@ void NonlinearElasticity::storeStress(int step)
     fiber_stress(id_el) = fib(0) * (fib(0)*sig(0,0) + fib(1)*sig(0,1) + fib(2)*sig(0,2)) +
                           fib(1) * (fib(0)*sig(0,1) + fib(1)*sig(1,1) + fib(2)*sig(1,2)) +
                           fib(2) * (fib(0)*sig(0,2) + fib(1)*sig(1,2) + fib(2)*sig(2,2));
-    //sfile << fiber_stress(id_el) << "\t";
-    //sfile << endl;
 
     fiber_strain(id_el) = fib0(0) * (fib0(0)*E(0,0) + fib0(1)*E(0,1) + fib0(2)*E(0,2)) +
                           fib0(1) * (fib0(0)*E(0,1) + fib0(1)*E(1,1) + fib0(2)*E(1,2)) +
@@ -1624,7 +1617,6 @@ void NonlinearElasticity::storeStress(int step)
     //strainfile << fiber_strain(id_el) << "\t";
     //strainfile << endl;
   }
-  //sfile.close();
   //strainfile.close();
 
   writer.write_cell_field_step(step, fiber_stress.memptr(), string("stress"));

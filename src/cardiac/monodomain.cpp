@@ -230,7 +230,7 @@ void Monodomain::calc_elmat_mass(const int eindex,
   delete qd;
 }
 
-void Monodomain::init()
+void Monodomain::init(bool is_restart) 
 {
   tip = TimeParameters(timestep, totaltime, printrate);
 
@@ -269,7 +269,7 @@ void Monodomain::init()
   cout << " HDF5 save rate = " << printrate << endl;
   cout << " Number of steps = " << nsteps << endl;
   cout << " Timestep = " << timestep << endl;
-  writer->open(output, nsteps, timestep);
+  writer->open(output, nsteps, timestep, false, is_restart);
 
   // setup model and cells
   cellmodel = CellModel::create(cell_name);
@@ -301,14 +301,21 @@ void Monodomain::solve()
 {
   cout << "\nSimulating" << endl;
 
-  initial_conditions();
+  // initial_conditions();
     
   // loop in time
-  int step=0;
-
-  stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
-  cells->advance(tip.time(), timestep, stim_val, stim_nodes);
-  cells->get_var(0, v0);
+  // LUCAS
+  int step = tip.it() / tip.pr();
+  int checkpoint_rate = (int) std::round(checkpoint_interval / timestep);
+  if (checkpoint_rate <= 0) checkpoint_rate = -1; 
+  
+  
+  if(tip.it() == 0)
+  {
+    stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
+    cells->advance(tip.time(), timestep, stim_val, stim_nodes);
+    cells->get_var(0, v0);
+  }
 
   while( !tip.finished() )
   {
@@ -322,8 +329,22 @@ void Monodomain::solve()
     timer.enter("Parabolic");
     solve_parabolic();
     timer.leave();
-        
+    
     write_data(vm, "vm", &step);
+
+    if(tip.it() % checkpoint_rate == 0 && checkpoint_rate > 0)
+    {
+      cout<<"Saving State: " <<tip.time() <<endl; 
+      int num_vars = cellmodel->get_num_state_vars(); 
+      
+      writer->write_checkpoint(
+          tip.it(), 
+          tip.time(), 
+          vm.memptr(), 
+          cells->get_state_vars(), 
+          num_vars
+      );
+    }
   }  
 
   timer.summary();
@@ -409,5 +430,42 @@ void Monodomain::update_coords(const arma::mat & um)
     arma::vec3 upt = (um.row(i)).t();
     mesh->update_point(i, upt);
   }
+}
+
+void Monodomain::restore_checkpoint(string restfilename)
+{
+    cout << "Avaliando arquivo de checkpoint: " << restfilename << "..." << endl;
+
+
+    int chk_step = 0;
+    double chk_time = 0.0;
+    int chk_nodes = 0;
+    int chk_vars = 0;
+
+    // metadata from h5 file
+    writer->read_checkpoint_metadata(restfilename, chk_step, chk_time, chk_nodes, chk_vars);
+
+    int expected_vars = cellmodel->get_num_state_vars();      
+    if (chk_nodes != (int)ndofs) {
+        throw std::runtime_error("Mismatch Error: Checkpoint mesh (" + std::to_string(chk_nodes) + 
+                                 " nodes) differs from the loaded mesh (" + std::to_string(ndofs) + " nodes).");
+    }
+    
+    if (chk_vars != expected_vars) {
+        throw std::runtime_error("Mismatch Error: Checkpoint cellular model (" + std::to_string(chk_vars) + 
+                                 " variables) differs from the loaded model (" + std::to_string(expected_vars) + " variables).");
+    }
+
+    writer->read_checkpoint_data(restfilename, vm.memptr(), cells->get_state_vars());
+    tip.restore_state(chk_step, chk_time);
+    cells->set_var(0, vm);
+
+    v0.set_data(vm.memptr());
+    v0.assemble();    
+    v1.set_data(vm.memptr());
+    v1.assemble();
+
+    cout << "  -> Restart successfully configured starting from t = " << chk_time 
+     << " (step " << chk_step << ")." << endl;
 }
 

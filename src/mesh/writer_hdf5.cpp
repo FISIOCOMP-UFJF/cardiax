@@ -10,11 +10,18 @@ WriterHDF5::~WriterHDF5()
   close();
 }
 
-void WriterHDF5::open(const std::string & file, int nsteps, double step, bool bido)
-{
+void WriterHDF5::open(const std::string & file, int nsteps, double step, bool bido, bool is_restart)
+{   
+    std::size_t pos  = file.find_last_of("/");
+    std::string base = file.c_str(); 
+     if (pos != std::string::npos) {
+        base = file.substr(pos+1);
+    }
+    if (is_restart) base = base + "_restarted";
+    h5name = base + ".h5";
 
-  write_hdf5(file, nsteps, step);
-  write_xdmf(file, nsteps, step, bido);
+    write_hdf5(file, nsteps, step);
+    write_xdmf(file, nsteps, step, bido);
 }
 
 void WriterHDF5::close()
@@ -30,12 +37,12 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     hid_t file_id, group_id, dataset_id, dataspace_id, props;
     herr_t status;
 
-    std::size_t pos  = file.find_last_of("/");
-    std::string base = file.c_str();
-    if (pos != std::string::npos)
-      base = file.substr(pos+1);
+    // std::size_t pos  = file.find_last_of("/");
+    // std::string base = file.c_str();
+    // if (pos != std::string::npos)
+    //   base = file.substr(pos+1);
 
-    h5name = base + ".h5";
+    // h5name = base + ".h5";
 
     double fill_zero = 0.0;
 
@@ -826,4 +833,101 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
     
     xmf.close();
 }
- 
+
+void WriterHDF5::write_checkpoint(int step, double current_time, const double *vm, const double *state_vars, int num_state_vars)
+{
+    std::string chk_filename = "checkpoint_step_" + std::to_string(step) + ".h5";
+
+    hid_t file_id = H5Fcreate(chk_filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    
+    hid_t space_scalar = H5Screate(H5S_SCALAR);
+    
+    hid_t attr_step = H5Acreate(file_id, "step", H5T_NATIVE_INT, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
+    H5Awrite(attr_step, H5T_NATIVE_INT, &step);
+    H5Aclose(attr_step);
+
+    hid_t attr_time = H5Acreate(file_id, "time", H5T_NATIVE_DOUBLE, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
+    H5Awrite(attr_time, H5T_NATIVE_DOUBLE, &current_time);
+    H5Aclose(attr_time);
+    
+    H5Sclose(space_scalar);
+
+    hid_t group_ep = H5Gcreate2(file_id, "/ep", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    hid_t group_mech = H5Gcreate2(file_id, "/mechanics", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    hsize_t np = mesh->get_n_points();
+
+    // saving vm
+    hsize_t dims_vm[1] = { np };
+    hid_t dataspace_vm = H5Screate_simple(1, dims_vm, NULL);
+    hid_t dataset_vm = H5Dcreate(group_ep, "vm", H5T_NATIVE_DOUBLE, dataspace_vm, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    
+    H5Dwrite(dataset_vm, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, vm);
+    
+    H5Dclose(dataset_vm);
+    H5Sclose(dataspace_vm);
+
+    // saving state_variables
+    hsize_t dims_sv[2] = { np, (hsize_t)num_state_vars };
+    hid_t dataspace_sv = H5Screate_simple(2, dims_sv, NULL);
+    hid_t dataset_sv = H5Dcreate(group_ep, "state_variables", H5T_NATIVE_DOUBLE, dataspace_sv, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    
+    H5Dwrite(dataset_sv, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, state_vars);
+    
+    H5Dclose(dataset_sv);
+    H5Sclose(dataspace_sv);
+
+    H5Gclose(group_ep);
+    H5Gclose(group_mech);
+    H5Fclose(file_id);
+}
+
+void WriterHDF5::read_checkpoint_metadata(const std::string &filename, int &step, double &time, int &num_nodes, int &num_vars)
+{
+    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    if (file_id < 0) {
+        throw std::runtime_error("Error: Not possible to open checkpoint file: " + filename);
+    }
+
+    hid_t attr_step = H5Aopen(file_id, "step", H5P_DEFAULT);
+    H5Aread(attr_step, H5T_NATIVE_INT, &step);
+    H5Aclose(attr_step);
+
+    hid_t attr_time = H5Aopen(file_id, "time", H5P_DEFAULT);
+    H5Aread(attr_time, H5T_NATIVE_DOUBLE, &time);
+    H5Aclose(attr_time);
+
+    hid_t dataset_vm = H5Dopen2(file_id, "/ep/vm", H5P_DEFAULT);
+    hid_t space_vm = H5Dget_space(dataset_vm);
+    hsize_t dims_vm[1];
+    H5Sget_simple_extent_dims(space_vm, dims_vm, NULL);
+    num_nodes = (int)dims_vm[0];
+    
+    H5Sclose(space_vm);
+    H5Dclose(dataset_vm);
+
+    hid_t dataset_sv = H5Dopen2(file_id, "/ep/state_variables", H5P_DEFAULT);
+    hid_t space_sv = H5Dget_space(dataset_sv);
+    hsize_t dims_sv[2];
+    H5Sget_simple_extent_dims(space_sv, dims_sv, NULL);
+    num_vars = (int)dims_sv[1];
+    
+    H5Sclose(space_sv);
+    H5Dclose(dataset_sv);
+    H5Fclose(file_id);
+}
+
+void WriterHDF5::read_checkpoint_data(const std::string &filename, double *vm, double *state_vars)
+{
+    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+
+    hid_t dataset_vm = H5Dopen2(file_id, "/ep/vm", H5P_DEFAULT);
+    H5Dread(dataset_vm, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, vm);
+    H5Dclose(dataset_vm);
+
+    hid_t dataset_sv = H5Dopen2(file_id, "/ep/state_variables", H5P_DEFAULT);
+    H5Dread(dataset_sv, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, state_vars);
+    H5Dclose(dataset_sv);
+
+    H5Fclose(file_id);
+}

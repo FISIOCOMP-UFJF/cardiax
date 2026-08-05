@@ -48,12 +48,42 @@ double HolzapfelOgden::strain_energy(MaterialData * md, const arma::mat & E) con
   const double K = parameters[9];
 
   // strain energy function calculation
-  double tiso = (a/(2.0*b)) * (exp(b*(Icbar-3.0)) - 1.0);
-  double tfib = (I4f > 1.0) ? (af/(2*bf))*(exp(bf*(I4f-1.)*(I4f-1.))-1.) : 0.0;
-  //double tfib = (af/(2*bf))*(exp(bf*(I4f-1.)*(I4f-1.))-1.);
-  double tshe = (I4s > 1.0) ? (as/(2*bs))*(exp(bs*(I4s-1.)*(I4s-1.))-1.) : 0.0;
-  double tfs  = (afs/(2*bfs)) * (exp(bfs*(I8fs*I8fs))-1.0);
   double tvol = (K/2.0)*((J-1.0)*(J-1.0));
+
+  constexpr double eps = 1e-10;
+  const double xiso = Icbar - 3.0;
+  double tiso;
+  if (b > eps)
+      tiso = (a/(2.0*b)) * (std::exp(b*xiso) - 1.0);
+  else
+      tiso = (a/2.0) * xiso;
+
+  double tfib = 0.0;
+  if (I4f > 1.0) {
+      const double xfib = (I4f - 1.0) * (I4f - 1.0);
+
+      if (bf > eps)
+          tfib = (af/(2.0*bf)) * (std::exp(bf*xfib) - 1.0);
+      else
+          tfib = (af/2.0) * xfib;
+}
+
+  double tshe = 0.0;
+  if (I4s > 1.0) {
+      const double x = (I4s - 1.0) * (I4s - 1.0);
+      if (bs > eps)
+          tshe = as/(2.0*bs) * (std::exp(bs*x) - 1.0);
+      else
+          tshe = as/2.0 * x;
+  }
+
+  const double y = I8fs * I8fs;
+  double tfs;
+  if (bfs > eps)
+      tfs = afs/(2.0*bfs) * (std::exp(bfs*y) - 1.0);
+  else
+      tfs = afs/2.0 * y;
+
 
   double tactive = active_strain_energy(md, E);
   return tiso + tfib + tvol + tfs + tshe + tactive;

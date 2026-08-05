@@ -1,178 +1,105 @@
-#include <vector>
-#include <iterator>
 #include "graph_coloring.hpp"
+#include <iostream>
+#include <algorithm>
+#include "mesh.hpp"
 
-void node_in_element(const int node, const arma::umat & elem,
-                     std::vector<uint> & vec_elem)
+
+std::vector<std::vector<int>> compute_element_colors(const Mesh & mesh)
 {
-  vec_elem.clear();
+    // Recupera informações básicas da malha usando os métodos já existentes[cite: 5]
+    int num_nodes = mesh.get_n_points();
+    int num_elements = mesh.get_n_elements();
 
-  // element
-  for(uint i=0; i<elem.n_rows; i++)
-  {
-    // nodes of the element
-    for(uint j=0; j<elem.n_cols; j++)
+    // -------------------------------------------------------------------------
+    // PASSO 1: Mapeamento Nó -> Elemento (Lista de Adjacência Invertida)
+    // Evita a varredura O(N^2) na busca de vizinhos[cite: 5].
+    // -------------------------------------------------------------------------
+    std::vector<std::vector<int>> node_to_elems(num_nodes);
+    
+    for (int e = 0; e < num_elements; ++e) 
     {
-      if(elem(i,j) == (uint)node)
-        vec_elem.push_back(i);
-    }
-  }  
-}
-
-arma::umat comm_matrix(const Mesh & mesh)
-{
-  int npoin = mesh.get_n_points();
-  int nelem = mesh.get_n_elements();
-  int nnode = mesh.get_nen();
-
-  std::vector<uint> used;
-  arma::umat elem(nelem,nnode);
-  arma::umat comm(nelem,nelem);
-  elem.zeros();
-  comm.zeros();
-
-  // copy element connectivity to matrix -> elem
-  for(int e=0; e<nelem; e++)
-  {
-    std::vector<int> edofs;
-    mesh.get_element_pt_nums(e, edofs);
-    for(int j=0; j<nnode; j++)
-      elem(e,j) = edofs[j];
-  }
-
-  // create comm matrix
-  for(int i=0; i<npoin; i++)
-  {
-    node_in_element(i, elem, used);
-    for (uint j=0; j < used.size(); j++)
-    {
-      for(uint k = j+1 ; k < used.size(); k++)
-      {
-        uint jj, kk;
-        jj = used[j];
-        kk = used[k];
-        comm(jj, kk) = 1;
-        comm(kk, jj) = 1;
-      }
-    }
-  }
-
-  return comm;
-}
-
-arma::umat greedy_coloring(const arma::umat & L, const int nthreads)
-{
-  int nelem = L.n_rows;
-  uint ncolors;
-
-  std::vector<uint> block_color;
-  arma::uvec neighbors;
-  arma::uvec color_count(nelem);
-  arma::uvec C(nelem);
-  C.zeros();
-
-  cout << "comm matrix\n" << L << endl;
-
-  C(0) = 1;
-  ncolors = 1;
-  color_count(0) = 1;
-
-  for(int i=1; i<nelem; i++)
-  {
-    block_color.clear();
-    neighbors = arma::find( L.row(i) == 1);
-
-    // se os vizinhos ja tem cores associadas a eles, entao
-    // marca todas essas cores como bloqueadas
-    for(uint j=0; j<neighbors.size(); j++)
-    {
-      if(C(neighbors(j)) != 0)
-        block_color.push_back( C(neighbors(j)) );
-    }
-
-    //
-    //
-    for(uint j=0; j<ncolors; j++)
-    {
-      if(color_count(j) != (uint)nthreads)
-      {
-        std::vector<uint> tmp;
-        for(uint k=0; k<block_color.size(); k++)
+        std::vector<int> edofs;
+        mesh.get_element_pt_nums(e, edofs); //[cite: 5]
+        
+        for (int node : edofs) 
         {
-          if(block_color[k] == j)
-            tmp.push_back(k);
+            node_to_elems[node].push_back(e);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // PASSO 2: Coloração Gulosa (Greedy Coloring)
+    // -------------------------------------------------------------------------
+    std::vector<int> element_color(num_elements, -1);
+    int max_color_used = -1;
+
+    for (int e = 0; e < num_elements; ++e) 
+    {
+        // 2.a Encontrar os elementos vizinhos (que compartilham nós)
+        std::vector<int> neighbors;
+        std::vector<int> edofs;
+        mesh.get_element_pt_nums(e, edofs); //[cite: 5]
+        
+        for (int node : edofs) 
+        {
+            for (int neighbor_elem : node_to_elems[node]) 
+            {
+                if (neighbor_elem != e) 
+                {
+                    neighbors.push_back(neighbor_elem);
+                }
+            }
         }
 
-        bool is_free = tmp.size() == 0 ? true : false;
-        if(is_free)
+        // 2.b Mapear as cores que já estão sendo usadas pelos vizinhos
+        // Alocamos o array de disponibilidade com tamanho 'max_color_used + 2'
+        // para garantir espaço caso precisemos de uma cor nova.
+        std::vector<bool> color_available(max_color_used + 2, true);
+        
+        for (int neighbor_elem : neighbors) 
         {
-          C(i) = j;
-          color_count(j) = color_count(j) + 1;
-          break;
+            int c = element_color[neighbor_elem];
+            if (c != -1) 
+            {
+                color_available[c] = false; // Cor bloqueada
+            }
         }
-      }
+
+        // 2.c Encontrar a menor cor livre
+        int chosen_color = 0;
+        while (!color_available[chosen_color]) 
+        {
+            chosen_color++;
+        }
+
+        // 2.d Atribuir a cor e atualizar o máximo
+        element_color[e] = chosen_color;
+        if (chosen_color > max_color_used) 
+        {
+            max_color_used = chosen_color;
+        }
     }
 
-    //
-    //
-    if(C(i) == 0)
+    // -------------------------------------------------------------------------
+    // PASSO 3: Agrupar elementos por cor
+    // -------------------------------------------------------------------------
+    int total_colors = max_color_used + 1;
+    std::vector<std::vector<int>> color_groups(total_colors);
+
+    // Pré-alocar memória para evitar realocações durante o push_back (Otimização)
+    // Estimativa: elementos divididos uniformemente pelas cores
+    int avg_elements_per_color = num_elements / total_colors;
+    for (int c = 0; c < total_colors; ++c) {
+        color_groups[c].reserve(avg_elements_per_color * 1.5); 
+    }
+
+    // Distribuir os elementos
+    for (int e = 0; e < num_elements; ++e) 
     {
-      ncolors = ncolors + 1;
-      C(i) = ncolors;
-      color_count(ncolors-1) = 1;    
+        color_groups[element_color[e]].push_back(e);
     }
 
-  }
-  
-  cout << "OPA FINAL" << endl;
-  return C; 
+    std::cout << "Malha agrupada utilizando " << total_colors << " cores independentes.\n";
 
-/*
-%% Function that colors the elements using the Greedy Algorithm
-function [C,NumberOfColors]=Color(L,threads)
-C=zeros(size(L,1),1);
-C(1)=1;
-NumberOfColors=1;
-ColorCount(1)=1;
-for i=2:size(L,1)
-    BlockedColors=[];
-    Neighbors=find(L(i,:)==1);
-    for j=1:length(Neighbors)
-        if C(Neighbors(j))~=0
-            BlockedColors=[BlockedColors C(Neighbors(j))];
-        end
-    end
-    for j=1:NumberOfColors
-        if ColorCount(j)~=threads
-            IsFree=isempty(find(BlockedColors==j));
-            if IsFree
-                C(i)=j;
-                ColorCount(j)=ColorCount(j)+1;
-                break;
-            end
-        end
-    end
-    if C(i)==0
-        NumberOfColors=NumberOfColors+1;
-        C(i)=NumberOfColors;
-        ColorCount(NumberOfColors)=1;
-    end
-end
-
-return
-  */
+    return color_groups;
 }
-
-/*
-function [C,L,NumberOfColors]=GreedyColoringGPU(ELEM,NODE,threads,verbose)
-% If the function receives 4 arguments, then verbose mode is enabled and
-% the communication matrix is printed on screen.
-
-L=CommMatrix(ELEM);
-[C,NumberOfColors]=Color(L,threads);
-PlotColoring(ELEM,NODE,C,NumberOfColors,threads)
-if nargin==4
-    DispCommMatrix(L);
-end
-return
-*/

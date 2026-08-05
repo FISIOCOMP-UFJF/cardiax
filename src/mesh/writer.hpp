@@ -19,7 +19,7 @@ public:
   virtual ~Writer();
     
   //! Open the file to write data
-  virtual void open(const std::string & file, int nsteps, double step, bool bido=false) = 0;
+  virtual void open(const std::string & file, int nsteps, double step, bool bido=false, bool is_restart=false) = 0;
 
   //! Close the file and everything
   virtual void close() = 0;

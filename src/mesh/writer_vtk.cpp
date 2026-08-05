@@ -10,7 +10,7 @@ WriterVTK::~WriterVTK()
   // do nothing
 }
 
-void WriterVTK::open(const std::string & file, int nsteps, double step, bool bido)
+void WriterVTK::open(const std::string & file, int nsteps, double step, bool bido, bool is_restart)
 {
     //write_hdf5(file, nsteps, step);
     write_xml(file, nsteps, step, bido);

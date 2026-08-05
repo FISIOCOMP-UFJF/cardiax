@@ -144,35 +144,6 @@ void MonodomainDeformation::calc_elmat_stiff(const int elid,
 
     delete qd;
 }
-/*
-void MonodomainDeformation::init()
-{
-    tip = TimeParameters(timestep, totaltime, printrate);
-
-    mesh->read(mesh_filename);
-    stimuli.read(stimuli_filename);
-
-    fespace.set_mesh(mesh);
-    ndofs = mesh->get_n_points();
-
-    // setup data writer to write at every 1 ms
-    // potential field and displacements
-    std::string output = mesh_filename + "_output";
-    int nsteps = tip.get_nsteps()/(1.0/timestep);
-    writer->open(output, nsteps+1, timestep);
-
-    // setup model and cells
-    cellmodel = CellModel::create(cell_name);
-    cellmodel->setup(odesolver, timestep, totaltime, 1.0);
-    cells = new Cells(ndofs,cellmodel);
-
-    vm.resize(ndofs);
-
-    timer.enter("Assemble");
-    Monodomain::assemble_matrices();
-    timer.leave();
-}
-*/
 
 void MonodomainDeformation::init()
 {

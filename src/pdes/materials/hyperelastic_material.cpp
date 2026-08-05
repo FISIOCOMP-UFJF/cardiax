@@ -192,13 +192,13 @@ void HyperelasticMaterial::calc_fd_elastensor(MaterialData * md, Tensor4 & A)
     for(int j=0; j<=i; j++) // old j<3
     {
       delta_tensor(i, j, eps, dij);
+      Epdij = E + dij;
+      Emdij = E - dij;
       for(int k=0; k<3; k++)
       {	      
 	      for(int l=0; l<=k; l++) //old l<3
         {
           delta_tensor(k, l, eps, dkl);	  
-          Epdij = E + dij;
-          Emdij = E - dij;
           if(i==k && j==l)
           {
             psip = strain_energy(md, Epdij);
@@ -218,8 +218,6 @@ void HyperelasticMaterial::calc_fd_elastensor(MaterialData * md, Tensor4 & A)
       }
     }
   }
-
-  // TODO: check if UNROLLING this will improve performance
   
   // copy minor symmetries (A_ijkl = A_jikl = A_ijlk)  
   for(int i=0; i<3; i++)

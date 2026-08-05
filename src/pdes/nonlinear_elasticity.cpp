@@ -1867,10 +1867,12 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   int n_dofs = msh.get_n_dim() * msh.get_nen();
   int n_elem = msh.get_n_elements();
 
-  // init resid
   double xlamb = lc.load();
-  for(int i=0; i<fespace.get_ndofs(); i++)
+  
+  timer.enter("Residual: setting r"); 
+  for(int i = 0; i < fespace.get_ndofs(); i++)
     r.set(i, fext0(i) + xlamb * fext(i));
+  timer.leave(); 
 
   // set tload (external loads incl. pressure) to current fext (external loads)
   tload = fext;
@@ -1878,49 +1880,71 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   //
   // assemble residual vector r
   //
-  arma::vec Re(n_dofs);
-  std::vector<int> dnums;
-  MxFE * fe = fespace.createFE();
-  Quadrature * qd = Quadrature::create(0, fe->get_type());
-
-  for(int i=0; i<n_elem; i++)
+  
+  // 2. Inicia a região paralela principal
+  #pragma omp parallel
   {
-    elem_resid (i, fe, qd, Re);
-    fespace.get_element_dofs_u (i, dnums);
+    // 3. ISOLAMENTO CRÍTICO: Vetores e instâncias instanciados DENTRO do escopo
+    // para que cada thread tenha a sua própria cópia
+    arma::vec Re(n_dofs);
+    std::vector<int> dnums;
+    MxFE * local_fe = fespace.createFE();
+    Quadrature * local_qd = Quadrature::create(0, local_fe->get_type());
 
-    for(int k=0; k<n_dofs; k++)
+    // 4. Distribuição da carga de elementos
+    #pragma omp for schedule(dynamic)
+    for(int i = 0; i < n_elem; i++)
     {
-      if (ldgof[dnums[k]])
-      {
-        r.add(dnums[k], -Re(k)); // add -R
-      }
-      else
-        react.add(dnums[k], Re(k));
+      // A carga pesada da física computada em paralelo
+      elem_resid(i, local_fe, local_qd, Re);
+      fespace.get_element_dofs_u(i, dnums);
 
-    }
-  }
-  delete qd;
-  delete fe;
+      // 5. PROTEÇÃO DE ESCRITA: Inserção síncrona nos vetores globais
+      #pragma omp critical
+      {
+        timer.enter("Residual: critical zone");
+        for(int k = 0; k < n_dofs; k++)
+        {
+          if (ldgof[dnums[k]])
+          {
+            r.add(dnums[k], -Re(k)); // add -R
+          }
+          else
+          {
+            react.add(dnums[k], Re(k));
+          }
+        }
+        timer.leave(); 
+      } // Fim do critical
+    } // Fim do for
+
+    // Limpa a memória das instâncias da thread
+    delete local_qd;
+    delete local_fe;
+  } // Fim da região paralela
 
   //
   // pressure forces contribution
   //
+  timer.enter("Residual: pressure forces");
   MixedFiniteElement * bfe = fespace.create_boundary_FE();
   if (bfe != NULL && pressure_map.size() > 0)
   {
     int nu  = bfe->get_ndofs_u();
     int nb = msh.get_n_boundary_elements();
-    double xlamb = lc.load();
+    
+    // Novamente, se 'nb' for pequeno, serial é suficiente. 
+    // Se for grande, a mesma lógica do loop acima pode ser aplicada aqui.
     arma::vec belvec(nu);
-    vector<int> bdof;
+    std::vector<int> bdof;
 
-    for(int i=0; i<nb; i++)
+    for(int i = 0; i < nb; i++)
     {
-      fespace.get_boundary_element_dofs_u(i,bdof);
-      elem_pforce(i,bfe,bdof,belvec);
+      fespace.get_boundary_element_dofs_u(i, bdof);
+      elem_pforce(i, bfe, bdof, belvec);
 
       // assembles the nodal forces due to normal pressure
-      for(int k=0; k<nu; k++)
+      for(int k = 0; k < nu; k++)
       {
         if(ldgof[bdof[k]])
         {
@@ -1928,92 +1952,118 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
           tload(bdof[k]) += belvec(k);
         }
         else
+        {
           react.add(bdof[k], -xlamb * belvec(k));
+        }
       }
     }
   }
+  timer.leave(); 
+  
+  if (bfe != NULL) delete bfe; // Correção de vazamento de memória
 
+  timer.enter("Residual: r assemble and copy");
   r.assemble();
 
   // copy from r to resid
   resid.copy_values(r.size(), r);
   resid.assemble();
-
+  timer.leave(); 
   timer.leave();
 }
 
 void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
 {
-
   timer.enter("Stiffness");
 
   int n_dofs = msh.get_n_dim() * msh.get_nen();
   int n_elem = msh.get_n_elements();
-  arma::mat Ke(n_dofs,n_dofs);
-  std::vector<int> dnums;
 
   Kstiff = 0.0;
 
-  MxFE * fe = fespace.createFE();
-  Quadrature * qd = Quadrature::create(0, fe->get_type());
-
-  for(int i=0; i<n_elem; i++)
+  #pragma omp parallel 
   {
+    MxFE * local_fe = fespace.createFE();
+    Quadrature * local_qd = Quadrature::create(0, local_fe->get_type());
+    
+    arma::mat Ke(n_dofs, n_dofs);
+    std::vector<int> dnums;
 
-    elem_stiff (i, fe, qd, Ke);
-    fespace.get_element_dofs_u (i, dnums);
+    #pragma omp for schedule(static)
+    for(int i=0; i<n_elem; i++)
+    {
+      elem_stiff(i, local_fe, local_qd, Ke);
+      fespace.get_element_dofs_u(i, dnums);
+
 #ifndef USE_BFGS
-    // Fast assembling
-    int * pidx;
-    pidx = &dnums[0];
-    Ke = Ke.t();
-    Kstiff.add(n_dofs, n_dofs, pidx, pidx, Ke.memptr());
+      // Fast assembling
+      int * pidx = &dnums[0];
+      Ke = Ke.t();
+      
+      #pragma omp critical
+      {
+        timer.enter("Stiffness: critical");
+        Kstiff.add(n_dofs, n_dofs, pidx, pidx, Ke.memptr());
+        timer.leave(); 
+      }
 #endif
 
 #ifdef USE_BFGS
-    for(int j=0; j<n_dofs; j++)
-    {
-      for(int k=0; k<n_dofs; k++)
+      #pragma omp critical
       {
-        int I = dnums[j];
-        int J = dnums[k];
-        if(J >= I) Kstiff.add(I, J, Ke(j,k));
+        timer.enter("Stiffness: critical");
+
+        for(int j=0; j<n_dofs; j++)
+        {
+          for(int k=0; k<n_dofs; k++)
+          {
+            int I = dnums[j];
+            int J = dnums[k];
+            if(J >= I) Kstiff.add(I, J, Ke(j,k));
+          }
+        }
+        timer.leave(); 
       }
-    }
 #endif
-  }
+    }
+
+    delete local_qd;
+    delete local_fe;
+  } 
 
   //
-  // *** PRESSURE COMPONENT OF THE STIFFNESS MATRIX ***
+  // *** PRESSURE COMPONENT DA MATRIZ DE RIGIDEZ ***
   //
+  timer.enter("Stiffness: Pressure component");
   MxFE * bfe = fespace.create_boundary_FE();
   if (bfe != NULL && (pressure_map.size() > 0 || spring_map.size()>0))
   {
-    //cout << " Assembling pressure component of stiffness matrix" << endl;
     int nu = bfe->get_ndofs_u();
     int nb = msh.get_n_boundary_elements();
+
     arma::mat belmat(nu, nu);
-    vector<int> bdof;
+    std::vector<int> bdof;
 
     for (int i = 0; i < nb; i++)
     {
       fespace.get_boundary_element_dofs_u(i, bdof);
       elem_kpress(i, bfe, bdof, belmat);
-      // assembles the pressure component of the stiffness matrix
+      
       for (int j = 0; j < nu; j++)
         for (int k = 0; k < nu; k++)
           Kstiff.add(bdof[j], bdof[k], belmat(j, k));
     }
   }
 
-  delete qd;
-  delete fe;
+  delete bfe;
 
   Kstiff.assemble();
   apply_boundary(Kstiff);
+  timer.leave(); 
 
   timer.leave();
 }
+
 
 void NonlinearElasticity::update(petsc::Vector & uu, double s)
 {

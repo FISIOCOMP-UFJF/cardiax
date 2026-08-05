@@ -35,6 +35,8 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/Modules)
 # --- Create Interface library ---
 add_library(ext_libs INTERFACE)
 
+find_package(OpenMP REQUIRED)
+
 # --- PETSC (via pkg-config) ---
 find_package(PkgConfig REQUIRED)
 
@@ -193,6 +195,7 @@ target_link_libraries(ext_libs INTERFACE
     ${BLAS_LIBRARIES}
     ${LAPACK_LIBRARIES}
     ${ScaLAPACK_LIBRARIES}
+    OpenMP::OpenMP_CXX
 )
 
 target_compile_definitions(ext_libs INTERFACE

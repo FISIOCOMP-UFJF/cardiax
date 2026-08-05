@@ -20,7 +20,7 @@ public:
   //! Destructor
   ~WriterVTK();
 
-  void open(const std::string & file, int nsteps, double step, bool bido=false);
+  void open(const std::string & file, int nsteps, double step, bool bido=false, bool is_restart=false);
   void close();
   void write_vm_step(int step, const double *data);
   void write_displ_step(int step, const double *data);

@@ -2,7 +2,7 @@
 # author: Bernardo Martins Rocha
 # mail: bernardomartinsrocha@gmail.com
 
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.12) 
 project(Cardiax C CXX)
 
 if(POLICY CMP0144)
@@ -22,186 +22,110 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# --- Custom Installation Paths ---
-set(PETSC_DIR "" CACHE PATH "Manual path to PETSc installation")
-set(AMGX_DIR "" CACHE PATH "Manual path to AMGX installation")
-set(ARMADILLO_DIR "" CACHE PATH "Manual path to Armadillo installation")
-set(CUDA_DIR "" CACHE PATH "Manual path to CUDA Toolkit")
-set(MATH_LIBS_DIR "" CACHE PATH "Manual path to BLAS/LAPACK")
-
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
-
-# --- Create Interface library ---
-add_library(ext_libs INTERFACE)
-
-# --- PETSC (via pkg-config) ---
-find_package(PkgConfig REQUIRED)
-
-if(PETSC_DIR)
-  # Se o usuário passou um diretório manual, injeta ele no pkg-config
-  set(ENV{PKG_CONFIG_PATH} "${PETSC_DIR}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
-  message(STATUS "Using custom PETSC_DIR: ${PETSC_DIR}")
-elseif(DEFINED ENV{CONDA_PREFIX})
-  # Fallback para o Conda se existir
-  set(ENV{PKG_CONFIG_PATH} "$ENV{CONDA_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+# --- CONFIGURAÇÃO PETSC ---
+if (NOT DEFINED ENV{PETSC_DIR})
+    message(FATAL_ERROR "The environment variable PETSC_DIR must be set to the PETSc directory.")
+endif()
+if (NOT DEFINED ENV{PETSC_ARCH})
+    message(WARNING "The environment variable PETSC_ARCH is not set. Using 'arch-linux2-c-debug' as the default.")
+    set(ENV{PETSC_ARCH} "arch-linux2-c-debug")
 endif()
 
-pkg_check_modules(PETSC REQUIRED IMPORTED_TARGET PETSc)
+# Caminho onde o PETSc instala dependências (MPI, BLAS, LAPACK, etc)
+set(PETSC_DEPS_ROOT "$ENV{PETSC_DIR}/$ENV{PETSC_ARCH}")
 
-message(STATUS "PETSc found via pkg-config:")
-message(STATUS "  Version  : ${PETSC_VERSION}")
-message(STATUS "  Includes : ${PETSC_INCLUDE_DIRS}")
-message(STATUS "  Libraries: ${PETSC_LINK_LIBRARIES}")
+find_package(PETSc REQUIRED)
 
-set(PETSC_INCLUDES    ${PETSC_INCLUDE_DIRS})
-set(PETSC_LIBRARIES   ${PETSC_LINK_LIBRARIES})
-set(PETSC_DEFINITIONS ${PETSC_CFLAGS_OTHER})
+# --- BUSCA DE DEPENDÊNCIAS COM FALLBACK PARA PETSC ---
 
-# --- MPI ---
-find_package(MPI REQUIRED)
+# 1. MPI
+find_package(MPI QUIET)
+if(NOT MPI_FOUND)
+    message(STATUS "System MPI not found. Searching in PETSc dir: ${PETSC_DEPS_ROOT}")
+    set(ENV{MPI_HOME} "${PETSC_DEPS_ROOT}")
+    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
+    find_package(MPI REQUIRED)
+endif()
 
-# --- HDF5 ---
 find_package(HDF5 REQUIRED)
 
-# --- BLAS/LAPACK (conda Netlib — must match Armadillo's build) ---
-find_library(BLAS_LIBRARY
-  NAMES blas
-  HINTS ${MATH_LIBS_DIR} $ENV{CONDA_PREFIX}
-  PATH_SUFFIXES lib lib64
-  NO_CMAKE_SYSTEM_PATH)
-
-find_library(LAPACK_LIBRARY
-  NAMES lapack
-  HINTS ${MATH_LIBS_DIR} $ENV{CONDA_PREFIX}
-  PATH_SUFFIXES lib lib64
-  NO_CMAKE_SYSTEM_PATH)
-
-if(BLAS_LIBRARY AND LAPACK_LIBRARY)
-  message(STATUS "BLAS   (conda): ${BLAS_LIBRARY}")
-  message(STATUS "LAPACK (conda): ${LAPACK_LIBRARY}")
-  set(BLAS_LIBRARIES   ${BLAS_LIBRARY})
-  set(LAPACK_LIBRARIES ${LAPACK_LIBRARY})
-else()
-  message(FATAL_ERROR "conda BLAS/LAPACK not found. Run: conda install -c conda-forge blas lapack")
+# 2. BLAS
+find_package(BLAS QUIET)
+if(NOT BLAS_FOUND)
+    message(STATUS "System BLAS not found. Searching in PETSc dir...")
+    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
+    find_package(BLAS REQUIRED)
 endif()
 
-# --- ScaLAPACK (optional) ---
+# 3. LAPACK
+find_package(LAPACK QUIET)
+if(NOT LAPACK_FOUND)
+    message(STATUS "System LAPACK not found. Searching in PETSc dir...")
+    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
+    find_package(LAPACK REQUIRED)
+endif()
+
+# 4. ScaLAPACK
 find_package(ScaLAPACK QUIET)
 if(NOT ScaLAPACK_FOUND)
-  set(ScaLAPACK_LIBRARIES "")
-  message(STATUS "ScaLAPACK not found — linking without it.")
+    message(STATUS "System ScaLAPACK not found. Searching in PETSc dir...")
+    list(APPEND CMAKE_PREFIX_PATH "${PETSC_DEPS_ROOT}")
+    find_package(ScaLAPACK REQUIRED)
 endif()
 
-# --- Armadillo ---
-find_library(ARMADILLO_LIBRARY
-  NAMES armadillo
-  HINTS ${ARMADILLO_DIR} $ENV{ARMADILLO_ROOT} $ENV{CONDA_PREFIX}
-  PATH_SUFFIXES lib lib64)
-find_path(ARMADILLO_INCLUDE_DIR armadillo
-  HINTS ${ARMADILLO_DIR} $ENV{ARMADILLO_ROOT} $ENV{CONDA_PREFIX}
-  PATH_SUFFIXES include)
-if(NOT ARMADILLO_LIBRARY)
-  message(FATAL_ERROR "Armadillo not found. Set ARMADILLO_ROOT or run: conda install -c conda-forge armadillo")
-else()
-  message(STATUS "Armadillo: ${ARMADILLO_LIBRARY}")
-endif()
+# --- OUTRAS DEPENDÊNCIAS ---
+# find_package(Armadillo REQUIRED)
 
-# --- AmgX ---
-find_library(AMGX_LIBRARY
-  NAMES amgx
-  HINTS ${AMGX_DIR} $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
-  PATH_SUFFIXES lib lib64)
-find_path(AMGX_INCLUDE_DIR amgx_c.h
-  HINTS ${AMGX_DIR} $ENV{AMGX_ROOT} $ENV{CONDA_PREFIX}
-  PATH_SUFFIXES include)
+find_library(ARMADILLO_LIBRARY_PATH armadillo HINTS $ENV{ARMADILLO_ROOT} PATH_SUFFIXES lib lib64)
 
-# --- CUDA ---
-find_library(CUDART_LIB   cudart     HINTS ${CUDA_DIR} $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(CUSPARSE_LIB cusparse   HINTS ${CUDA_DIR} $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(CUSOLVER_LIB cusolver   HINTS ${CUDA_DIR} $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(NVTX_LIB     nvToolsExt HINTS ${CUDA_DIR} $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
-find_library(CUBLAS_LIB   cublas     HINTS ${CUDA_DIR} $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+
+set(AMGX_INCLUDE_DIRS $ENV{AMGX_ROOT}/include)
+# set(AMGX_LIBRARIES $ENV{AMGX_ROOT}/lib/libamgx.a) 
+find_library(AMGX_LIBRARY_PATH amgx HINTS $ENV{AMGX_ROOT} PATH_SUFFIXES lib lib64)
+
+find_library(CUDART_LIB cudart HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUSPARSE_LIB cusparse HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUSOLVER_LIB cusolver HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(NVTX_LIB nvToolsExt HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+find_library(CUBLAS_LIB cublas HINTS $ENV{CUDAToolkit_ROOT} PATH_SUFFIXES lib lib64)
+
+
+set(AMGX_LIBRARIES ${AMGX_LIBRARY_PATH})
 set(CUDA_LIBRARIES ${CUDART_LIB} ${CUSPARSE_LIB} ${CUSOLVER_LIB} ${NVTX_LIB} ${CUBLAS_LIB})
 
-option(FORCE_PETSC_SOLVER "Force PETSc solver even if AMGX is found" OFF)
 
-# All cuda libraries found?
-if(CUDART_LIB AND CUSPARSE_LIB AND CUSOLVER_LIB AND NVTX_LIB AND CUBLAS_LIB)
-    set(CUDA_FOUND_MANUAL TRUE)
-else()
-    set(CUDA_FOUND_MANUAL FALSE)
-endif()
+add_library(ext_libs INTERFACE)
 
-# --- Defining Solver ---
-if(FORCE_PETSC_SOLVER)
-    # Se a flag foi ativada, ignora o AMGx completamente
-    message(STATUS "FORCE_PETSC_SOLVER is ON. Bypassing AMGx and forcing PETSC_SOLVER.")
-    add_compile_definitions(PETSC_SOLVER)
-elseif(AMGX_LIBRARY AND AMGX_INCLUDE_DIR)
-    # AMGx foi found. What about CUDA?
-    message(STATUS "AMGx found: ")
-    message(STATUS "  Includes : ${AMGX_INCLUDE_DIR}")
-    message(STATUS "  Libraries: ${AMGX_LIBRARY} ")
-
-    if(CUDA_FOUND_MANUAL)
-        message(STATUS "AmgX and CUDA found. Enabling AMGX_SOLVER.")
-        
-        # Define AMGX_SOLVER 
-        add_compile_definitions(AMGX_SOLVER)
-
-        target_include_directories(ext_libs INTERFACE 
-            ${AMGX_INCLUDE_DIR}
-        )
-        target_link_libraries(ext_libs INTERFACE 
-            ${AMGX_LIBRARY} 
-            ${CUDA_LIBRARIES}
-        )
-        
-    else()
-        message(WARNING "AMGx was found, but CUDA libraries are missing! AMGx requires CUDA to work properly.")
-        add_compile_definitions(PETSC_SOLVER)
-    endif()
-else()
-    # AMGx not founded. Fallback to PETSC_SOLVER.
-    message(STATUS "AmgX not found. Falling back to PETSC_SOLVER.")
-    
-    add_compile_definitions(PETSC_SOLVER)
-endif()
-
-
-# --- Build Interface library --- 
 target_include_directories(ext_libs INTERFACE
     ${PROJECT_SOURCE_DIR}/src
     ${MPI_C_INCLUDE_DIRS}
     ${PETSC_INCLUDES}
     ${HDF5_INCLUDE_DIRS}
-    ${ARMADILLO_INCLUDE_DIR}
+    # ${Armadillo_INCLUDE_DIRS}
     $ENV{ARMADILLO_ROOT}/include
-    # ${EIGEN3_INCLUDE_DIR}
-)
-
-target_link_directories(ext_libs INTERFACE
-    ${PETSC_LIBRARY_DIRS}
+    ${AMGX_INCLUDE_DIRS}
 )
 
 target_link_libraries(ext_libs INTERFACE
     ${PETSC_LIBRARIES}
     ${MPI_C_LIBRARIES}
     ${HDF5_LIBRARIES}
-    ${ARMADILLO_LIBRARY}
+    ${ARMADILLO_LIBRARY_PATH}
     ${BLAS_LIBRARIES}
     ${LAPACK_LIBRARIES}
     ${ScaLAPACK_LIBRARIES}
+    ${AMGX_LIBRARIES}    
+    ${CUDA_LIBRARIES}
 )
 
-target_compile_definitions(ext_libs INTERFACE
+target_compile_definitions(ext_libs INTERFACE 
     ${PETSC_DEFINITIONS}
 )
 
-# --- Subdirectories ---
 option(BUILD_TESTS "Build tests" ON)
-option(USE_AGOS "Use AGOS for ODE solvers" OFF)
+option(USE_AGOS "Use AGOS for ODE solvers" OFF) 
 
 add_subdirectory(src/util)
 add_subdirectory(src/linalg)
@@ -216,4 +140,4 @@ add_subdirectory(app)
 
 # if(BUILD_TESTS)
 #   add_subdirectory(test)
-# endif()
+# endif(BUILD_TESTS)

@@ -1,0 +1,28 @@
+# CmakeLists.txt in src dir
+# Adds a library called PDE from the source files
+
+set(
+  PDE_SRC 
+  poisson.cpp 
+  laplace.cpp 
+  ###mortarfem.cpp
+  elasticity.cpp 
+  mech_utils.cpp
+  nonlinear_elasticity.cpp
+  total_lagrangian.cpp
+  #total_lagrangian_snes.cpp
+  updated_lagrangian.cpp 
+  materials/hyperelastic_material.cpp
+  materials/incompressible_material.cpp
+  materials/material_data.cpp
+  materials/saint_venant_kirchoff.cpp
+  materials/compressible_neo_hookean.cpp
+  materials/neo_hookean.cpp
+  materials/guccione.cpp
+  materials/exponential.cpp
+  materials/holzapfel_ogden.cpp
+  )
+
+add_library(PDE ${PDE_SRC})
+target_link_libraries(PDE hdf5 FEM ODE LinAlg armadillo)
+

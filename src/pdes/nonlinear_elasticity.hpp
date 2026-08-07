@@ -109,9 +109,25 @@ public:
   //! Boundary elements with other markers contribute zero.
   double total_volume_cavity(const int cavity_marker = MARKER_LV);
 
-  //! Convenience wrappers for left/right ventricular cavity volumes
+  //! Convenience wrappers for left/right ventricular cavity volumes, in mL
   double volume_LV();
   double volume_RV();
+
+  //! Myocardial (tissue) volume in mL
+  double volume_myocardium_mL();
+
+  //! Force the mesh length unit: "m", "cm" or "mm".
+  void set_mesh_units(const std::string & units);
+
+  //! Infer the mesh length unit from the size of the reference geometry.
+  //! Called automatically on the first volume evaluation.
+  void detect_mesh_units();
+
+  //! Factor converting (mesh length unit)^3 to mL
+  double volume_scale_to_mL();
+
+  //! Name of the current mesh length unit
+  const std::string & mesh_units() const { return unit_name; }
 
   //! Set the lid (valve) plane used to close the open endocardial surfaces.
   //! offset is e.x0 for any point x0 on the plane.
@@ -261,6 +277,10 @@ protected:
   arma::vec3 lid_normal = {0.0, 0.0, 1.0}; //!< Unit normal of the valve plane
   double lid_offset = 0.0;                 //!< e.x0 for x0 on the valve plane
   bool lid_plane_set = false;              //!< Whether the plane was set/detected
+
+  double vol_to_mL = 1.0e6;       //!< (mesh unit)^3 -> mL; default assumes m
+  std::string unit_name = "m";    //!< Current mesh length unit
+  bool units_detected = false;    //!< Whether units were set/detected
 
   WriterHDF5 writer;              //! Data writer (VTK,HDF5)
 

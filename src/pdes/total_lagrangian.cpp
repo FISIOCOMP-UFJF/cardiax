@@ -643,6 +643,8 @@ void TotalLagrangian::solve()
   static PardisoSolver * parsolver = NULL;
 #endif
 
+  ofstream sfile;
+  sfile.open("stress.dat");
   
   if(precomp)
   {
@@ -700,7 +702,22 @@ void TotalLagrangian::solve()
     {
       output_vtk(cont, lc.increment());
     }
-
+/*
+    if(output_step)
+    {
+      cout << "Writing stress to file" << endl;
+      for(int kk=0; kk<9; kk++) // stress component
+      {
+        double mediastress = 0;
+        for (int ii = 0; ii < 8; ii++) // integration point
+          mediastress += stressdb(0, ii, kk);
+        mediastress = mediastress/8.0;
+        sfile.setf(ios::scientific);
+        sfile << mediastress << "\t";
+      }
+      sfile << endl;
+    }
+*/
     first_step = true;
             
     // adapt load step size
@@ -713,5 +730,6 @@ void TotalLagrangian::solve()
   log << calc_volume() << endl;
   cout << " Done" << endl;
     
+  sfile.close();
 }
 

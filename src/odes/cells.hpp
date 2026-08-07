@@ -21,6 +21,21 @@ class Cells
 {
  public:
  
+  //! Milliseconds represented by one time unit of the SOLVER.
+  //! 1000 when the solver runs in seconds, 1 when it runs in milliseconds.
+  //! Time and time step are converted from the solver unit into each
+  //! model's own unit before integration, so a model written in ms and one
+  //! written in seconds can both be driven by the same solver.
+  void set_solver_time_unit_ms(double ms) { solver_time_unit_ms = ms; }
+  double get_solver_time_unit_ms() const { return solver_time_unit_ms; }
+
+  //! The underlying cell model
+  const CellModel & get_model() const { return *ode; }
+
+  //! Factor converting solver time into the cell model's own time
+  double time_factor() const
+  { return solver_time_unit_ms / ode->native_time_unit_ms(); }
+
   //! Default constructor
   Cells (uint n, CellModel * c); 
   
@@ -107,6 +122,10 @@ class Cells
   //! Monitored values array
   arma::vec monitored_values;
 
+
+ private:
+
+  double solver_time_unit_ms = 1000.0;  //!< solver runs in seconds by default
 };
 
 #endif

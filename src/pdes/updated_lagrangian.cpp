@@ -896,7 +896,7 @@ void UpdatedLagrangian::solve()
   cout << "End inner volume: " << calc_volume() << endl;
   cout << "End LV cavity volume: " << volume_LV() << endl;
   cout << "End RV cavity volume: " << volume_RV() << endl;
-  nls->timer.summary();
+  //nls->timer.summary();
 
   cout << " Done" << endl;
 }

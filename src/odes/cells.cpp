@@ -20,7 +20,12 @@ Cells::~Cells()
 }
 
 void Cells::advance(double t, double dt)
-{       
+{
+  // convert solver time into the model's own time unit
+  const double tf = time_factor();
+  t  *= tf;
+  dt *= tf;
+
   for (uint system=0; system<num_systems; system++)    
   {
     // Compute offset for ODE
@@ -50,6 +55,10 @@ void Cells::advance(double t, double dt)
 void Cells::advance(double t, double dt, const double istim,
 		                const std::set<uint> & snodes)
 {
+  const double tf = time_factor();
+  t  *= tf;
+  dt *= tf;
+
   std::set<uint>::iterator it;
     
   for (uint system=0; system<num_systems; system++)
@@ -83,6 +92,10 @@ void Cells::advance(double t, double dt, const double istim,
 
 void Cells::advance(double t, double dt, const arma::vec & stim_values)
 {
+  const double tf = time_factor();
+  t  *= tf;
+  dt *= tf;
+
   for (uint system=0; system<num_systems; system++)
   {
     // compute offset for ODE

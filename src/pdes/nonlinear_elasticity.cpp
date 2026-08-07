@@ -133,12 +133,87 @@ void NonlinearElasticity::assemble_pressure()
   delete bfe;
 }
 
+void NonlinearElasticity::set_mesh_units(const std::string & units)
+{
+  if (units == "m" || units == "meter" || units == "meters")
+  {
+    vol_to_mL = 1.0e6;   // 1 m^3   = 1e6 mL
+    unit_name = "m";
+  }
+  else if (units == "cm" || units == "centimeter" || units == "centimeters")
+  {
+    vol_to_mL = 1.0;     // 1 cm^3  = 1 mL
+    unit_name = "cm";
+  }
+  else if (units == "mm" || units == "millimeter" || units == "millimeters")
+  {
+    vol_to_mL = 1.0e-3;  // 1 mm^3  = 1e-3 mL
+    unit_name = "mm";
+  }
+  else
+  {
+    cout << " Warning: unknown mesh unit '" << units
+         << "'; expected m, cm or mm. Keeping " << unit_name << "." << endl;
+    return;
+  }
+  units_detected = true;
+  cout << " Mesh length unit set to " << unit_name
+       << " (volume scale to mL: " << vol_to_mL << ")" << endl;
+}
+
+void NonlinearElasticity::detect_mesh_units()
+{
+  // Infer the length unit from the size of the reference geometry. A human
+  // heart spans roughly 10 cm, so the bounding-box diagonal is about
+  //   0.1  in m,  10  in cm,  100  in mm
+  // These ranges are far enough apart to separate reliably for any
+  // physiological heart size (roughly 5 to 25 cm).
+  if (x0.empty())
+  {
+    cout << " Warning: cannot detect mesh units, reference coordinates empty."
+         << endl;
+    return;
+  }
+
+  arma::vec3 lo = x0[0], hi = x0[0];
+  for (size_t i = 1; i < x0.size(); i++)
+    for (int d = 0; d < 3; d++)
+    {
+      lo(d) = std::min(lo(d), x0[i](d));
+      hi(d) = std::max(hi(d), x0[i](d));
+    }
+
+  double diag = arma::norm(hi - lo, 2);
+
+  const char * guess;
+  if      (diag <  1.0)  guess = "m";
+  else if (diag < 30.0)  guess = "cm";
+  else                   guess = "mm";
+
+  cout << " Mesh bounding-box diagonal = " << diag
+       << " -> assuming length unit '" << guess << "'" << endl;
+
+  set_mesh_units(guess);
+
+  // Sanity check: report the implied heart size in cm.
+  double diag_cm = diag * (vol_to_mL == 1.0e6 ? 100.0
+                          : vol_to_mL == 1.0  ?   1.0 : 0.1);
+  cout << "   implied geometry size: " << diag_cm << " cm";
+  if (diag_cm < 3.0 || diag_cm > 40.0)
+    cout << "  <-- WARNING: outside the expected range for a heart,"
+         << " unit detection may be wrong; use set_mesh_units() to override";
+  cout << endl;
+}
+
+double NonlinearElasticity::volume_scale_to_mL()
+{
+  if (!units_detected)
+    detect_mesh_units();
+  return vol_to_mL;
+}
+
 double NonlinearElasticity::total_volume_cavity(const int cavity_marker)
 {
-  // The endocardial surfaces are open at the base, so a lid plane is needed.
-  if (!lid_plane_set)
-    detect_cavity_lid_plane(MARKER_BASE);
-
   MixedFiniteElement * bfe = fespace.create_boundary_FE();
   double total_endo_volume=0;
 
@@ -154,7 +229,13 @@ double NonlinearElasticity::total_volume_cavity(const int cavity_marker)
   }
   delete bfe;
 
-  return total_endo_volume*1e6;
+  // convert from the mesh length unit cubed to mL
+  return total_endo_volume * volume_scale_to_mL();
+}
+
+double NonlinearElasticity::volume_myocardium_mL()
+{
+  return calc_volume() * volume_scale_to_mL();
 }
 
 double NonlinearElasticity::volume_LV()
@@ -868,23 +949,16 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
   if(index != cavity_marker)
 	  return 0;
 
+  // Divergence theorem, V = (1/3) int x.n dA, evaluated on the current
+  // configuration. This requires the marker to bound a CLOSED surface on
+  // its own -- run report_boundary_closure() to verify: ||int n dA||/area
+  // must be ~0. If a cavity marker is open at the base, this result becomes
+  // dependent on the position of the origin and a lid formula is needed
+  // instead.
   double endo_volume = 0;
-
-  // The endocardial surfaces are OPEN at the base, so the closed-surface
-  // identity V = (1/3) int x.n dA does not apply: its result would depend on
-  // the position of the origin. Instead we close the cavity with a flat lid
-  // on the valve plane and use the field F = ((x - x0).e) e, which has
-  // div F = 1 and vanishes on the lid, giving
-  //
-  //    V = int_endo ((x - x0).e) (e.n) dA
-  //
-  // with e the unit normal of the lid plane and x0 any point on it.
-  const arma::vec3 & e = lid_normal;
-  const double d = lid_offset;          // d = e.x0
 
     // create quadrature rule (need to check if order is ok)
     Quadrature * qd;
-    //qd = Quadrature::create(fe->get_order_u(), fe->get_type());
     qd = Quadrature::create(2, fe->get_type());
 
     // quadrature loop
@@ -898,7 +972,7 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
       //
       // evaluates dx/dxi, dx/deta
       //
-      dxis.zeros(); 
+      dxis.zeros();
 
       // for 2D set dx/deta = (0,0,-1)
       if(ndim==2) dxis(2,1) = -1.0;
@@ -920,7 +994,7 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
       for(int in=0; in<neln; in++)
         xq += shape(in) * xe[in];
 
-      endo_volume += (arma::dot(xq, e) - d) * arma::dot(e, xnorm) * detJxW;
+      endo_volume += arma::dot(xq, xnorm) * detJxW / 3.0;
     }
     // end of integration loop
     delete qd;
@@ -1700,18 +1774,18 @@ void NonlinearElasticity::output_vtk(const int cont, const int step)
 {
   int np = msh.get_n_points();
   //int ne = msh.get_n_elements();
-  // std::stringstream ss;
-  // std::string name;
-  // std::string vtuname;
+  std::stringstream ss;
+  std::string name;
+  std::string vtuname;
 
-  // //arma::vec t11(ne), t22(ne), t33(ne);
-  // //arma::vec t12(ne), t13(ne), t23(ne);
-  // //t11.zeros(); t22.zeros(); t33.zeros();
-  // //t12.zeros(); t13.zeros(); t23.zeros();
+  //arma::vec t11(ne), t22(ne), t33(ne);
+  //arma::vec t12(ne), t13(ne), t23(ne);
+  //t11.zeros(); t22.zeros(); t33.zeros();
+  //t12.zeros(); t13.zeros(); t23.zeros();
 
-  // ss << cont << "_" << step;
-  // name = this->basename + "_" + ss.str();
-  // vtuname = name + ".vtu";
+  ss << cont << "_" << step;
+  name = this->basename + "_" + ss.str();
+  vtuname = name + ".vtu";
 
   // Displacements
   //cout << "Aloca vetor" << endl;
@@ -1841,6 +1915,9 @@ void NonlinearElasticity::storeLVvolumes(string basename)
 
 void NonlinearElasticity::storeStress(int step)
 {
+  //ofstream sfile, strainfile;
+  //string aux = basename + string("_stress.dat");
+  //sfile.open(aux.c_str());
   //aux = basename + string("_strain.dat");
   //strainfile.open(aux.c_str());
   arma::mat33 sig, E;
@@ -1872,6 +1949,8 @@ void NonlinearElasticity::storeStress(int step)
         mediaE += straindb(id_el, ii, kk);
       }
       mediastress = mediastress / (double) nint;
+      //sfile.setf(ios::scientific);
+      //sfile << mediastress << "\t";
       sig[kk] = mediastress;
 
       mediaE = mediaE / (double) nint;
@@ -1911,6 +1990,8 @@ void NonlinearElasticity::storeStress(int step)
     fiber_stress(id_el) = fib(0) * (fib(0)*sig(0,0) + fib(1)*sig(0,1) + fib(2)*sig(0,2)) +
                           fib(1) * (fib(0)*sig(0,1) + fib(1)*sig(1,1) + fib(2)*sig(1,2)) +
                           fib(2) * (fib(0)*sig(0,2) + fib(1)*sig(1,2) + fib(2)*sig(2,2));
+    //sfile << fiber_stress(id_el) << "\t";
+    //sfile << endl;
 
     fiber_strain(id_el) = fib0(0) * (fib0(0)*E(0,0) + fib0(1)*E(0,1) + fib0(2)*E(0,2)) +
                           fib0(1) * (fib0(0)*E(0,1) + fib0(1)*E(1,1) + fib0(2)*E(1,2)) +
@@ -1933,6 +2014,7 @@ void NonlinearElasticity::storeStress(int step)
     //strainfile << fiber_strain(id_el) << "\t";
     //strainfile << endl;
   }
+  //sfile.close();
   //strainfile.close();
 
   writer.write_cell_field_step(step, fiber_stress.memptr(), string("stress"));

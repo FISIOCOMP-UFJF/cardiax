@@ -33,12 +33,12 @@ public:
 
   ~TimeParameters(){}
 
-  inline int it()          { return iteration;  }
-  inline int pr()          { return print_rate; }
-  inline int get_size()    { return size;       }
-  inline int get_nsteps()  { return nsteps;     }
-  inline double get_dt()   { return time_step;  }
-  inline double get_stop() { return stop;       }
+  inline int it() const          { return iteration;  }
+  inline int pr() const          { return print_rate; }
+  inline int get_size() const    { return size;       }
+  inline int get_nsteps() const  { return nsteps;     }
+  inline double get_dt() const   { return time_step;  }
+  inline double get_stop() const { return stop;       }
 
   inline bool finished ()
   {
@@ -72,7 +72,7 @@ public:
       cout << "Time  " << scientific << cur_time << " ";
   }
 
-  inline double time()
+  inline double time() const
   {
     return cur_time;
   }
@@ -82,11 +82,6 @@ public:
     return (iteration % print_rate == 0) ? true : false;
   }
 
-  inline void restore_state(int saved_iteration, double saved_time)
-  {
-    iteration = saved_iteration;
-    cur_time = saved_time;
-  }
 private:
 
   //! Number of the current iteration

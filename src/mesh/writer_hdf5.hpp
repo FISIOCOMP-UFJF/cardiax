@@ -29,7 +29,7 @@ public:
   void close();
 
   //! Open file for writing HDF5 data
-  void open(const std::string & file, int nsteps, double step, bool bido=false,bool is_restart=false);
+  void open(const std::string & file, int nsteps, double step, bool bido=false);
 
   //! Write one time step of vm scalar field
   void write_vm_step(int step, const double *data);
@@ -44,14 +44,7 @@ public:
     
   //! Write data structure in a XDMF file
   void write_xdmf(const std::string & file, int nsteps, double step, bool bido=false);
-
-  //! Write checkpoint state file
-  // LUCAS:
-  void write_checkpoint(int step, double current_time, const double *vm, const double *state_vars, int num_state_vars);
-  
-  void read_checkpoint_metadata(const std::string &filename, int &step, double &time, int &num_nodes, int &num_vars);
-
-  void read_checkpoint_data(const std::string &filename, double *vm, double *state_vars);
+    
 private:
     
   //! XMF File
@@ -61,7 +54,7 @@ private:
   std::string h5name;
     
   //! Write the raw data to HDF5 file
-  void write_hdf5(const std::string & file, int nsteps, double step); 
+  void write_hdf5(const std::string & file, int nsteps, double step);
     
 };
 

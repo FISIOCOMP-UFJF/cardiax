@@ -11,6 +11,13 @@
     sigma_k = (sigma_k_i * sigma_k_e)/(sigma_k_i + sigma_k_e)
     where k = l, t or n, denoting longitudinal, transverse and normal
 */
+struct EikonalNode {
+    double cost;
+    int id;
+    z  bool operator>(const EikonalNode& other) const {
+        return cost > other.cost; 
+    }
+};
 
 class Eikonal : public CardiacProblem
 {
@@ -51,6 +58,11 @@ public:
 
   //! Solve the problem with meshfile given
   void solve(const string &mshfile);
+
+  //!Dijkstra
+  void solve_dijkstra(const std::vector<int>& root_nodes, 
+                              const std::vector<double>& root_times,
+                              const std::vector<std::vector<std::pair<int, double>>>& adj_cost);
 
 protected:
   

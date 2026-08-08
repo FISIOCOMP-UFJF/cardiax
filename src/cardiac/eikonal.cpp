@@ -107,91 +107,100 @@ void Eikonal::set_stimulus_value(int index, double val)
   stim_apply_nodes = true;
   stim_values(index) = val;
 }
-
 void Eikonal::solve(const string &mshfile)
 {
-  cout << " -- Reading local activation time from mesh file --" << endl; 
+  std::cout << " -- Initializing local activation time --" << std::endl; 
   pugi::xml_document doc;
   pugi::xml_parse_result result = doc.load_file(mshfile.c_str());
   
   lat.set_size(ndofs);
   
   pugi::xml_node eikonal_data = doc.child("mesh").child("eikonal");
-  bool has_eikonal = false;
+  
+  bool loaded_lat = false;
+  bool has_root_nodes = false;
+  
+  std::vector<int> root_nodes;
+  std::vector<double> root_times;
+
   if(eikonal_data)
   {
-    has_eikonal = true; 
-    for(pugi::xml_node node = eikonal_data.child("node"); node; node = node.next_sibling("node"))
+    // Prioridade 1: Verifica se existem tags <node> especificando o LAT mapeado[cite: 2]
+    if (eikonal_data.child("node")) 
     {
-      int index = node.attribute("id").as_int(); 
-      lat(index) = std::stod(node.attribute("lat").as_string()); 
+      loaded_lat = true;
+      for(pugi::xml_node node = eikonal_data.child("node"); node; node = node.next_sibling("node"))
+      {
+        int index = node.attribute("id").as_int(); 
+        lat(index) = std::stod(node.attribute("lat").as_string()); 
+      }
+    }
+    // Prioridade 2: Caso não existam <node>, verifica tags <root_node> para invocar o Eikonal
+    else if (eikonal_data.child("root_node")) 
+    {
+      has_root_nodes = true;
+      for(pugi::xml_node node = eikonal_data.child("root_node"); node; node = node.next_sibling("root_node"))
+      {
+        root_nodes.push_back(node.attribute("id").as_int());
+        root_times.push_back(node.attribute("time").as_double());
+      }
     }
   }
 
-
-  if(has_eikonal)
+  // Bloco de Execução baseado nas marcações lidas
+  if(loaded_lat)
   {
+    // Aplica o reescalonamento/normalização clássico caso os dados venham do arquivo[cite: 2]
     double min_val = lat.min(); 
     double max_val = lat.max(); 
 
-    std::cout<<"Local activation time"<<std::endl;
+    std::cout << " -- Reading local activation time from mesh file --" << std::endl;
 
     pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
     double begin_active_stress = 0.0; 
-    if(pvloop_data) begin_active_stress = std::stod(pvloop_data.attribute("passive_time").as_string())/1000.0; 
+    
+    if(pvloop_data) begin_active_stress = std::stod(pvloop_data.attribute("passive_time").as_string()) / 1000.0; 
     double latest_lat = begin_active_stress + 0.146; 
 
-    if(max_val-min_val == 0.0) 
+    if(max_val - min_val == 0.0) 
       lat.fill(0.0);
     else 
-      lat = begin_active_stress + (lat - min_val) * (latest_lat - begin_active_stress)/ (max_val-min_val);
+      lat = begin_active_stress + (lat - min_val) * (latest_lat - begin_active_stress) / (max_val - min_val);
+      
     std::cout << " Earliest activation: " << lat.min() << "  Latest activation: " << lat.max()  << std::endl; 
     std::cout << " Loaded LATs: " << lat.n_elem << " values.\n";
   }
+  else if (has_root_nodes)
+  {
+    std::cout << " -- Computing local activation time via Eikonal Solver --" << std::endl;
+    
+    // 1. Calcule as penalidades (custos) de navegação para a malha atual
+    // std::vector<std::vector<std::pair<int, double>>> adj_cost = compute_navigation_costs();
+    
+    // 2. Chame a função Dijkstra recém-criada
+    // solve_dijkstra(root_nodes, root_times, adj_cost);
+    
+    // (Opcional) Aplique a mesma normalização matemática do bloco acima ao 'lat' recém computado,
+    // garantindo que os tempos da simulação fiquem limitados a 'latest_lat'.
+  }
   else
   {
+    // Prioridade 3: Fallback padrão[cite: 2]
+    std::cout << " -- No LAT or root nodes found. Using passive_time for all elements --" << std::endl;
+    
     pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
     double begin_active_stress = 0.0; 
+    
     if(pvloop_data) begin_active_stress = std::stod(pvloop_data.attribute("passive_time").as_string()); 
-    lat.fill(begin_active_stress); //if there isn't lat in the mesh file, we use the passive_time for all elements. 
+    
+    lat.fill(begin_active_stress); 
   }
 }
-
-
 void Eikonal::solve()
 {
   //TODO: solve eikonal and set lat into the cellmodel
   //For now, this function is been used only for debuging
-  cout << "\nSimulating" << endl;
-
-  initial_conditions();
-    
-  // loop in time
-  int step=0;
-  //int step_apd=0;
-
-  //stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
-  cells->advance(tip.time(), timestep, stim_val, stim_nodes);
-  //cells->get_var(0, v0);
-  arma::vec ta(ndofs);
-
-  while( !tip.finished() )
-  {
-    tip.increase_time();
-    tip.show_time();
-    
-    timer.enter("ODEs");
-    solve_odes();
-    cells->get_monitored_values(0, ta);
-
-    arma::uvec non_zero_indices = arma::find(ta != 0.0);
-    int count_non_zero = non_zero_indices.n_elem;
-    int count_zero = ta.n_elem - count_non_zero;
-
-    timer.leave();
-  }  
-
-  timer.summary();
+  
 }
 
 void Eikonal::solve_odes()
@@ -219,5 +228,57 @@ void Eikonal::solve_odes()
   cells->advance(tip.time(), timestep);
 }
 
+void Eikonal::solve_dijkstra(const std::vector<int>& root_nodes, 
+                             const std::vector<double>& root_times,
+                             const std::vector<std::vector<std::pair<int, double>>>& adj_cost) 
+{
+    // Inicializa os vetores de estado
+    lat.set_size(ndofs);
+    lat.fill(0.0);
+    
+    std::vector<bool> visited(ndofs, false);
+    
+    // Substitui o valor mágico 1e6 por infinity real do limite numérico
+    std::vector<double> temp_times(ndofs, std::numeric_limits<double>::infinity());
+    
+    // Declaração do min-heap
+    std::priority_queue<EikonalNode, std::vector<EikonalNode>, std::greater<EikonalNode>> min_heap;
 
+    // Inicialização dos root-nodes
+    for (size_t i = 0; i < root_nodes.size(); ++i) {
+        int root = root_nodes[i];
+        double time = root_times[i];
+        
+        temp_times[root] = time;
+        min_heap.push({time, root});
+    }
 
+    // Processamento dos caminhos mínimos
+    while (!min_heap.empty()) {
+        EikonalNode current = min_heap.top();
+        min_heap.pop();
+
+        int u = current.id;
+        double current_cost = current.cost;
+
+        // Pula nós que receberam atualizações mais rápidas após a inserção na fila
+        if (visited[u]) continue;
+
+        visited[u] = true;
+        lat(u) = current_cost; // Consolida o tempo de ativação (LAT)
+
+        // Expansão geométrica (Relaxamento das arestas)
+        for (const auto& edge : adj_cost[u]) {
+            int v = edge.first;
+            double edge_weight = edge.second;
+
+            if (!visited[v]) {
+                double new_cost = current_cost + edge_weight;
+                if (new_cost < temp_times[v]) {
+                    temp_times[v] = new_cost;
+                    min_heap.push({new_cost, v});
+                }
+            }
+        }
+    }
+}

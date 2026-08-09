@@ -303,6 +303,91 @@ void WriterHDF5::write_cell_field_step(int step, const double *data, string fiel
   if(status != 0) H5Eprint2(status,NULL);
 }
 
+void WriterHDF5::write_eikonal_lat(const std::string & file, const double *lat_data)
+{
+    std::string base = file;
+    std::size_t pos = file.find_last_of("/");
+    if (pos != std::string::npos) base = file.substr(pos + 1);
+    
+    std::string h5_file = base + "_lat.h5";
+    std::string xmf_file = base + "_lat.xmf";
+
+    hid_t file_id = H5Fcreate(h5_file.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    
+    H5Gclose(H5Gcreate2(file_id, "/geometry", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
+    H5Gclose(H5Gcreate2(file_id, "/topology", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
+    H5Gclose(H5Gcreate2(file_id, "/vertex_field", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
+
+    hsize_t np = mesh->get_n_points();
+    std::vector<arma::vec3> pts = mesh->get_points();
+    double *coords = new double[3 * np];
+    for (uint i = 0; i < np; i++) {
+        coords[i * 3 + 0] = pts[i](0);
+        coords[i * 3 + 1] = pts[i](1);
+        coords[i * 3 + 2] = pts[i](2);
+    }
+    hsize_t dims_geom[2] = {np, 3};
+    hid_t space_geom = H5Screate_simple(2, dims_geom, NULL);
+    hid_t dset_geom = H5Dcreate(file_id, "/geometry/coordinates", H5T_NATIVE_DOUBLE, space_geom, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dset_geom, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, coords);
+    H5Dclose(dset_geom); H5Sclose(space_geom);
+    delete[] coords;
+
+    int ne = mesh->get_n_elements();
+    int nn = mesh->get_nen();
+    int *connec = new int[ne * nn];
+    for (int i = 0; i < ne; i++) {
+        std::vector<int> ptnums;
+        mesh->get_element_pt_nums(i, ptnums);
+        for (int j = 0; j < nn; j++) connec[i * nn + j] = ptnums[j];
+    }
+    hsize_t dims_top[2] = {(hsize_t)ne, (hsize_t)nn};
+    hid_t space_top = H5Screate_simple(2, dims_top, NULL);
+    hid_t dset_top = H5Dcreate(file_id, "/topology/connectivity", H5T_NATIVE_INT, space_top, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dset_top, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, connec);
+    H5Dclose(dset_top); H5Sclose(space_top);
+    delete[] connec;
+
+    hsize_t dims_lat[1] = {np};
+    hid_t space_lat = H5Screate_simple(1, dims_lat, NULL);
+    hid_t dset_lat = H5Dcreate(file_id, "/vertex_field/lat", H5T_NATIVE_DOUBLE, space_lat, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dset_lat, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, lat_data);
+    H5Dclose(dset_lat); H5Sclose(space_lat);
+
+    H5Fclose(file_id);
+
+    int nd = mesh->get_n_dim();
+    std::string toptype;
+    if (nn == 2) toptype = "Polyline";
+    else if (nn == 3) toptype = "Triangle";
+    else if (nn == 4 && nd == 2) toptype = "Quadrilateral";
+    else if (nn == 4 && nd == 3) toptype = "Tetrahedron";
+    else if (nn == 8) toptype = "Hexahedron";
+
+    std::ofstream xmf(xmf_file.c_str());
+    xmf << "<?xml version=\"1.0\" ?>\n"
+        << "<!DOCTYPE Xdmf SYSTEM \"Xdmf.dtd\" []>\n"
+        << "<Xdmf Version=\"2.0\">\n"
+        << "  <Domain>\n"
+        << "    <Grid Name=\"Mesh\" GridType=\"Uniform\">\n"
+        << "      <Topology TopologyType=\"" << toptype << "\" NumberOfElements=\"" << ne << "\">\n"
+        << "        <DataItem Format=\"HDF\" DataType=\"Int\" Dimensions=\"" << ne << " " << nn << "\">" 
+        << h5_file << ":/topology/connectivity</DataItem>\n"
+        << "      </Topology>\n"
+        << "      <Geometry GeometryType=\"XYZ\">\n"
+        << "        <DataItem Format=\"HDF\" NumberType=\"Double\" Precision=\"8\" Dimensions=\"" << np << " 3\">" 
+        << h5_file << ":/geometry/coordinates</DataItem>\n"
+        << "      </Geometry>\n"
+        << "      <Attribute Name=\"LAT\" AttributeType=\"Scalar\" Center=\"Node\">\n"
+        << "        <DataItem Format=\"HDF\" Dimensions=\"" << np << "\">" 
+        << h5_file << ":/vertex_field/lat</DataItem>\n"
+        << "      </Attribute>\n"
+        << "    </Grid>\n"
+        << "  </Domain>\n"
+        << "</Xdmf>\n";
+    xmf.close();
+}
+
 void WriterHDF5::write_vm_step(int step, const double *data)
 {    
     hid_t file_id, dataset_id, dataspace_id, memspace_id;

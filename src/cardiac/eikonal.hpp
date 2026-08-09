@@ -14,7 +14,7 @@
 struct EikonalNode {
     double cost;
     int id;
-    z  bool operator>(const EikonalNode& other) const {
+    bool operator>(const EikonalNode& other) const {
         return cost > other.cost; 
     }
 };

@@ -45,8 +45,10 @@ public:
   //! Write data structure in a XDMF file
   void write_xdmf(const std::string & file, int nsteps, double step, bool bido=false);
 
+  //! Write static Eikonal LAT result to HDF5 and XDMF
+  void write_eikonal_lat(const std::string & file, const double *lat_data);
+  
   //! Write checkpoint state file
-  // LUCAS:
   void write_checkpoint(int step, double current_time, const double *vm, const double *state_vars, int num_state_vars);
   
   void read_checkpoint_metadata(const std::string &filename, int &step, double &time, int &num_nodes, int &num_vars);

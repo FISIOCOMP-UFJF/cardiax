@@ -10,6 +10,7 @@ set(PROGRAMS
     bidomain
     electromech
     coupled_electromech
+    eikonal
 )
 
 # Build them all
@@ -20,5 +21,6 @@ foreach(program ${PROGRAMS})
         Cardiac
         PDE
     )
-
 endforeach(program)
+
+target_link_libraries(eikonal PRIVATE Mesh FEM )

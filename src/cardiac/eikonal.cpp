@@ -1,6 +1,8 @@
 #include "eikonal.hpp"
 #include "monodomain.hpp"
 
+#include <cmath>
+
 /*!
  * Conductivities should be given in mS/um
  * 
@@ -121,7 +123,8 @@ void Eikonal::set_stimulus_value(int index, double val)
   stim_values(index) = val;
 }
 
-void Eikonal::apply_lat_stimulus(double amplitude, double duration)
+void Eikonal::apply_lat_stimulus(double amplitude, double duration,
+                                 double period)
 {
   // Stimulate every node whose local activation time has been reached, for
   // `duration` after it. This is what drives ionic cell models such as
@@ -140,6 +143,12 @@ void Eikonal::apply_lat_stimulus(double amplitude, double duration)
   }
 
   double t = tip.time();
+
+  // lat is fixed and t grows monotonically, so without folding the time back
+  // into a single beat the activation window [lat, lat+duration) is crossed
+  // only during the first beat and every later beat runs unstimulated.
+  if (period > 0.0) t = std::fmod(t, period);
+
   bool any = false;
 
   for (arma::uword i = 0; i < lat.n_elem; i++)

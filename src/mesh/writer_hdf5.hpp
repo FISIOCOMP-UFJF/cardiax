@@ -36,6 +36,9 @@ public:
 
   void write_cell_field_step(int step, const double *data, string fieldname);
 
+  //! Write one time step of a node-centred scalar field (vm, active_stress)
+  void write_point_field_step(int step, const double *data, string fieldname);
+
   //! Write one time step of displacement field
   void write_displ_step(int step, const double *data);
 

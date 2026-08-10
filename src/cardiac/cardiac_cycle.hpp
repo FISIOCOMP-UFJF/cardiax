@@ -46,6 +46,12 @@ public:
   void set_active_tension_source(int var_index, double scale)
   { ta_var_index = var_index; ta_scale = scale; }
 
+  //! State variable holding the membrane potential, for the per-node output.
+  //! Ionic models (ToRORdLand) keep Vm in state 0; phenomenological models
+  //! have no membrane potential at all and must pass -1, which disables the
+  //! vm output instead of writing some unrelated state variable into it.
+  void set_vm_source(int var_index) { vm_var_index = var_index; }
+
   //! Stimulus applied at each node once its LAT is reached.
   //! Amplitude in the cell-model current unit, duration in the solver time
   //! unit (2 ms = 0.002 when the solver runs in seconds). Amplitude 0
@@ -94,6 +100,13 @@ private:
   std::vector<double> volume_rv;   //!< RV cavity volume history
   
   arma::vec ta;
+
+  int vm_var_index = -1;           //!< state variable holding Vm (<0 = none)
+  arma::vec vm_node;               //!< membrane potential per node [mV]
+
+  //! Write the per-node membrane potential and active tension for the given
+  //! output frame, at the same rate as the displacement field.
+  void save_node_fields(int frame);
 
   void Solve_System(double tt, double pressure, double pressure2);
 

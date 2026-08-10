@@ -156,6 +156,17 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     status = H5Dclose(dataset_id); 
     status = H5Sclose(dataspace_id);
 
+    // ACTIVE STRESS array (nodal, same layout as vm). The active tension of
+    // the cell model lives on the nodes, exactly like the potential.
+    dims[0] = nsteps;
+    dims[1] = np;
+    dataspace_id = H5Screate_simple(2, dims, NULL);
+    dataset_id = H5Dcreate(file_id, "/vertex_field/active_stress",
+                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
+                           props, H5P_DEFAULT);
+    status = H5Dclose(dataset_id);
+    status = H5Sclose(dataspace_id);
+
     //teste cell field
     // cria o dataset coordinates0 (inicial)
     dims[0] = nsteps;
@@ -270,6 +281,47 @@ void WriterHDF5::write_cell_field_step(int step, const double *data, string fiel
 
   hsize_t k = step;
   hsize_t np = mesh->get_n_elements();
+  hsize_t dims[2]   = {1,np};
+  hsize_t start[2]  = {k,0};
+  hsize_t count[2]  = {1,np};
+  hsize_t stride[2] = {1,1};
+  hsize_t block[2]  = {1,1};
+
+  // define memory dataspace
+  memspace_id = H5Screate_simple(2, dims, NULL);
+
+  // select hyperslab
+  dataspace_id = H5Dget_space(dataset_id);
+  status = H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET,
+                               start, stride, count, block);
+
+  // write data
+  status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, memspace_id, dataspace_id,
+                    H5P_DEFAULT, data);
+
+  // close stuff
+  status = H5Sclose(dataspace_id);
+  status = H5Dclose(dataset_id);
+  status = H5Fclose(file_id);
+
+  if(status != 0) H5Eprint2(status,NULL);
+}
+
+void WriterHDF5::write_point_field_step(int step, const double *data,
+                                        string fieldname)
+{
+  // Same as write_vm_step, but for any node-centred scalar field. The
+  // dataset must already exist in the HDF5 file (see write_hdf5) and the
+  // matching attribute must be declared in the XDMF (see write_xdmf).
+  hid_t file_id, dataset_id, dataspace_id, memspace_id;
+  herr_t status;
+
+  file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
+  string auxstr = string("/vertex_field/") + fieldname.c_str();
+  dataset_id = H5Dopen(file_id, auxstr.c_str(), H5P_DEFAULT);
+
+  hsize_t k = step;
+  hsize_t np = mesh->get_n_points();
   hsize_t dims[2]   = {1,np};
   hsize_t start[2]  = {k,0};
   hsize_t count[2]  = {1,np};
@@ -631,6 +683,27 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                <DataItem Name=\"Points\" \n"
             << "                    Dimensions=\"" << nsteps << " " << np << "\" \n"
             << "                    Format=\"HDF\">" << h5name << ":/vertex_field/vm\n"
+            << "                </DataItem>\n"
+            << "            </DataItem>\n"
+            << "            </Attribute>\n";
+
+        //
+        // active tension (nodal)
+        //
+        xmf << "            <Attribute Name=\"active_stress\" \n"
+            << "                AttributeType=\"Scalar\" \n"
+            << "                Center=\"Node\">\n"
+            << "            <DataItem ItemType=\"HyperSlab\" \n"
+            << "                Dimensions=\"1 " << np << "\" \n"
+            << "                Type=\"HyperSlab\">\n"
+            << "                <DataItem Dimensions=\"3 2\" Format=\"XML\">\n"
+            << "                    " << i << " 0 \n"
+            << "                    1 1 \n"
+            << "                    1 " << np <<"\n"
+            << "                </DataItem>\n"
+            << "                <DataItem Name=\"Points\" \n"
+            << "                    Dimensions=\"" << nsteps << " " << np << "\" \n"
+            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/active_stress\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";

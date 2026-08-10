@@ -2024,6 +2024,23 @@ void NonlinearElasticity::storeStress(int step)
   writer.write_cell_field_step(step, rad_strain.memptr(), string("rad_strain"));
 }
 
+void NonlinearElasticity::store_point_field(int step, const arma::vec & v,
+                                            const std::string & name)
+{
+  // The writer copies exactly n_points values out of the buffer, so a longer
+  // vector is harmless but a shorter one would read past the end.
+  const arma::uword np = msh.get_n_points();
+  if(v.n_elem < np)
+  {
+    cout << " Warning: nodal field '" << name << "' has " << v.n_elem
+         << " entries but the mesh has " << np
+         << " nodes; not written." << endl;
+    return;
+  }
+
+  writer.write_point_field_step(step, v.memptr(), name);
+}
+
 
 void NonlinearElasticity::prescribe_displacements()
 {

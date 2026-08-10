@@ -1,4 +1,5 @@
 #include <armadillo>
+#include <cmath>
 #include "util/command_line_args.h"
 #include "cardiac_cycle.hpp"
 #include "util/pugixml.hpp"
@@ -190,6 +191,7 @@ void CardiacElectromechanic::config(const string &basename)
   {
     // Land gives Ta in kPa; the x5 factor follows the fenicsx-pulse demo.
     set_active_tension_source(49, 5.0 * kPa_to_p);
+    set_vm_source(0);                     // Vm is state variable 0
     double amp = CommandLineArgs::read("-stimamp", -53.0);
     double dur = CommandLineArgs::read("-stimdur", 2.0 * ephy.ms_to_solver_time());
     set_lat_stimulus(amp, dur);
@@ -202,6 +204,7 @@ void CardiacElectromechanic::config(const string &basename)
   else
   {
     set_active_tension_source(-1, 0.0);   // monitored 0, scaled by T_ref
+    set_vm_source(-1);                    // no membrane potential to save
     set_lat_stimulus(0.0, 0.002);         // no stimulus needed
   }
 
@@ -272,7 +275,15 @@ void CardiacElectromechanic::config(const string &basename)
   assert(elas.get_mesh().get_n_points() == ephy.get_mesh().get_n_points());
   assert(elas.get_mesh().get_n_elements() == ephy.get_mesh().get_n_elements());
 
-  ta.zeros(nelem);
+  // Ta is a NODAL field: Cells holds one ODE system per mesh point
+  // (Eikonal::init), get_var/get_monitored_values fill n_points entries, and
+  // the material indexes it by point number (allocate_Ta(npoints),
+  // Ta(pnums[i]) in updated_lagrangian). Sizing it by n_elements happened to
+  // work on tetrahedral meshes only because there are more elements than
+  // nodes; on hexahedra n_points > n_elements and it wrote past the end.
+  int npoints = elas.get_mesh().get_n_points();
+  ta.zeros(npoints);
+  vm_node.zeros(npoints);
 
   //"Solve" the eikonal, to discover the lat in each element
   ephy.solve(basename);
@@ -481,6 +492,7 @@ void CardiacElectromechanic::solve()
         cout << "XDMF saving... " << "Step: " << ii << endl;
         elas.output_vtk(0, ii);
         elas.storeStress(ii);
+        save_node_fields(ii);
       }
     }
     
@@ -529,6 +541,28 @@ void CardiacElectromechanic::update_active_tension()
     ephy.get_cells().get_var(ta_var_index, ta);
 
   ta = ta * ((ta_scale != 0.0) ? ta_scale : T_ref);
+}
+
+void CardiacElectromechanic::save_node_fields(int frame)
+{
+  // Both quantities live on the nodes: Cells is built with one ODE system
+  // per mesh point (Eikonal::init), and the active tension is a nodal field
+  // in the material (allocate_Ta(npoints)).
+
+  // Membrane potential -- ionic models only. Kerckhoffs has no Vm, and its
+  // state 0 is the contractile element length, which must not be written
+  // into a field named vm.
+  if (vm_var_index >= 0)
+  {
+    ephy.get_cells().get_var(vm_var_index, vm_node);
+    elas.store_point_field(frame, vm_node, string("vm"));
+  }
+
+  // Active tension, in the same unit the mechanics sees: `ta` has already
+  // been scaled by set_active_tension_source (kPa -> model pressure unit for
+  // ToRORdLand, T_ref for Kerckhoffs). Divide by kPa_to_p when
+  // post-processing if you want kPa.
+  elas.store_point_field(frame, ta, string("active_stress"));
 }
 
 void CardiacElectromechanic::update_pv_jacobian(double t)
@@ -769,12 +803,24 @@ void CardiacElectromechanic::solve_circulation(int num_beats, double dt_circ)
        << " s -> " << nsteps << " steps/beat, " << num_beats << " beat(s)"
        << endl;
 
+  // Period of the LAT stimulus, in the ELECTROPHYSIOLOGY time unit: lat,
+  // stim_duration and the cell-model clock all live in that unit, which may
+  // be ms or s (see ephy_time_per_second above), while T is in seconds.
+  // Without this the stimulus window would be tested against the wrong scale.
+  const double stim_period = T * ephy_time_per_second;
+  if (stim_amplitude != 0.0)
+    cout << " LAT stimulus: amplitude = " << stim_amplitude
+         << ", duration = " << stim_duration
+         << ", repeating every " << stim_period
+         << " (cell-model time units)" << endl;
+
   // The data writer was sized and opened in config(); here we only use it.
   int out_every = circ_out_every;
   int n_frames  = circ_n_frames;
 
   int frame = 0;
   elas.output_vtk(0, frame);
+  save_node_fields(frame);
   cout << " Output: saving every " << out_every << " step(s), "
        << n_frames << " frame(s) allocated" << endl;
   cout << " Log: detailed report every " << circ_log_every << " step(s)"
@@ -812,9 +858,10 @@ void CardiacElectromechanic::solve_circulation(int num_beats, double dt_circ)
       if (stim_amplitude != 0.0)
       {
         double tk = ephy.get_time_parameters().time();
+        if (stim_period > 0.0) tk = std::fmod(tk, stim_period);
         if (arma::any(tk >= lat_v && tk < lat_v + stim_duration))
           stimulating = true;
-        ephy.apply_lat_stimulus(stim_amplitude, stim_duration);
+        ephy.apply_lat_stimulus(stim_amplitude, stim_duration, stim_period);
       }
       ephy.advance();
     }
@@ -884,6 +931,7 @@ void CardiacElectromechanic::solve_circulation(int num_beats, double dt_circ)
     {
       frame++;
       elas.output_vtk(0, frame);
+      save_node_fields(frame);
     }
    }
   }

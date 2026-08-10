@@ -50,7 +50,13 @@ public:
   //! for `duration` after it. Needed by ionic cell models (ToRORdLand),
   //! which require a depolarising current rather than reading the LAT.
   //! Both lat and duration are in the solver time unit.
-  void apply_lat_stimulus(double amplitude, double duration);
+  //!
+  //! `period` > 0 makes the stimulus repeat once per beat: the activation
+  //! window is then tested against t modulo period, so a multi-beat run
+  //! re-excites the tissue instead of stimulating only the first beat.
+  //! It must be given in the SOLVER time unit, like lat and duration.
+  void apply_lat_stimulus(double amplitude, double duration,
+                          double period = 0.0);
 
   //! Milliseconds per solver time unit: 1000 when the solver runs in
   //! seconds, 1 when it runs in milliseconds. Quantities stated in ms in the

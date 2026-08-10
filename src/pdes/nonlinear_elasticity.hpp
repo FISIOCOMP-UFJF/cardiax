@@ -92,6 +92,11 @@ public:
                   const std::string & name, const arma::vec & v,
                   const std::vector<arma::mat33*> & vecfsn);
   void storeStress(int step);
+
+  //! Write a node-centred scalar field (e.g. "vm", "active_stress") into the
+  //! HDF5/XDMF output for the given output step.
+  void store_point_field(int step, const arma::vec & v,
+                         const std::string & name);
   void storeLVvolumes(string basename);
 
 

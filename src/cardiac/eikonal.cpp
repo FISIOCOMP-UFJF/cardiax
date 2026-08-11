@@ -1,21 +1,13 @@
+// TO-DO: corrigir lance do ODE_solver
+
+
+
 #include "eikonal.hpp"
 #include "monodomain.hpp"
 #include <queue>
 #include <vector>
 #include <utility>
 #include "mesh/writer_hdf5.hpp" 
-
-/*!
- * Conductivities should be given in mS/um
- * 
- * My old setting: sigma_l(0.00012),   sigma_t(0.00006226), sigma_n(0.00002556)
- * Rodrigo's code: sigma_l(0.0001543), sigma_t(0.0000324),  sigma_n(0.0000120)
- * Benchmark     : sigma_l(0.0001334), sigma_t(0.0000176),  sigma_n(0.0000176)
- * Rabbit        : sigma_l(0.000204),  sigma_t(0.0000102),  sigma_n(0.000037)
- * Sundnes       : sigma_l(0.000300), sigma_t(0.000100), sigma_n(0.000031525)
-*/
-
-//#define MONO_ISOTROPIC
 
 Eikonal::Eikonal()
   : CardiacProblem(),
@@ -24,16 +16,12 @@ Eikonal::Eikonal()
 {
   cout << "Eikonal" << endl; 
   mesh = new Mesh();
-  // writer = new WriterHDF5(mesh);
 
   //? Precisa disso? 
   parameters.rename("Eikonal_parameters");
-  // parameters.add("vel_f", 0.0001334);
-  // parameters.add("vel_s", 0.0000176);
-  // parameters.add("vel_n", 0.0000176);
-  parameters.add("vel_f", 600.0);
-  parameters.add("vel_s", 240.0);
-  parameters.add("vel_n", 240.0);
+  parameters.add("vel_f", 0.006);
+  parameters.add("vel_s", 0.0002);
+  parameters.add("vel_n", 0.0002);
 
 }
 
@@ -67,9 +55,7 @@ void Eikonal::init()
   // setup data writer to write at every 1 ms
   // potential field and displacements
   std::size_t pos  = mesh_filename.find(".xml");
-  // std::string output = mesh_filename.substr(0,pos) + "_output";
   int nsteps = tip.get_size(); 
-  // writer->open(output, nsteps+1, timestep);
 
   // setup model and cells
   cellmodel = CellModel::create(cell_name);
@@ -115,6 +101,7 @@ void Eikonal::set_stimulus_value(int index, double val)
   stim_apply_nodes = true;
   stim_values(index) = val;
 }
+
 void Eikonal::solve(const string &mshfile)
 {
   std::cout << " -- Initializing local activation time --" << std::endl; 
@@ -151,7 +138,7 @@ void Eikonal::solve(const string &mshfile)
       }
     }
     // Verify if there is root nodes for solving eikonal
-    if (eikonal_data.child("root_node")  && loaded_lat) 
+    if (eikonal_data.child("root_node")  && !loaded_lat) 
     {
       has_root_nodes = true;
       for(pugi::xml_node node = eikonal_data.child("root_node"); node; node = node.next_sibling("root_node"))
@@ -192,6 +179,10 @@ void Eikonal::solve(const string &mshfile)
     double vs = parameters["vel_s"];
     double vn = parameters["vel_n"];
     
+    if (eikonal_data.attribute("vel_f")) vf = eikonal_data.attribute("vel_f").as_double();
+    if (eikonal_data.attribute("vel_s")) vs = eikonal_data.attribute("vel_s").as_double();
+    if (eikonal_data.attribute("vel_n")) vn = eikonal_data.attribute("vel_n").as_double();
+
     // conductivity tensor squared
     arma::mat33 g(arma::fill::zeros);
     g(0,0) = vf * vf;
@@ -269,7 +260,12 @@ void Eikonal::solve(const string &mshfile)
 
     WriterHDF5 writer(mesh);
     writer.write_eikonal_lat(mshfile, lat.memptr());
-    
+
+    std::ofstream arquivo("eikonal.txt");
+    for (uint u = 0; u<ndofs; u++)
+    {
+      arquivo << "<node id=\"" <<u<<"\" lat=\"" <<lat[u]<<"\" />" <<endl; 
+    }
     std::cout << " -- LAT saved successfully to HDF5/XDMF format. --" << std::endl;
   }
   else
@@ -284,11 +280,10 @@ void Eikonal::solve(const string &mshfile)
     lat.fill(begin_active_stress); 
   }
 }
+
 void Eikonal::solve()
 {
-  //TODO: solve eikonal and set lat into the cellmodel
-  //For now, this function is been used only for debuging
-  
+
 }
 
 void Eikonal::solve_odes()

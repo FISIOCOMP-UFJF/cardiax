@@ -131,6 +131,23 @@ void CardiacElectromechanic::config(const string &basename)
   ephy.update_matrix(false);
   ephy.init();
 
+  // Coordenadas Cobiveco: opcionais. Se a malha trouxer o bloco <tm>, o tipo
+  // celular (endo/mid/epi) passa a vir da coordenada transmural em vez de ser
+  // uniforme. Tem de vir depois de init() -- que e onde Cells e alocado -- e
+  // antes de initial_conditions(), porque Cells::init() ja usa o tipo para
+  // escolher as condicoes iniciais de cada celula.
+  ephy.read_cobiveco(mshfile);
+  if (ephy.has_cobiveco())
+    ephy.set_cell_types_from_tm(CommandLineArgs::read("-tm_endo", 0.3),
+                                CommandLineArgs::read("-tm_epi",  0.7));
+
+  // Gradiente apicobasal de IKs, ligado por default quando a malha traz <ab>.
+  // -abgrad 0 desliga, para poder comparar as duas rodadas na mesma malha.
+  if (CommandLineArgs::read("-abgrad", 1))
+    ephy.set_apicobasal_from_ab();
+  else
+    cout << " Gradiente apicobasal desligado por -abgrad 0" << endl;
+
   // Declare the time unit the EP problem runs in. Ionic models such as
   // ToRORd are written in ms and need a step of ~0.01-0.02 ms with explicit
   // Euler, which is impractical to express in seconds; the phenomenological

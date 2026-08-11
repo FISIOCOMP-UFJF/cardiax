@@ -32,6 +32,7 @@ void Cells::advance(double t, double dt)
     const uint offset = system*ode->get_num_state_vars();
 
     if (types.size() != 0) ode->set_celltype( types(system) );
+    if (apicobasal.n_elem != 0) ode->set_apicobasal( apicobasal(system) );
 
     // Time-stepping
     ode->advance(states+offset, t, dt);
@@ -70,6 +71,7 @@ void Cells::advance(double t, double dt, const double istim,
     it = snodes.find(system);
 
     if (types.size() != 0) ode->set_celltype( types(system) );
+    if (apicobasal.n_elem != 0) ode->set_apicobasal( apicobasal(system) );
 
     // time-stepping
     if (it != snodes.end())
@@ -102,6 +104,7 @@ void Cells::advance(double t, double dt, const arma::vec & stim_values)
     const uint offset = system * ode->get_num_state_vars();
 
     if (types.size() != 0) ode->set_celltype( types(system) );
+    if (apicobasal.n_elem != 0) ode->set_apicobasal( apicobasal(system) );
 
     const double istim = stim_values(system);
     ode->advance(states+offset, t, dt, istim);
@@ -167,6 +170,7 @@ void Cells::init()
     
     // change type of cell model (endo, mid, epi)
     if (types.size() != 0) ode->set_celltype( types(system) );
+    if (apicobasal.n_elem != 0) ode->set_apicobasal( apicobasal(system) );
 
     // set initial conditions of this system
     ode->init(states+offset);

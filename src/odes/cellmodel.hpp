@@ -65,6 +65,15 @@ class CellModel
   //! Return the cell type
   int get_celltype() const { return type; }
 
+  //! Coordenada apicobasal da celula (Cobiveco ab): 0 no apice, 1 na base.
+  //! O valor default 0.5 e NEUTRO -- os modelos que usam esse gradiente
+  //! devem reduzir-se ao comportamento original em 0.5, para que malhas sem
+  //! o bloco <ab> continuem dando exatamente o mesmo resultado de antes.
+  void set_apicobasal(double a) { apicobasal = a; }
+
+  //! Coordenada apicobasal da celula
+  double get_apicobasal() const { return apicobasal; }
+
   inline double get_monitored_value(const int index) const { return *(monitored[index]); }
 
   //! Get number of state variables
@@ -125,6 +134,9 @@ class CellModel
 
   //! Select cell type
   CellType type;
+
+  //! Coordenada apicobasal da celula (0 apice -> 1 base); 0.5 = neutro
+  double apicobasal = 0.5;
 
   //! Solver
   ODESolver * ode_solver;

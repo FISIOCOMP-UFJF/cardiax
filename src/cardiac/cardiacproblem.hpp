@@ -39,6 +39,45 @@ public:
   //! Return an array with the cell types
   const arma::ivec & get_cell_types() const { return cells->get_cell_types(); }
 
+  // -------------------------------------------------------------------
+  // Coordenadas biventriculares consistentes (Cobiveco), por no.
+  // Validas apenas se has_cobiveco() retornar verdadeiro.
+  //   tv  transventricular  0 = VE, 1 = VD           (BINARIA)
+  //   tm  transmural        0 = endocardio, 1 = epicardio
+  //   rt  rotacional        [0,1)  CICLICA: 0 e 1 sao o mesmo angulo
+  //   ab  apicobasal        0 = apice, 1 = base
+  // -------------------------------------------------------------------
+
+  //! Coordenada transmural (0 endo -> 1 epi)
+  const arma::vec & get_tm() const { return cbv_tm; }
+
+  //! Coordenada rotacional. CICLICA: nunca interpole nem faca media
+  //! atravessando a costura em 0/1; use sin/cos se precisar.
+  const arma::vec & get_rt() const { return cbv_rt; }
+
+  //! Coordenada apicobasal (0 apice -> 1 base)
+  const arma::vec & get_ab() const { return cbv_ab; }
+
+  //! Coordenada transventricular, binaria (0 = VE, 1 = VD)
+  const arma::ivec & get_tv() const { return cbv_tv; }
+
+  //! Havia bloco <tm> no arquivo de malha?
+  bool has_cobiveco() const { return cbv_loaded; }
+
+  //! Le os blocos <tv> <tm> <rt> <ab> do arquivo de malha. Blocos ausentes
+  //! sao ignorados; a malha continua valida sem nenhum deles.
+  void read_cobiveco(const std::string & mshfile);
+
+  //! Define o tipo celular de cada no (ENDO/MCELL/EPI) a partir de tm.
+  //! Precisa ser chamado ANTES de initial_conditions(), porque Cells::init()
+  //! ja usa o tipo para escolher as condicoes iniciais de cada celula.
+  void set_cell_types_from_tm(double endo_mid = 0.3, double mid_epi = 0.7);
+
+  //! Entrega a coordenada ab as celulas, ativando o gradiente apicobasal
+  //! (no ToRORd-Land, GKs = GKs * 0.2^(2*ab - 1)). Sem o bloco <ab> na malha
+  //! nao faz nada e o resultado fica identico ao de antes.
+  void set_apicobasal_from_ab();
+
   //! Return reference to the Cells object
   const Cells & get_cells() { return *cells; }
 
@@ -114,6 +153,13 @@ protected:
   TimeParameters tip;
   Cells * cells;
   CellModel * cellmodel;
+
+  //! Coordenadas Cobiveco por no (ver getters acima)
+  arma::vec  cbv_tm, cbv_rt, cbv_ab;
+  arma::ivec cbv_tv;
+  bool cbv_loaded = false;   //!< havia bloco <tm>?
+  bool cbv_has_ab = false;   //!< havia bloco <ab>?
+
   Mesh * mesh;
   WriterHDF5 * writer;
 

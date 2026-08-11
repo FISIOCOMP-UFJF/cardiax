@@ -91,159 +91,176 @@ TorordLand::TorordLand() : CellModel(50) {
 void TorordLand::init(double * values) const
 {
   assert(values != nullptr);
-            // Default initial conditions for ENDO cell (from original Matlab script)
-            values[0] = -8.863699e+01;
-            values[1] = 1.189734e+01;
-            values[2] = 1.189766e+01;
-            values[3] = 1.412345e+02;
-            values[4] = 1.412344e+02;
-            values[5] = 7.267473e-05;
-            values[6] = 6.337870e-05;
-            values[7] = 1.532653e+00;
-            values[8] = 1.533946e+00;
-            values[9] = 8.280078e-04;
-            values[10] = 6.665272e-01;
-            values[11] = 8.260208e-01;
-            values[12] = 8.260560e-01;
-            values[13] = 8.258509e-01;
-            values[14] = 1.668686e-04;
-            values[15] = 5.228306e-01;
-            values[16] = 2.859696e-01;
-            values[17] = 9.591370e-04;
-            values[18] = 9.996012e-01;
-            values[19] = 5.934016e-01;
-            values[20] = 4.886961e-04;
-            values[21] = 9.996011e-01;
-            values[22] = 6.546687e-01;
-            values[23] = 9.500075e-32;
-            values[24] = 1.000000e+00;
-            values[25] = 9.392580e-01;
-            values[26] = 1.000000e+00;
-            values[27] = 9.998984e-01;
-            values[28] = 9.999783e-01;
-            values[29] = 4.448162e-04;
-            values[30] = 7.550725e-04;
-            values[31] = 1.000000e+00;
-            values[32] = 1.000000e+00;
-            values[33] = 2.424047e-01;
-            values[34] = 1.795377e-04;
-            values[35] = -6.883086e-25;
-            values[36] = 1.117498e-02;
-            values[37] = 9.980366e-01;
-            values[38] = 8.588018e-04;
-            values[39] = 7.097447e-04;
-            values[40] = 3.812617e-04;
-            values[41] = 1.357116e-05;
-            values[42] = 2.302525e-23;
-            values[43] = 1.561941e-04;
-            values[44] = 2.351289e-04;
-            values[45] = 8.077631e-03;
-            values[46] = 9.993734e-01;
-            values[47] = 0.000000e+00;
-            values[48] = 0.000000e+00;
-	          values[49] = 0.000000e+00;
 
-            // Default initial conditions for MID cell (from original Matlab script)
-            //values[0] = -8.953800e+01;
-            //values[1] = 1.492920e+01;
-            //values[2] = 1.492967e+01;
-            //values[3] = 1.448447e+02;
-            //values[4] = 1.448447e+02;
-            //values[5] = 7.502288e-05;
-            //values[6] = 6.107636e-05;
-            //values[7] = 1.790435e+00;
-            //values[8] = 1.794842e+00;
-            //values[9] = 6.819365e-04;
-            //values[10] = 6.953807e-01;
-            //values[11] = 8.434888e-01;
-            //values[12] = 8.435208e-01;
-            //values[13] = 8.432262e-01;
-            //values[14] = 1.406211e-04;
-            //values[15] = 5.453149e-01;
-            //values[16] = 2.924967e-01;
-            //values[17] = 9.026127e-04;
-            //values[18] = 9.996593e-01;
-            //values[19] = 5.631197e-01;
-            //values[20] = 4.598833e-04;
-            //values[21] = 9.996593e-01;
-            //values[22] = 6.236964e-01;
-            //values[23] = -1.314189e-33;
-            //values[24] = 1.000000e+00;
-            //values[25] = 9.204086e-01;
-            //values[26] = 1.000000e+00;
-            //values[27] = 9.997620e-01;
-            //values[28] = 9.999625e-01;
-            //values[29] = 3.853595e-04;
-            //values[30] = 8.535292e-04;
-            //values[31] = 1.000000e+00;
-            //values[32] = 1.000000e+00;
-            //values[33] = 2.664151e-01;
-            //values[34] = 1.623107e-04;
-            //values[35] = 1.209762e-24;
-            //values[36] = 1.782437e-02;
-            //values[37] = 9.979720e-01;
-            //values[38] = 8.053991e-04;
-            //values[39] = 6.781800e-04;
-            //values[40] = 5.265363e-04;
-            //values[41] = 1.789565e-05;
-            //values[42] = 7.059162e-23;
-            //values[43] = 1.670654e-04;
-            //values[44] = 2.506794e-04;
-            //values[45] = 8.602625e-03;
-            //values[46] = 9.993314e-01;
-            //values[47] = 0.000000e+00;
-            //values[48] = 0.000000e+00;
+  // Condicoes iniciais do script MATLAB original (jtmff/torord), uma por
+  // tipo celular. Antes, os blocos MID e EPI estavam comentados e TODA
+  // celula partia do estado ENDO, independentemente do tipo usado depois em
+  // equation(). Isso deixa as celulas mid/epi longe do proprio regime
+  // periodico -- ja o potencial de repouso difere: -88.64 mV (endo),
+  // -89.54 mV (mid), -89.05 mV (epi), e o Na+ intracelular difere bem mais.
+  // APEX e BASE nao tem parametrizacao propria no ToRORd e caem em ENDO.
+  switch (type)
+  {
+  case MCELL:
+    values[0] = -8.953800e+01;
+    values[1] = 1.492920e+01;
+    values[2] = 1.492967e+01;
+    values[3] = 1.448447e+02;
+    values[4] = 1.448447e+02;
+    values[5] = 7.502288e-05;
+    values[6] = 6.107636e-05;
+    values[7] = 1.790435e+00;
+    values[8] = 1.794842e+00;
+    values[9] = 6.819365e-04;
+    values[10] = 6.953807e-01;
+    values[11] = 8.434888e-01;
+    values[12] = 8.435208e-01;
+    values[13] = 8.432262e-01;
+    values[14] = 1.406211e-04;
+    values[15] = 5.453149e-01;
+    values[16] = 2.924967e-01;
+    values[17] = 9.026127e-04;
+    values[18] = 9.996593e-01;
+    values[19] = 5.631197e-01;
+    values[20] = 4.598833e-04;
+    values[21] = 9.996593e-01;
+    values[22] = 6.236964e-01;
+    values[23] = -1.314189e-33;
+    values[24] = 1.000000e+00;
+    values[25] = 9.204086e-01;
+    values[26] = 1.000000e+00;
+    values[27] = 9.997620e-01;
+    values[28] = 9.999625e-01;
+    values[29] = 3.853595e-04;
+    values[30] = 8.535292e-04;
+    values[31] = 1.000000e+00;
+    values[32] = 1.000000e+00;
+    values[33] = 2.664151e-01;
+    values[34] = 1.623107e-04;
+    values[35] = 1.209762e-24;
+    values[36] = 1.782437e-02;
+    values[37] = 9.979720e-01;
+    values[38] = 8.053991e-04;
+    values[39] = 6.781800e-04;
+    values[40] = 5.265363e-04;
+    values[41] = 1.789565e-05;
+    values[42] = 7.059162e-23;
+    values[43] = 1.670654e-04;
+    values[44] = 2.506794e-04;
+    values[45] = 8.602625e-03;
+    values[46] = 9.993314e-01;
+    values[47] = 0.000000e+00;
+    values[48] = 0.000000e+00;
+    break;
 
-            // Default initial conditions for EPI cell (from original Matlab script)
-            //values[0] = -8.904628e+01;
-            //values[1] = 1.272190e+01;
-            //values[2] = 1.272220e+01;
-            //values[3] = 1.422490e+02;
-            //values[4] = 1.422489e+02;
-            //values[5] = 6.541058e-05;
-            //values[6] = 5.684431e-05;
-            //values[7] = 1.809117e+00;
-            //values[8] = 1.809702e+00;
-            //values[9] = 7.581821e-04;
-            //values[10] = 6.798398e-01;
-            //values[11] = 8.341502e-01;
-            //values[12] = 8.341883e-01;
-            //values[13] = 8.340817e-01;
-            //values[14] = 1.543877e-04;
-            //values[15] = 5.382951e-01;
-            //values[16] = 3.027694e-01;
-            //values[17] = 9.330351e-04;
-            //values[18] = 9.996287e-01;
-            //values[19] = 9.996262e-01;
-            //values[20] = 4.753907e-04;
-            //values[21] = 9.996287e-01;
-            //values[22] = 9.996285e-01;
-            //values[23] = 1.742134e-37;
-            //values[24] = 1.000000e+00;
-            //values[25] = 9.479522e-01;
-            //values[26] = 1.000000e+00;
-            //values[27] = 9.999327e-01;
-            //values[28] = 9.999829e-01;
-            //values[29] = 2.915447e-04;
-            //values[30] = 5.026045e-04;
-            //values[31] = 1.000000e+00;
-            //values[32] = 1.000000e+00;
-            //values[33] = 2.288155e-01;
-            //values[34] = 1.714978e-04;
-            //values[35] = -1.131190e-26;
-            //values[36] = 1.295052e-02;
-            //values[37] = 9.981944e-01;
-            //values[38] = 8.342321e-04;
-            //values[39] = 6.838658e-04;
-            //values[40] = 2.778785e-04;
-            //values[41] = 9.667759e-06;
-            //values[42] = 8.169304e-24;
-            //values[43] = 1.259996e-04;
-            //values[44] = 1.899522e-04;
-            //values[45] = 6.551494e-03;
-            //values[46] = 9.994940e-01;
-            //values[47] = 0.000000e+00;
-            //values[48] = 0.000000e+00;
+  case EPI:
+    values[0] = -8.904628e+01;
+    values[1] = 1.272190e+01;
+    values[2] = 1.272220e+01;
+    values[3] = 1.422490e+02;
+    values[4] = 1.422489e+02;
+    values[5] = 6.541058e-05;
+    values[6] = 5.684431e-05;
+    values[7] = 1.809117e+00;
+    values[8] = 1.809702e+00;
+    values[9] = 7.581821e-04;
+    values[10] = 6.798398e-01;
+    values[11] = 8.341502e-01;
+    values[12] = 8.341883e-01;
+    values[13] = 8.340817e-01;
+    values[14] = 1.543877e-04;
+    values[15] = 5.382951e-01;
+    values[16] = 3.027694e-01;
+    values[17] = 9.330351e-04;
+    values[18] = 9.996287e-01;
+    values[19] = 9.996262e-01;
+    values[20] = 4.753907e-04;
+    values[21] = 9.996287e-01;
+    values[22] = 9.996285e-01;
+    values[23] = 1.742134e-37;
+    values[24] = 1.000000e+00;
+    values[25] = 9.479522e-01;
+    values[26] = 1.000000e+00;
+    values[27] = 9.999327e-01;
+    values[28] = 9.999829e-01;
+    values[29] = 2.915447e-04;
+    values[30] = 5.026045e-04;
+    values[31] = 1.000000e+00;
+    values[32] = 1.000000e+00;
+    values[33] = 2.288155e-01;
+    values[34] = 1.714978e-04;
+    values[35] = -1.131190e-26;
+    values[36] = 1.295052e-02;
+    values[37] = 9.981944e-01;
+    values[38] = 8.342321e-04;
+    values[39] = 6.838658e-04;
+    values[40] = 2.778785e-04;
+    values[41] = 9.667759e-06;
+    values[42] = 8.169304e-24;
+    values[43] = 1.259996e-04;
+    values[44] = 1.899522e-04;
+    values[45] = 6.551494e-03;
+    values[46] = 9.994940e-01;
+    values[47] = 0.000000e+00;
+    values[48] = 0.000000e+00;
+    break;
+
+  case ENDO:
+  default:
+    values[0] = -8.863699e+01;
+    values[1] = 1.189734e+01;
+    values[2] = 1.189766e+01;
+    values[3] = 1.412345e+02;
+    values[4] = 1.412344e+02;
+    values[5] = 7.267473e-05;
+    values[6] = 6.337870e-05;
+    values[7] = 1.532653e+00;
+    values[8] = 1.533946e+00;
+    values[9] = 8.280078e-04;
+    values[10] = 6.665272e-01;
+    values[11] = 8.260208e-01;
+    values[12] = 8.260560e-01;
+    values[13] = 8.258509e-01;
+    values[14] = 1.668686e-04;
+    values[15] = 5.228306e-01;
+    values[16] = 2.859696e-01;
+    values[17] = 9.591370e-04;
+    values[18] = 9.996012e-01;
+    values[19] = 5.934016e-01;
+    values[20] = 4.886961e-04;
+    values[21] = 9.996011e-01;
+    values[22] = 6.546687e-01;
+    values[23] = 9.500075e-32;
+    values[24] = 1.000000e+00;
+    values[25] = 9.392580e-01;
+    values[26] = 1.000000e+00;
+    values[27] = 9.998984e-01;
+    values[28] = 9.999783e-01;
+    values[29] = 4.448162e-04;
+    values[30] = 7.550725e-04;
+    values[31] = 1.000000e+00;
+    values[32] = 1.000000e+00;
+    values[33] = 2.424047e-01;
+    values[34] = 1.795377e-04;
+    values[35] = -6.883086e-25;
+    values[36] = 1.117498e-02;
+    values[37] = 9.980366e-01;
+    values[38] = 8.588018e-04;
+    values[39] = 7.097447e-04;
+    values[40] = 3.812617e-04;
+    values[41] = 1.357116e-05;
+    values[42] = 2.302525e-23;
+    values[43] = 1.561941e-04;
+    values[44] = 2.351289e-04;
+    values[45] = 8.077631e-03;
+    values[46] = 9.993734e-01;
+    values[47] = 0.000000e+00;
+    values[48] = 0.000000e+00;
+    break;
+  }
+
+  // Tensao ativa do modelo de Land: parte do zero em qualquer tipo celular.
+  values[49] = 0.000000e+00;
 }
 
 void TorordLand::equation(const double time, const double *rY, double *rDY)
@@ -785,6 +802,12 @@ double KsCa=1.0+0.6/(1.0+pow((3.8e-5/cai),1.4));
 double GKs= 0.0011*IKs_Multiplier;
 if (celltype==EPI)
     GKs=GKs*1.4;
+// Gradiente apicobasal de IKs. 'apicobasal' e a coordenada ab do Cobiveco
+// (0 = apice, 1 = base) e vale 0.5 quando a malha nao traz o campo <ab>,
+// caso em que o fator abaixo e exatamente 1 e nada muda. Fator 5x no apice
+// e 0.2x na base: mais IKs no apice, logo APD mais curto ali.
+GKs = GKs * pow(0.2, 2.0*apicobasal - 1.0);
+//cout << GKs << endl;
 double IKs = GKs*KsCa*xs1*xs2*(v-EKs);
 
 // IK1

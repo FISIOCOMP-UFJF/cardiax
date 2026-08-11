@@ -99,6 +99,14 @@ class Cells
   //! Config types
   void set_cell_types(int num, int * vtypes);
 
+  //! Coordenada apicobasal (Cobiveco ab) de cada celula, 0 apice -> 1 base.
+  //! Vetor vazio (o default) desliga o gradiente: o modelo celular fica no
+  //! valor neutro e o resultado e identico ao de antes.
+  void set_apicobasal(const arma::vec & v) { apicobasal = v; }
+
+  //! Coordenada apicobasal de cada celula
+  const arma::vec & get_apicobasal() const { return apicobasal; }
+
   //! Return the number of cells (systems of ODEs)
   int size() { return num_systems; }
 
@@ -118,6 +126,9 @@ class Cells
 
   //! Types for each cell
   arma::ivec types;
+
+  //! Coordenada apicobasal de cada celula (vazio = gradiente desligado)
+  arma::vec apicobasal;
 
   //! Monitored values array
   arma::vec monitored_values;

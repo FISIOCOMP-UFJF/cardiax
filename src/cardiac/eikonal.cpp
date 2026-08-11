@@ -169,51 +169,62 @@ void Eikonal::solve(const string &mshfile)
   cout << " -- Reading local activation time from mesh file --" << endl; 
   pugi::xml_document doc;
   pugi::xml_parse_result result = doc.load_file(mshfile.c_str());
-  
-  lat.set_size(ndofs);
-  
+
+  // zeros(), not set_size(): nodes missing from <eikonal> would otherwise
+  // keep uninitialised memory.
+  lat.zeros(ndofs);
+
+  pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
+  double begin_active_stress = 0.0;
+  // passive_time is given in MILLISECONDS in the mesh file, while the solver
+  // may work in seconds; ms_to_solver_time() does the conversion.
+  if(pvloop_data)
+    begin_active_stress = pvloop_data.attribute("passive_time").as_double() * ms_to_solver_time();
+
   pugi::xml_node eikonal_data = doc.child("mesh").child("eikonal");
   bool has_eikonal = false;
+  int n_read = 0;
+
   if(eikonal_data)
   {
-    has_eikonal = true; 
+    has_eikonal = true;
     for(pugi::xml_node node = eikonal_data.child("node"); node; node = node.next_sibling("node"))
     {
-      int index = node.attribute("id").as_int(); 
-      lat(index) = std::stod(node.attribute("lat").as_string()); 
+      int index = node.attribute("id").as_int();
+      if(index < 0 || index >= (int) ndofs)
+      {
+        std::cout << " *** WARNING: <eikonal> node id " << index
+                  << " is outside [0," << ndofs << "); ignored." << std::endl;
+        continue;
+      }
+      // The per-node LAT is given in MILLISECONDS.
+      lat(index) = node.attribute("lat").as_double();
+      n_read++;
     }
   }
 
-
   if(has_eikonal)
   {
-    double min_val = lat.min(); 
-    double max_val = lat.max(); 
+    // The per-node LAT from the mesh is used AS IT IS: the only operation is
+    // the conversion from ms to the solver time unit. There is no shift and
+    // no rescaling -- the activation sequence stored in the mesh is the
+    // activation sequence the cells see. passive_time is only a fallback for
+    // meshes without an <eikonal> section.
+    lat *= ms_to_solver_time();
 
-    std::cout<<"Local activation time"<<std::endl;
-
-    pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
-    double begin_active_stress = 0.0; 
-    if(pvloop_data) begin_active_stress = std::stod(pvloop_data.attribute("passive_time").as_string()) * ms_to_solver_time(); 
-    double latest_lat = begin_active_stress + 146.0 * ms_to_solver_time(); 
-
-    if(max_val-min_val == 0.0) 
-      lat.fill(0.0);
-    else 
-      lat = begin_active_stress + (lat - min_val) * (latest_lat - begin_active_stress)/ (max_val-min_val);
-    std::cout << " Earliest activation: " << lat.min() << "  Latest activation: " << lat.max()  << std::endl; 
-    std::cout << " Loaded LATs: " << lat.n_elem << " values.\n";
+    std::cout << " Local activation time (per node, from the mesh)" << std::endl;
+    std::cout << " Loaded LATs: " << n_read << " of " << ndofs << " nodes" << std::endl;
+    if(n_read != (int) ndofs)
+      std::cout << " *** WARNING: " << (ndofs - n_read) << " node(s) without LAT"
+                << " were left at 0 and will activate at the start of the beat."
+                << std::endl;
+    std::cout << " Earliest activation: " << lat.min()
+              << "  Latest activation: " << lat.max()
+              << "  (spread " << (lat.max() - lat.min())
+              << ", solver time units)" << std::endl;
   }
   else
   {
-    pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
-    double begin_active_stress = 0.0; 
-    // passive_time is given in MILLISECONDS in the mesh file, while the
-    // solver works in seconds. The /1000 was missing here (it is present in
-    // the has_eikonal branch above), so a passive_time of e.g. 135 became
-    // 135 s instead of 0.135 s: the activation window never opened and the
-    // active tension stayed identically zero for the whole beat.
-    if(pvloop_data) begin_active_stress = std::stod(pvloop_data.attribute("passive_time").as_string()) * ms_to_solver_time(); 
     lat.fill(begin_active_stress); //if there isn't lat in the mesh file, we use the passive_time for all elements. 
     std::cout << " No per-node LAT in the mesh: uniform activation at "
               << begin_active_stress << " (solver time units, from passive_time)"

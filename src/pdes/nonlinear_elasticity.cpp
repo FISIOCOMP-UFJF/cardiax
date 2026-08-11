@@ -238,6 +238,69 @@ double NonlinearElasticity::volume_myocardium_mL()
   return calc_volume() * volume_scale_to_mL();
 }
 
+void NonlinearElasticity::fiber_stretch_elements(arma::vec & lam_e)
+{
+  const int nelem = msh.get_n_elements();
+  const int nint  = get_num_integration_points();
+
+  lam_e.set_size(nelem);
+
+  // vecF is sized nelem*nint in init(). If it is empty the problem has not
+  // been initialised yet; report the undeformed state rather than reading
+  // past the end.
+  if (vecF.size() < static_cast<size_t>(nelem * nint) || nint < 1)
+  {
+    lam_e.ones();
+    return;
+  }
+
+  for (int e = 0; e < nelem; e++)
+  {
+    // f0 is the fibre direction in the REFERENCE configuration, which is
+    // what I4f = f0.C.f0 is defined with. Do not push it forward here.
+    const arma::vec3 & f0 = msh.get_element(e).get_fiber();
+
+    double lam = 0.0;
+    for (int q = 0; q < nint; q++)
+    {
+      // lambda_f = sqrt(f0.F^T.F.f0) = ||F f0||
+      const arma::vec3 Ff0 = (*vecF[e * nint + q]) * f0;
+      lam += arma::norm(Ff0, 2);
+    }
+    lam_e(e) = lam / static_cast<double>(nint);
+  }
+}
+
+void NonlinearElasticity::fiber_stretch_nodes(arma::vec & lam_n)
+{
+  arma::vec lam_e;
+  fiber_stretch_elements(lam_e);
+
+  const int nelem   = msh.get_n_elements();
+  const int npoints = msh.get_n_points();
+  const int nen     = msh.get_nen();
+
+  lam_n.zeros(npoints);
+  arma::vec count(npoints, arma::fill::zeros);
+
+  std::vector<int> pnums(nen);
+  for (int e = 0; e < nelem; e++)
+  {
+    msh.get_element_pt_nums(e, pnums);
+    for (int i = 0; i < nen; i++)
+    {
+      lam_n(pnums[i]) += lam_e(e);
+      count(pnums[i]) += 1.0;
+    }
+  }
+
+  // A node with no incident element cannot be assigned a stretch; leaving it
+  // at 1 keeps the cell model at its neutral, undeformed behaviour instead of
+  // feeding it a division by zero.
+  for (int i = 0; i < npoints; i++)
+    lam_n(i) = (count(i) > 0.0) ? lam_n(i) / count(i) : 1.0;
+}
+
 double NonlinearElasticity::volume_LV()
 {
   return total_volume_cavity(MARKER_LV);

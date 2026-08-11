@@ -225,6 +225,41 @@ void CardiacElectromechanic::config(const string &basename)
     set_lat_stimulus(0.0, 0.002);         // no stimulus needed
   }
 
+  // ---- mechano-electric feedback: fibre stretch ----------------------
+  // Off by default, so every existing run reproduces exactly as before.
+  //   -lam 1      feeds lambda_f = sqrt(I4f) to the cell model
+  //   -lamrate 1  additionally feeds d(lambda_f)/dt
+  //   -lamclip a b  overrides the guard rails on the value handed over
+  lambda_coupling = (CommandLineArgs::read("-lam", 0) != 0);
+  lambda_rate_on  = (CommandLineArgs::read("-lamrate", 0) != 0);
+  lambda_min_clip = CommandLineArgs::read("-lammin", 0.7);
+  lambda_max_clip = CommandLineArgs::read("-lammax", 1.3);
+
+  if (lambda_coupling)
+  {
+    // Only the Land submodel reads the stretch. Silently accepting -lam on a
+    // model that ignores it would look like the coupling was active.
+    if (cellmodel != "ToRORdLand")
+    {
+      cout << " *** -lam 1 pedido, mas o modelo celular '" << cellmodel
+           << "' nao usa estiramento; acoplamento desligado." << endl;
+      lambda_coupling = false;
+    }
+    else
+    {
+      cout << " Acoplamento mecano-eletrico LIGADO: lambda_f = sqrt(I4f)"
+           << " por no -> ToRORd-Land" << endl;
+      cout << "   lambda limitado a [" << lambda_min_clip << ", "
+           << lambda_max_clip << "]" << endl;
+      cout << "   d(lambda)/dt: "
+           << (lambda_rate_on ? "ligado" : "desligado (contracao isometrica"
+                                           " do ponto de vista da celula)")
+           << endl;
+    }
+  }
+  else
+    cout << " Acoplamento mecano-eletrico desligado (use -lam 1 para ligar)"
+         << endl;
 
   elas.config(mshfile, parfile);
   elas.set_output_step(false);
@@ -301,6 +336,15 @@ void CardiacElectromechanic::config(const string &basename)
   int npoints = elas.get_mesh().get_n_points();
   ta.zeros(npoints);
   vm_node.zeros(npoints);
+
+  // Pre-size the stretch buffers to the undeformed state. The first output
+  // frame is written before any mechanical solve, and a field that is absent
+  // in frame 0 but present afterwards makes the XDMF series inconsistent.
+  if (lambda_coupling)
+  {
+    lambda_node.ones(npoints);
+    lambda_rate_node.zeros(npoints);
+  }
 
   //"Solve" the eikonal, to discover the lat in each element
   ephy.solve(basename);
@@ -415,6 +459,10 @@ void CardiacElectromechanic::solve()
         float Q = DV / 200.;
         p_1 = p_0 + (DP / DV) * Q * DT;
       }
+
+      // Mechano-electric feedback: lambda_f from the last converged solve,
+      // read before the cells advance.
+      update_fiber_stretch(tip.get_dt());
 
       //Update the active stress value
       ephy.advance();
@@ -560,6 +608,57 @@ void CardiacElectromechanic::update_active_tension()
   ta = ta * ((ta_scale != 0.0) ? ta_scale : T_ref);
 }
 
+void CardiacElectromechanic::update_fiber_stretch(double dt_solver)
+{
+  if (!lambda_coupling) return;
+
+  // The Land equations expect d(lambda)/dt in the model's OWN time unit
+  // (1/ms for ToRORd), while dt_solver is in the EP solver's unit, which is
+  // seconds or milliseconds depending on -tunit. Cells knows the ratio, so
+  // ask it rather than reproducing the conversion here: getting this wrong
+  // is a silent factor of 1000 on ZETAS/ZETAW.
+  const double dt_cell = dt_solver * ephy.get_cells().time_factor();
+
+  // lambda_f = sqrt(I4f) per element, averaged onto the nodes, since the
+  // cell models are nodal.
+  elas.fiber_stretch_nodes(lambda_node);
+
+  // Guard rails. A diverging Newton or an inverted element can produce a
+  // lambda far outside the physiological range, and the Land submodel would
+  // then be evaluated where it was never fitted. Clipping keeps a bad
+  // mechanical step from destroying the cell state as well.
+  int n_clipped = 0;
+  for (arma::uword i = 0; i < lambda_node.n_elem; i++)
+  {
+    double & l = lambda_node(i);
+    if (!std::isfinite(l))            { l = 1.0; n_clipped++; }
+    else if (l < lambda_min_clip)     { l = lambda_min_clip; n_clipped++; }
+    else if (l > lambda_max_clip)     { l = lambda_max_clip; n_clipped++; }
+  }
+
+  if (n_clipped > 0 && !quiet_solve)
+    cout << "  [MEF  ] " << n_clipped << "/" << lambda_node.n_elem
+         << " node(s) had lambda clipped to ["
+         << lambda_min_clip << ", " << lambda_max_clip << "]" << endl;
+
+  // d(lambda)/dt by backward difference, in the cell model's time unit.
+  if (lambda_rate_on && dt_cell > 0.0 && lambda_prev_valid
+      && lambda_prev.n_elem == lambda_node.n_elem)
+    lambda_rate_node = (lambda_node - lambda_prev) / dt_cell;
+  else
+    lambda_rate_node.zeros(lambda_node.n_elem);
+
+  lambda_prev = lambda_node;
+  lambda_prev_valid = true;
+
+  ephy.set_fiber_stretch(lambda_node, lambda_rate_node);
+
+  if (!quiet_solve)
+    cout << "  [MEF  ] lambda_f: min = " << lambda_node.min()
+         << ", mean = " << arma::mean(lambda_node)
+         << ", max = " << lambda_node.max() << endl;
+}
+
 void CardiacElectromechanic::save_node_fields(int frame)
 {
   // Both quantities live on the nodes: Cells is built with one ODE system
@@ -580,6 +679,12 @@ void CardiacElectromechanic::save_node_fields(int frame)
   // ToRORdLand, T_ref for Kerckhoffs). Divide by kPa_to_p when
   // post-processing if you want kPa.
   elas.store_point_field(frame, ta, string("active_stress"));
+
+  // Fibre stretch, when the mechano-electric coupling is on. Saving it makes
+  // it possible to see whether lambda is doing anything sensible before
+  // trying to interpret its effect on Ta.
+  if (lambda_coupling && lambda_node.n_elem == ta.n_elem)
+    elas.store_point_field(frame, lambda_node, string("lambda_f"));
 }
 
 void CardiacElectromechanic::update_pv_jacobian(double t)
@@ -862,6 +967,14 @@ void CardiacElectromechanic::solve_circulation(int num_beats, double dt_circ)
            << " | beat " << beat + 1 << "/" << num_beats << "]"
            << std::defaultfloat << endl;
     }
+
+    // ---- 0. mechano-electric feedback -----------------------------
+    // lambda_f comes from the deformation gradient left by the LAST
+    // converged mechanical solve of the previous step, so it must be read
+    // before the cells advance. It is read once per circulation step, never
+    // inside pressures_for_volumes(): that routine runs several trial
+    // solves, and the stretch of a rejected trial pressure has no meaning.
+    update_fiber_stretch(dt_circ_ephy);
 
     // ---- 1. cell model -------------------------------------------
     // advance over one circulation step, then freeze: ta stays constant

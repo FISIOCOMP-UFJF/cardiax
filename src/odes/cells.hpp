@@ -107,6 +107,21 @@ class Cells
   //! Coordenada apicobasal de cada celula
   const arma::vec & get_apicobasal() const { return apicobasal; }
 
+  //! Estiramento de fibra lambda_f = sqrt(I4f) de cada celula, vindo da
+  //! mecanica. Vetor vazio (o default) desliga o acoplamento: o modelo
+  //! celular fica em lambda = 1 e o resultado e identico ao de antes.
+  void set_stretch(const arma::vec & v) { stretch = v; }
+
+  //! Estiramento de fibra de cada celula
+  const arma::vec & get_stretch() const { return stretch; }
+
+  //! Taxa d(lambda_f)/dt de cada celula, na unidade de tempo NATIVA do
+  //! modelo celular. Vetor vazio = 0 (contracao isometrica).
+  void set_stretch_rate(const arma::vec & v) { stretch_rate = v; }
+
+  //! Taxa de estiramento de cada celula
+  const arma::vec & get_stretch_rate() const { return stretch_rate; }
+
   //! Return the number of cells (systems of ODEs)
   int size() { return num_systems; }
 
@@ -129,6 +144,12 @@ class Cells
 
   //! Coordenada apicobasal de cada celula (vazio = gradiente desligado)
   arma::vec apicobasal;
+
+  //! Estiramento de fibra de cada celula (vazio = acoplamento desligado)
+  arma::vec stretch;
+
+  //! Taxa de estiramento de cada celula (vazio = 0)
+  arma::vec stretch_rate;
 
   //! Monitored values array
   arma::vec monitored_values;

@@ -221,6 +221,36 @@ void CardiacProblem::set_apicobasal_from_ab()
 }
 
 
+void CardiacProblem::set_fiber_stretch(const arma::vec & lam,
+                                       const arma::vec & lam_rate)
+{
+  if (cells == nullptr)
+  {
+    cout << " *** set_fiber_stretch() chamado antes de init();"
+         << " acoplamento mecano-eletrico desligado." << endl;
+    return;
+  }
+
+  // Uma celula por no da malha (ver init()). Um vetor de outro tamanho
+  // significa que a mecanica e a EP estao em malhas diferentes, e escrever
+  // assim mesmo daria estiramento no no errado, silenciosamente.
+  if (lam.n_elem != static_cast<arma::uword>(cells->size()))
+  {
+    cout << " *** set_fiber_stretch(): lambda tem " << lam.n_elem
+         << " valores mas ha " << cells->size() << " celulas; ignorado."
+         << endl;
+    return;
+  }
+
+  cells->set_stretch(lam);
+
+  if (lam_rate.n_elem == lam.n_elem)
+    cells->set_stretch_rate(lam_rate);
+  else
+    cells->set_stretch_rate(arma::vec());
+}
+
+
 void CardiacProblem::write_data(const arma::vec & u, const std::string & s, int * step)
 {
   if (tip.time2print())

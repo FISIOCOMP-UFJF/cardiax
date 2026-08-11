@@ -374,8 +374,12 @@ double trpnmax = 0.07;
 
 // INPUT CODE:
 int mode = 0;           // 0 = "intact", 1 = "skinned"
-double lambda = 1.0;
-double lambda_rate = 0.0;
+// Estiramento de fibra entregue pela mecanica (Cells::set_stretch). Sem
+// acoplamento os defaults de CellModel valem 1.0 e 0.0, que sao exatamente
+// os valores que estavam fixos aqui antes.
+// lambda_rate esta em 1/ms, a unidade de tempo nativa deste modelo.
+double lambda = get_stretch();
+double lambda_rate = get_stretch_rate();
 
 // EC parameters
 double perm50 = 0.35;

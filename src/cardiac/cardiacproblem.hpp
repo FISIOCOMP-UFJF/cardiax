@@ -78,6 +78,16 @@ public:
   //! nao faz nada e o resultado fica identico ao de antes.
   void set_apicobasal_from_ab();
 
+  //! Entrega as celulas o estiramento de fibra lambda_f = sqrt(I4f) por no,
+  //! calculado pela mecanica, e opcionalmente sua taxa. E o acoplamento
+  //! mecano-eletrico: no ToRORd-Land lambda entra em h(lambda) e em ca50
+  //! (ativacao dependente do comprimento) e lambda_rate no modelo de
+  //! distorcao (ZETAS/ZETAW). lam_rate deve estar na unidade de tempo NATIVA
+  //! do modelo celular (1/ms no ToRORd); passe um vetor vazio para deixar a
+  //! taxa em zero.
+  void set_fiber_stretch(const arma::vec & lam,
+                         const arma::vec & lam_rate = arma::vec());
+
   //! Return reference to the Cells object
   const Cells & get_cells() { return *cells; }
 

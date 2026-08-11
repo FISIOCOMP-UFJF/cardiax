@@ -167,6 +167,22 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     status = H5Dclose(dataset_id);
     status = H5Sclose(dataspace_id);
 
+    // FIBRE STRETCH array (nodal, same layout as vm and active_stress).
+    // lambda_f = sqrt(I4f) comes from the mechanics and is handed to the
+    // cell model; it is written as a nodal field so it can be inspected
+    // alongside the active tension it modulates. Created unconditionally:
+    // the dataset layout is fixed when the file is opened, long before the
+    // solver knows whether the mechano-electric coupling is on, and the
+    // fill value is zero, so an unused dataset is simply zeros.
+    dims[0] = nsteps;
+    dims[1] = np;
+    dataspace_id = H5Screate_simple(2, dims, NULL);
+    dataset_id = H5Dcreate(file_id, "/vertex_field/lambda_f",
+                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
+                           props, H5P_DEFAULT);
+    status = H5Dclose(dataset_id);
+    status = H5Sclose(dataspace_id);
+
     //teste cell field
     // cria o dataset coordinates0 (inicial)
     dims[0] = nsteps;
@@ -318,6 +334,21 @@ void WriterHDF5::write_point_field_step(int step, const double *data,
 
   file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
   string auxstr = string("/vertex_field/") + fieldname.c_str();
+
+  // A field that was never created in write_hdf5() cannot be written into.
+  // Without this check H5Dopen fails and every call afterwards (get_space,
+  // select_hyperslab, write) fails too, burying the real cause under a wall
+  // of HDF5-DIAG output once per output step.
+  if (H5Lexists(file_id, auxstr.c_str(), H5P_DEFAULT) <= 0)
+  {
+    cout << " Warning: nodal field '" << fieldname
+         << "' has no dataset in the HDF5 file; not written."
+         << " Add it to WriterHDF5::write_hdf5() and"
+         << " WriterHDF5::write_xdmf()." << endl;
+    H5Fclose(file_id);
+    return;
+  }
+
   dataset_id = H5Dopen(file_id, auxstr.c_str(), H5P_DEFAULT);
 
   hsize_t k = step;
@@ -708,6 +739,27 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "            </DataItem>\n"
             << "            </Attribute>\n";
 
+        //
+        // fibre stretch lambda_f (nodal)
+        //
+        xmf << "            <Attribute Name=\"lambda_f\" \n"
+            << "                AttributeType=\"Scalar\" \n"
+            << "                Center=\"Node\">\n"
+            << "            <DataItem ItemType=\"HyperSlab\" \n"
+            << "                Dimensions=\"1 " << np << "\" \n"
+            << "                Type=\"HyperSlab\">\n"
+            << "                <DataItem Dimensions=\"3 2\" Format=\"XML\">\n"
+            << "                    " << i << " 0 \n"
+            << "                    1 1 \n"
+            << "                    1 " << np <<"\n"
+            << "                </DataItem>\n"
+            << "                <DataItem Name=\"Points\" \n"
+            << "                    Dimensions=\"" << nsteps << " " << np << "\" \n"
+            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/lambda_f\n"
+            << "                </DataItem>\n"
+            << "            </DataItem>\n"
+            << "            </Attribute>\n";
+
         //teste cell field
         //stress
         xmf << "            <Attribute Name=\"stress\" \n"
@@ -899,4 +951,3 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
     
     xmf.close();
 }
- 

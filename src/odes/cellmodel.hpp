@@ -74,6 +74,22 @@ class CellModel
   //! Coordenada apicobasal da celula
   double get_apicobasal() const { return apicobasal; }
 
+  //! Estiramento na direcao da fibra, lambda_f = sqrt(I4f), vindo da
+  //! mecanica. O valor default 1.0 e NEUTRO: sem acoplamento mecanico o
+  //! modelo celular se comporta exatamente como antes.
+  void set_stretch(double l) { stretch = l; }
+
+  //! Estiramento na direcao da fibra
+  double get_stretch() const { return stretch; }
+
+  //! Taxa de estiramento d(lambda_f)/dt, na unidade de tempo NATIVA do
+  //! modelo. Default 0.0 = neutro (contracao isometrica do ponto de vista
+  //! do modelo celular).
+  void set_stretch_rate(double dl) { stretch_rate = dl; }
+
+  //! Taxa de estiramento na direcao da fibra
+  double get_stretch_rate() const { return stretch_rate; }
+
   inline double get_monitored_value(const int index) const { return *(monitored[index]); }
 
   //! Get number of state variables
@@ -137,6 +153,12 @@ class CellModel
 
   //! Coordenada apicobasal da celula (0 apice -> 1 base); 0.5 = neutro
   double apicobasal = 0.5;
+
+  //! Estiramento na direcao da fibra; 1.0 = neutro (sem deformacao)
+  double stretch = 1.0;
+
+  //! Taxa de estiramento na direcao da fibra; 0.0 = neutro
+  double stretch_rate = 0.0;
 
   //! Solver
   ODESolver * ode_solver;

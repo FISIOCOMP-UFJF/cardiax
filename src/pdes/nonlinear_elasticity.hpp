@@ -76,6 +76,18 @@ public:
   int get_num_integration_points();
   Mesh & get_mesh() { return msh; }
   const std::vector<arma::mat33*> & get_vec_F() { return vecF; };
+
+  //! Fibre stretch lambda_f = sqrt(I4f) = sqrt(f0.C.f0) = ||F f0||, one
+  //! value per ELEMENT (averaged over its integration points). Uses the
+  //! deformation gradient left in vecF by the last solve, so it is only
+  //! meaningful after solve() has run. Resizes lam_e to n_elements.
+  void fiber_stretch_elements(arma::vec & lam_e);
+
+  //! Same quantity projected onto the NODES by unweighted averaging over the
+  //! elements sharing each node. The cell models live on the nodes (one ODE
+  //! system per mesh point), so this is the form the electrophysiology needs.
+  //! Resizes lam_n to n_points.
+  void fiber_stretch_nodes(arma::vec & lam_n);
   petsc::Matrix & get_K() { return K; }
   void get_displacements(arma::mat & umat);
   void get_displacements(arma::vec & u);

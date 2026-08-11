@@ -128,6 +128,25 @@ private:
 
   //! Read the active tension from the cell model into `ta`
   void update_active_tension();
+
+  // ---- mechano-electric feedback: fibre stretch --------------------
+  // After each mechanical solve, lambda_f = sqrt(I4f) is evaluated per
+  // element, averaged onto the nodes, and handed to the cell model, where it
+  // drives h(lambda) and the length-dependent ca50 of the Land submodel.
+  bool   lambda_coupling = false;  //!< -lam 1 enables it
+  bool   lambda_rate_on  = false;  //!< -lamrate 1 also feeds d(lambda)/dt
+  double lambda_min_clip = 0.7;    //!< guard rails on the value handed over
+  double lambda_max_clip = 1.3;
+  arma::vec lambda_node;           //!< lambda_f per node
+  arma::vec lambda_prev;           //!< previous lambda_node, for the rate
+  arma::vec lambda_rate_node;      //!< d(lambda_f)/dt, cell-model time units
+  bool   lambda_prev_valid = false;
+
+  //! Evaluate lambda_f from the current mechanical state and push it into
+  //! the cell model. dt_solver is the interval since the previous call, in
+  //! the EP SOLVER's time unit (s or ms, per -tunit); it is converted to the
+  //! cell model's own unit internally and is only used for the rate.
+  void update_fiber_stretch(double dt_solver);
   double p_lv_cur = 0.0;           //!< current LV pressure [model units]
   double p_rv_cur = 0.0;           //!< current RV pressure [model units]
   arma::mat22 Jpv;                 //!< dV/dp Jacobian [mL / model pressure]

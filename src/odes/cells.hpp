@@ -96,6 +96,15 @@ class Cells
   //! Set state variable vindex with contents of v
   void set_var(int vindex, arma::vec & v) const;
 
+  //! Sobrescreve TODO o vetor de estado do sistema s. y precisa ter
+  //! get_ode_size() valores. Usado pelo pre-condicionamento (CellWarmup),
+  //! que substitui as condicoes iniciais publicadas do modelo pelo estado
+  //! do ciclo limite no BCL da simulacao.
+  void set_system_state(uint s, const double * y);
+
+  //! Copia o vetor de estado completo do sistema s para y.
+  void get_system_state(uint s, double * y) const;
+
   //! Config types
   void set_cell_types(int num, int * vtypes);
 

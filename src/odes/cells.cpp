@@ -199,6 +199,28 @@ void Cells::set_var(int vindex, arma::vec &v) const
     states[vindex+(i*odesize)] = v(i);
 }
 
+void Cells::set_system_state(uint s, const double * y)
+{
+  assert(ode);
+  assert(y);
+  assert(s < num_systems);
+
+  const uint n = ode->get_num_state_vars();
+  double * dst = states + s * n;
+  for (uint i = 0; i < n; i++) dst[i] = y[i];
+}
+
+void Cells::get_system_state(uint s, double * y) const
+{
+  assert(ode);
+  assert(y);
+  assert(s < num_systems);
+
+  const uint n = ode->get_num_state_vars();
+  const double * src = states + s * n;
+  for (uint i = 0; i < n; i++) y[i] = src[i];
+}
+
 void Cells::set_cell_types(int num, int * vec)
 {
   types.set_size(num);

@@ -88,6 +88,24 @@ public:
   void set_fiber_stretch(const arma::vec & lam,
                          const arma::vec & lam_rate = arma::vec());
 
+  //! Pre-condicionamento ("warm up") do modelo celular 0D.
+  //!
+  //! Resolve o modelo celular isolado por varios batimentos, ate o ciclo
+  //! limite, e usa esse estado como condicao inicial de cada no -- em vez
+  //! das condicoes iniciais publicadas do modelo, que sao um repouso
+  //! aproximado e ainda estao longe do regime periodico no BCL da
+  //! simulacao. Desligado por default; liga com -warmup 1.
+  //!
+  //! Deve ser chamado DEPOIS de cells->init() (senao as condicoes iniciais
+  //! sobrescreveriam o warm up) e depois de set_cell_types_from_tm() e
+  //! set_apicobasal_from_ab(), porque o agrupamento das celulas usa tipo e
+  //! coordenada apicobasal.
+  //!
+  //! lat sao os tempos de ativacao por no, na unidade de tempo do SOLVER.
+  //! So sao usados com -warmup_lat 1, que da a cada no uma fase propria do
+  //! ciclo limite em vez de deixar todos em repouso simultaneo.
+  void warmup_cells(const arma::vec & lat = arma::vec());
+
   //! Return reference to the Cells object
   const Cells & get_cells() { return *cells; }
 
@@ -163,6 +181,13 @@ protected:
   TimeParameters tip;
   Cells * cells;
   CellModel * cellmodel;
+
+  //! Pre-condicionamento do modelo celular (nullptr = desligado)
+  CellWarmup * warmup = nullptr;
+
+  //! O warm up ja foi tentado? Ele roda uma unica vez, mas o resultado e
+  //! reaplicado a cada chamada de initial_conditions().
+  bool warmup_tried = false;
 
   //! Coordenadas Cobiveco por no (ver getters acima)
   arma::vec  cbv_tm, cbv_rt, cbv_ab;

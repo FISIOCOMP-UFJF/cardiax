@@ -17,6 +17,7 @@ CardiacProblem::~CardiacProblem()
   writer->close();
   delete mesh;
   delete writer;
+  delete warmup;
 }
 
 void CardiacProblem::setup(std::string & b, std::string & c, std::string & m,
@@ -248,6 +249,86 @@ void CardiacProblem::set_fiber_stretch(const arma::vec & lam,
     cells->set_stretch_rate(lam_rate);
   else
     cells->set_stretch_rate(arma::vec());
+}
+
+
+// ===========================================================================
+//  Pre-condicionamento ("warm up") do modelo celular
+//
+//  As condicoes iniciais publicadas de um modelo ionico sao um repouso
+//  aproximado, nao o ciclo limite no BCL da simulacao. Comecar dali faz com
+//  que os primeiros batimentos do modelo acoplado estejam integrando o
+//  transitorio lento das concentracoes -- e portanto que a mecanica e a
+//  circulacao desses ciclos sejam transitorias tambem.
+//
+//  Aqui o modelo celular 0D e resolvido isoladamente por varios batimentos e
+//  o estado resultante substitui as condicoes iniciais de cada no. O custo e
+//  controlado agrupando as celulas por (tipo, faixa apicobasal): o ciclo
+//  limite depende dos parametros da celula, nao da sua posicao.
+// ===========================================================================
+
+void CardiacProblem::warmup_cells(const arma::vec & lat)
+{
+  if (cells == nullptr || cellmodel == nullptr) return;
+
+  // ---- primeira chamada: le as opcoes e roda o pre-condicionamento ----
+  if (!warmup_tried)
+  {
+    warmup_tried = true;
+
+    // Os defaults saem da configuracao corrente do problema, convertidos
+    // para milissegundos: o warm up usa, por default, o mesmo passo de tempo
+    // e o mesmo periodo da simulacao acoplada. -warmup_bcl e -warmup_dt
+    // sobrescrevem qualquer um dos dois.
+    const double ms_per_unit = cells->get_solver_time_unit_ms();
+
+    CellWarmup::Options opt =
+      CellWarmup::options_from_command_line(totaltime * ms_per_unit,
+                                            timestep  * ms_per_unit,
+                                            cell_name,
+                                            mesh_filename);
+
+    if (!opt.enabled) return;
+
+    warmup = new CellWarmup(cellmodel, opt);
+
+    if (!warmup->run(cells->get_cell_types(),
+                     cells->get_apicobasal(),
+                     cells->size()))
+    {
+      // O warm up falhou (divergiu, parametros invalidos). Mantem as
+      // condicoes iniciais originais em vez de aplicar um estado suspeito.
+      delete warmup;
+      warmup = nullptr;
+    }
+  }
+
+  if (warmup == nullptr || !warmup->ready()) return;
+
+  // ---- aplica o estado do ciclo limite em cada no --------------------
+  const int    n           = cells->size();
+  const double ms_per_unit = cells->get_solver_time_unit_ms();
+  const bool   have_lat    = (lat.n_elem == static_cast<arma::uword>(n));
+
+  if (warmup->uses_lat() && !have_lat)
+    cout << " *** warm up: -warmup_lat 1 pedido, mas nao ha LAT por no;"
+         << " todas as celulas comecam na mesma fase." << endl;
+
+  arma::vec y(cells->get_ode_size());
+
+  for (int i = 0; i < n; i++)
+  {
+    // lat vem na unidade de tempo do solver; CellWarmup trabalha em ms.
+    const double lat_ms = have_lat ? lat(i) * ms_per_unit : 0.0;
+    warmup->state_for_cell(i, lat_ms, y.memptr());
+    cells->set_system_state(i, y.memptr());
+  }
+
+  cout << " Condicoes iniciais de " << n << " celula(s) substituidas pelo"
+       << " estado do ciclo limite (fase " << warmup->get_phase_ms()
+       << " ms";
+  if (warmup->uses_lat() && have_lat) cout << ", deslocada pelo LAT de cada no";
+  cout << ")." << endl;
 }
 
 

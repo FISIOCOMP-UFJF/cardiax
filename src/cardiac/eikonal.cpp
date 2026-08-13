@@ -101,6 +101,16 @@ void Eikonal::initial_conditions()
   
   cells->init();
 
+  // Pre-condicionamento do modelo celular 0D: substitui as condicoes
+  // iniciais publicadas pelo estado do ciclo limite no BCL da simulacao.
+  // Desligado por default (-warmup 1 liga), e portanto sem efeito nenhum
+  // sobre as rodadas existentes.
+  //
+  // Tem de vir DEPOIS de cells->init() -- que reescreve todo o vetor de
+  // estado -- e ANTES da escrita do LAT abaixo, para nao apagar o tempo de
+  // ativacao dos modelos fenomenologicos.
+  warmup_cells(lat);
+
   // Only phenomenological models store the activation time as a state
   // variable. Writing the LAT into variable 1 unconditionally destroyed the
   // initial conditions of ionic models -- in ToRORd variable 1 is the

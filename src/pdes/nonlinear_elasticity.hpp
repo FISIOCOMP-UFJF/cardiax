@@ -158,6 +158,16 @@ public:
   //! and what each volume formula yields. Useful to validate cavity setup.
   void report_boundary_closure();
 
+  //! Print, per element region marker, how many elements it holds and which
+  //! active tension scale it receives. A region that silently gets zero
+  //! active tension is very hard to spot in the results, so the mapping is
+  //! reported once, from init_matvecs(), when the mesh is already loaded.
+  void report_active_regions();
+
+  //! Region marker -> material id, as declared in <regions>. Kept only to
+  //! validate the mesh markers once the mesh is available.
+  std::vector<int> region_material_map;
+
   //! Pressure prescribed for a given cavity.
   //! apply_load_factor=true scales by the current load factor (monotonic
   //! ramp, e.g. passive filling); false returns the prescribed target

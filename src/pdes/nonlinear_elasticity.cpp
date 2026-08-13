@@ -1,5 +1,8 @@
 #include "nonlinear_elasticity.hpp"
 #include "util/pugixml.hpp"
+#include <map>
+#include <algorithm>
+#include <cstddef>
 
 //#define DEBUG_PRESSURE
 #define INCs_TA 0
@@ -1065,6 +1068,66 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
   return endo_volume;
 }
 
+void NonlinearElasticity::report_active_regions()
+{
+  const int nelem = msh.get_n_elements();
+  if (material == NULL || nelem == 0)
+    return;
+
+  // Count elements per region marker.
+  std::map<int, int> count;
+  int max_mesh_marker = -1;
+  for (int i = 0; i < nelem; i++)
+  {
+    const int mk = msh.get_element_index(i);
+    count[mk]++;
+    max_mesh_marker = std::max(max_mesh_marker, mk);
+  }
+
+  // Every element marker must have an entry in the region map, otherwise the
+  // material classes read map_mat[marker] past the end of the vector.
+  if (!region_material_map.empty() &&
+      max_mesh_marker >= (int)region_material_map.size())
+  {
+    std::ostringstream oss;
+    oss << "Mesh has element region marker " << max_mesh_marker
+        << " but <regions> only declares markers up to "
+        << (int)region_material_map.size() - 1
+        << ". Add the missing <marker> entries.";
+    throw runtime_error(oss.str());
+  }
+
+  cout << "\n Active tension per element region:" << endl;
+  cout << "   source: "
+       << (material->has_active_scale()
+             ? "ta_scale declared per material"
+             : "legacy rule (only marker 0 contracts)")
+       << endl;
+
+  int n_active = 0;
+  for (std::map<int, int>::const_iterator it = count.begin();
+       it != count.end(); ++it)
+  {
+    const double s = material->active_scale(it->first);
+    cout << "   marker " << it->first << ": " << it->second
+         << " elements, Ta x " << s;
+    if (s == 0.0)
+      cout << "   (passive)";
+    cout << endl;
+    if (s != 0.0)
+      n_active += it->second;
+  }
+
+  if (n_active == 0)
+    cout << " *** WARNING: no element receives active tension. Check the "
+         << "region markers of the mesh against <regions>/<material>."
+         << endl;
+  else
+    cout << "   " << n_active << " of " << nelem
+         << " elements are contractile." << endl;
+  cout << endl;
+}
+
 void NonlinearElasticity::report_boundary_closure()
 {
   // For a CLOSED surface, the integral of the outward normal vanishes:
@@ -1338,50 +1401,138 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
 
     if (params.attribute("num_materials"))
     {
+      int num_materials = params.attribute("num_materials").as_int();
+      if (num_materials <= 0)
+        throw runtime_error("num_materials must be positive.");
+
+      // ---- regions: marker id -> material id ---------------------------
+      // The map is indexed by the marker id itself. The previous version
+      // pushed the material ids in document order and silently relied on the
+      // markers being listed as 0,1,2,...; a gap or a reordering shifted
+      // every region onto the wrong material without any warning.
+      int max_marker_id = -1;
+      for (pugi::xml_node m = reg.child("marker"); m;
+           m = m.next_sibling("marker"))
+      {
+        int id = m.attribute("id").as_int(-1);
+        if (id < 0)
+          throw runtime_error("<marker> without a valid non-negative id.");
+        max_marker_id = std::max(max_marker_id, id);
+      }
+
       std::vector<int> map_matAHA;
-      //std::cout << "Regions: " << std::endl;
+      std::vector<bool> marker_given;
+      if (max_marker_id >= 0)
+      {
+        map_matAHA.assign(max_marker_id + 1, 0);
+        marker_given.assign(max_marker_id + 1, false);
+      }
+
       for (pugi::xml_node m = reg.child("marker"); m;
            m = m.next_sibling("marker"))
       {
         int id = m.attribute("id").as_int();
         int mt = m.attribute("material").as_int();
-        map_matAHA.push_back(mt);
-        //std::cout << "reg: " << id << " mat: " << mt << std::endl;
+
+        if (mt < 0 || mt >= num_materials)
+          throw runtime_error("<marker> refers to a material id outside "
+                              "[0, num_materials).");
+
+        if (marker_given[id])
+          cout << " *** WARNING: marker id " << id << " listed more than "
+               << "once in <regions>; the last entry wins." << endl;
+
+        map_matAHA[id] = mt;
+        marker_given[id] = true;
       }
+
+      for (std::size_t i = 0; i < marker_given.size(); i++)
+        if (!marker_given[i])
+          cout << " *** WARNING: marker id " << i << " is not listed in "
+               << "<regions>; it falls back to material 0." << endl;
 
         // load control
         int num_increments = params.child("ninc").text().as_int();
         lc.set_nincs(num_increments);
 
-        int num_materials = params.attribute("num_materials").as_int();
-        std::vector<std::vector<double>> vec_matprop;
+        // ---- materials ------------------------------------------------
+        // Indexed by the material id, for the same reason as the markers
+        // above. ta_scale is the multiplier applied to the active tension of
+        // the regions made of this material: 1.0 fully contractile, 0.0
+        // purely passive (valve plugs, scar), anything in between for
+        // hypocontractile tissue. Absent means 1.0.
+        std::vector<std::vector<double>> vec_matprop(num_materials);
+        std::vector<double> mat_ta_scale(num_materials, 1.0);
+        std::vector<bool> material_given(num_materials, false);
+        bool any_ta_scale = false;
 
         for (pugi::xml_node m = params.child("material"); m;
              m = m.next_sibling("material"))
         {
-          int id = m.attribute("id").as_int();
+          int id = m.attribute("id").as_int(-1);
+          if (id < 0 || id >= num_materials)
+            throw runtime_error("<material> id outside [0, num_materials).");
+
+          if (material_given[id])
+            cout << " *** WARNING: material id " << id << " defined more "
+                 << "than once; the last definition wins." << endl;
+
           mtype = m.attribute("type").as_string();
-          
+
           std::string strprop = m.child("coefficients").text().as_string();
           matprop.clear();
           parse_to_vector(strprop, matprop);
-          std::cout << "Material " << id << std::endl;
+
+          double ta_scale = 1.0;
+          if (m.attribute("ta_scale"))
+          {
+            ta_scale = m.attribute("ta_scale").as_double();
+            any_ta_scale = true;
+          }
+
+          std::cout << "Material " << id;
+          if (m.attribute("ta_scale"))
+            std::cout << " (ta_scale = " << ta_scale << ")";
+          std::cout << std::endl;
 
           std::vector<double>::iterator it;
           for (it = matprop.begin(); it != matprop.end(); ++it)
             cout << *it << " ";
           cout << endl;
 
-          vec_matprop.push_back(matprop);
+          vec_matprop[id] = matprop;
+          mat_ta_scale[id] = ta_scale;
+          material_given[id] = true;
         }
+
+        for (int i = 0; i < num_materials; i++)
+          if (!material_given[i])
+            throw runtime_error("num_materials declares a material that has "
+                                "no <material> block.");
 
       // setup material
       std::cout << mtype << std::endl;
+
+      // Kept for the bounds check in report_active_regions(): the material
+      // classes index map_mat[md->get_marker()] with no bounds check, so a
+      // marker beyond the last <marker> id would read past the end of the
+      // vector and silently pick up garbage material parameters. The mesh is
+      // not loaded yet at this point, so the check cannot happen here.
+      region_material_map = map_matAHA;
+
       material = HyperelasticMaterial::create(mtype, elastype,  vec_matprop, num_materials, map_matAHA);
       cout << " Hyperelastic material: " << mtype << endl;
       cout << " Material properties: ";
       cout << " Multiple materials were defined. ";
+      cout << endl;
 
+      // ---- active tension per region ----------------------------------
+      // Only take over the active tension when the input actually asked for
+      // it. Without any ta_scale attribute the material keeps the legacy
+      // rule (region 0 contracts, everything else is passive), so existing
+      // input files reproduce exactly.
+      if (any_ta_scale)
+        material->set_active_scale(map_matAHA, mat_ta_scale);
     }
     else
     {
@@ -1791,6 +1942,11 @@ void NonlinearElasticity::init_matvecs()
     eps.fill(penalt);
     eps0.fill(penalt);
   }
+
+  // Reported here and not in config(): the electromechanics path calls
+  // config() before init(), so the mesh is still empty at parsing time.
+  // init_matvecs() runs after the mesh is loaded in both entry points.
+  report_active_regions();
 }
 
 void NonlinearElasticity::init_resid_stiff()

@@ -13,10 +13,10 @@
                 <coefficients>2000, 8, 2, 4, 0, 200000.0</coefficients>
           </material>
 -->             
-          <material id="0" type="HolzapfelOgden">
+          <material id="0" type="HolzapfelOgden" ta_scale="1.0">
             <coefficients>2280, 1685, 0.0, 0.0, 9.726, 15.779, 0.0, 0.0, 0, 100000.0</coefficients>
           </material>
-          <material id="1" type="HolzapfelOgden">
+          <material id="1" type="HolzapfelOgden" ta_scale="0.0">
             <coefficients>6840, 5055, 0.0, 0.0, 9.726, 15.779, 0.0, 0.0, 0, 100000.0</coefficients>
           </material>          
       <ninc>1</ninc>

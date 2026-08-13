@@ -239,6 +239,11 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
   arma::vec Ta_e(nubf);
   msh.get_element_pt_nums(iel, pnums);
   const arma::vec &Ta = material->get_Ta(); 
+
+  // Active tension multiplier of this element's region: 1.0 for contractile
+  // myocardium, 0.0 for purely passive regions (valve plugs, scar). Constant
+  // over the element, so it is looked up once instead of per quadrature point.
+  const double ta_scale_el = material->active_scale(msh.get_element_index(iel));
   for(int i=0;i<nubf;i++)
     Ta_e(i) = Ta(pnums[i]);
 
@@ -272,10 +277,7 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
 
     // compute stress and elasticity tensor
     MaterialData *md = new MaterialData(msh.get_element(iel), *F);
-    if(md->get_marker() == 0)
-      md->set_active_stress(Ta_ip*lc.load());
-    else
-      md->set_active_stress(0.0);
+    md->set_active_stress(Ta_ip * lc.load() * ta_scale_el);
 
     if (material->is_incompressible())
     {
@@ -460,6 +462,11 @@ void UpdatedLagrangian::elem_resid(const int iel, const MxFE *fe,
   arma::vec Ta_e(nubf);
   msh.get_element_pt_nums(iel, pnums);
   const arma::vec &Ta = material->get_Ta(); 
+
+  // Active tension multiplier of this element's region: 1.0 for contractile
+  // myocardium, 0.0 for purely passive regions (valve plugs, scar). Constant
+  // over the element, so it is looked up once instead of per quadrature point.
+  const double ta_scale_el = material->active_scale(msh.get_element_index(iel));
   for(int i=0;i<nubf;i++)
     Ta_e(i) = Ta(pnums[i]);
 
@@ -494,10 +501,7 @@ void UpdatedLagrangian::elem_resid(const int iel, const MxFE *fe,
 
     // Compute stress and elasticity tensor
     MaterialData *md = new MaterialData(msh.get_element(iel), *F);
-    if(md->get_marker() == 0)
-      md->set_active_stress(Ta_ip*lc.load());
-    else
-      md->set_active_stress(0.0);
+    md->set_active_stress(Ta_ip * lc.load() * ta_scale_el);
 
     if (material->is_incompressible())
     {
@@ -567,6 +571,11 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
   arma::vec Ta_e(nubf);
   msh.get_element_pt_nums(iel, pnums);
   const arma::vec &Ta = material->get_Ta(); 
+
+  // Active tension multiplier of this element's region: 1.0 for contractile
+  // myocardium, 0.0 for purely passive regions (valve plugs, scar). Constant
+  // over the element, so it is looked up once instead of per quadrature point.
+  const double ta_scale_el = material->active_scale(msh.get_element_index(iel));
   for(int i=0;i<nubf;i++){
     Ta_e(i) = Ta(pnums[i]);
   }
@@ -609,10 +618,7 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
 
     // Compute stress and elasticity tensor
     MaterialData *md = new MaterialData(msh.get_element(iel), *F);
-    if(md->get_marker() == 0)
-      md->set_active_stress(Ta_ip*lc.load());
-    else
-      md->set_active_stress(0.0);
+    md->set_active_stress(Ta_ip * lc.load() * ta_scale_el);
     
     if (material->is_incompressible())
     {

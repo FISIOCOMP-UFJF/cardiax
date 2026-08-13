@@ -655,7 +655,7 @@
     
     <node id="134" direction="2" value="0.000000" />
 </prescribed_displacement>
--->
+
 
 <prescribed_displacement>
     
@@ -1285,7 +1285,8 @@
 
 </prescribed_displacement>
 
-<!--
+-->
+
   <prescribed_displacement>
     <node id="6" direction="0" value="0.000000" />
     <node id="6" direction="1" value="0.000000" />
@@ -1912,7 +1913,7 @@
     <node id="134" direction="1" value="0.000000" />
     <node id="134" direction="2" value="0.000000" />
   </prescribed_displacement>
--->
+
 </elasticity>
 
 <mesh celltype="tetrahedron" dim="3">
@@ -68720,7 +68721,7 @@
     <node id="2838" value="0.822106" />
     <node id="2839" value="0.419139" />
 </ab>
-<!--
+
   <eikonal size="2840">
     <node id="0" lat="9.139870" />
     <node id="1" lat="81.495593" />
@@ -71563,7 +71564,8 @@
     <node id="2838" lat="75.441646" />
     <node id="2839" lat="51.052760" />
 </eikonal>
--->
+
+<!--
   <eikonal>
   <node id="0" lat="39.9385" />
 <node id="1" lat="107.695" />
@@ -74407,6 +74409,7 @@
 <node id="2839" lat="67.9079" />
 
   </eikonal>
+  -->
 <!--
   <eikonal>
     <node id="0" lat="148.796" />

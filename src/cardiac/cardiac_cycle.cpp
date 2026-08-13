@@ -230,10 +230,13 @@ void CardiacElectromechanic::config(const string &basename)
   //   -lam 1      feeds lambda_f = sqrt(I4f) to the cell model
   //   -lamrate 1  additionally feeds d(lambda_f)/dt
   //   -lamclip a b  overrides the guard rails on the value handed over
+  //   -lamratemax r caps |d(lambda)/dt| at r, in the CELL MODEL's time unit
+  //                 (1/ms for ToRORd). 0 disables the cap.
   lambda_coupling = (CommandLineArgs::read("-lam", 0) != 0);
   lambda_rate_on  = (CommandLineArgs::read("-lamrate", 0) != 0);
   lambda_min_clip = CommandLineArgs::read("-lammin", 0.7);
   lambda_max_clip = CommandLineArgs::read("-lammax", 1.3);
+  lambda_rate_max_clip = CommandLineArgs::read("-lamratemax", 0.003);
 
   if (lambda_coupling)
   {
@@ -255,6 +258,16 @@ void CardiacElectromechanic::config(const string &basename)
            << (lambda_rate_on ? "ligado" : "desligado (contracao isometrica"
                                            " do ponto de vista da celula)")
            << endl;
+      if (lambda_rate_on)
+      {
+        if (lambda_rate_max_clip > 0.0)
+          cout << "   |d(lambda)/dt| limitado a " << lambda_rate_max_clip
+               << " (unidade de tempo do modelo celular); ZETAS fica acima de "
+               << -249.128 * lambda_rate_max_clip << endl;
+        else
+          cout << "   *** |d(lambda)/dt| SEM limite (-lamratemax 0): ZETAS"
+               << " pode passar de -1 e gerar tensao ativa negativa" << endl;
+      }
     }
   }
   else
@@ -606,6 +619,17 @@ void CardiacElectromechanic::update_active_tension()
     ephy.get_cells().get_var(ta_var_index, ta);
 
   ta = ta * ((ta_scale != 0.0) ? ta_scale : T_ref);
+
+  // Diagnostic only -- the values are NOT modified here. A negative active
+  // tension means ZETAS dropped below -1 in the Land submodel; the mechanics
+  // then sees a compressive fibre stress, which is what inverts elements a
+  // few steps later. Seeing this line before the negative Jacobian confirms
+  // the chain lambda_rate -> ZETAS -> Ta < 0 -> det(F) < 0.
+  if (lambda_rate_on && ta.n_elem > 0 && ta.min() < 0.0)
+    cout << "  [MEF  ] *** ATENCAO: tensao ativa negativa em "
+         << arma::accu(ta < 0.0) << " no(s), min = " << ta.min()
+         << ". ZETAS passou de -1; REDUZA -lamratemax (limite mais"
+         << " apertado)." << endl;
 }
 
 void CardiacElectromechanic::update_fiber_stretch(double dt_solver)
@@ -623,17 +647,30 @@ void CardiacElectromechanic::update_fiber_stretch(double dt_solver)
   // cell models are nodal.
   elas.fiber_stretch_nodes(lambda_node);
 
+  // NaN/Inf are not a matter of taste: they would poison both the value fed
+  // to the cell model and the backward difference below. Replace them by the
+  // undeformed state first, so that everything downstream sees finite data.
+  int n_nonfinite = 0;
+  for (arma::uword i = 0; i < lambda_node.n_elem; i++)
+    if (!std::isfinite(lambda_node(i))) { lambda_node(i) = 1.0; n_nonfinite++; }
+
+  // Keep the UNCLIPPED field: the rate must be a difference of two values
+  // produced by the same rule. Differencing a clipped field manufactures a
+  // step whenever a node enters or leaves the clip, and that step is then
+  // divided by dt -- a large spurious lambda_rate for purely bookkeeping
+  // reasons.
+  lambda_raw = lambda_node;
+
   // Guard rails. A diverging Newton or an inverted element can produce a
   // lambda far outside the physiological range, and the Land submodel would
   // then be evaluated where it was never fitted. Clipping keeps a bad
   // mechanical step from destroying the cell state as well.
-  int n_clipped = 0;
+  int n_clipped = n_nonfinite;
   for (arma::uword i = 0; i < lambda_node.n_elem; i++)
   {
     double & l = lambda_node(i);
-    if (!std::isfinite(l))            { l = 1.0; n_clipped++; }
-    else if (l < lambda_min_clip)     { l = lambda_min_clip; n_clipped++; }
-    else if (l > lambda_max_clip)     { l = lambda_max_clip; n_clipped++; }
+    if (l < lambda_min_clip)      { l = lambda_min_clip; n_clipped++; }
+    else if (l > lambda_max_clip) { l = lambda_max_clip; n_clipped++; }
   }
 
   if (n_clipped > 0 && !quiet_solve)
@@ -642,21 +679,69 @@ void CardiacElectromechanic::update_fiber_stretch(double dt_solver)
          << lambda_min_clip << ", " << lambda_max_clip << "]" << endl;
 
   // d(lambda)/dt by backward difference, in the cell model's time unit.
+  int n_rate_clipped = 0;
   if (lambda_rate_on && dt_cell > 0.0 && lambda_prev_valid
-      && lambda_prev.n_elem == lambda_node.n_elem)
-    lambda_rate_node = (lambda_node - lambda_prev) / dt_cell;
-  else
-    lambda_rate_node.zeros(lambda_node.n_elem);
+      && lambda_prev.n_elem == lambda_raw.n_elem)
+  {
+    lambda_rate_node = (lambda_raw - lambda_prev) / dt_cell;
 
-  lambda_prev = lambda_node;
+    // Cap on |d(lambda)/dt|. Two reasons, one physical and one numerical.
+    //
+    // Physical: the Land distortion equation gives ZETAS_ss = (A/cds)*rate
+    // = 249*rate with the stock parameters, so rate = -0.004 (1/ms) puts
+    // ZETAS at -1, where Ta = Lfac*(Tref/dr)*((ZETAS+1)*XS + ZETAW*XW)
+    // changes sign. A negative Ta is a compressive fibre stress and inverts
+    // elements. That rate corresponds to 4 lengths/s, i.e. the model's own
+    // Vmax -- so the cap enforces a bound the model already implies rather
+    // than introducing a new calibrated constant.
+    //
+    // Numerical: a backward difference amplifies noise as 1/dt. Solver
+    // tolerances, the element->node averaging and a stiff pressure inversion
+    // all leave O(1e-3) jitter in lambda, which at dt = 0.1 ms is already a
+    // rate of 1e-2 -- 2.5x past the sign change. This is why refining the
+    // time step does not help: it makes the difference quotient worse, not
+    // better.
+    if (lambda_rate_max_clip > 0.0)
+    {
+      const double r_max = lambda_rate_max_clip;
+      for (arma::uword i = 0; i < lambda_rate_node.n_elem; i++)
+      {
+        double & r = lambda_rate_node(i);
+        if (r > r_max)       { r =  r_max; n_rate_clipped++; }
+        else if (r < -r_max) { r = -r_max; n_rate_clipped++; }
+      }
+    }
+  }
+  else
+    lambda_rate_node.zeros(lambda_raw.n_elem);
+
+  // The history is the unclipped field, for the reason given above.
+  lambda_prev = lambda_raw;
   lambda_prev_valid = true;
 
   ephy.set_fiber_stretch(lambda_node, lambda_rate_node);
 
   if (!quiet_solve)
+  {
     cout << "  [MEF  ] lambda_f: min = " << lambda_node.min()
          << ", mean = " << arma::mean(lambda_node)
          << ", max = " << lambda_node.max() << endl;
+
+    if (lambda_rate_on)
+    {
+      // ZETAS_ss = -(A/cds)*|rate| is the worst case the Land submodel will
+      // relax towards if this rate persists. Printing it makes the margin to
+      // the sign change at -1 visible without post-processing.
+      const double r_abs = arma::max(arma::abs(lambda_rate_node));
+      cout << "  [MEF  ] d(lambda)/dt: min = " << lambda_rate_node.min()
+           << ", max = " << lambda_rate_node.max()
+           << "  -> ZETAS_ss no pior caso = " << -249.128 * r_abs << endl;
+      if (n_rate_clipped > 0)
+        cout << "  [MEF  ] " << n_rate_clipped << "/"
+             << lambda_rate_node.n_elem << " node(s) com |d(lambda)/dt|"
+             << " limitado a " << lambda_rate_max_clip << endl;
+    }
+  }
 }
 
 void CardiacElectromechanic::save_node_fields(int frame)
@@ -685,6 +770,13 @@ void CardiacElectromechanic::save_node_fields(int frame)
   // trying to interpret its effect on Ta.
   if (lambda_coupling && lambda_node.n_elem == ta.n_elem)
     elas.store_point_field(frame, lambda_node, string("lambda_f"));
+
+  // The rate is the field that actually decides whether Ta can go negative,
+  // so it is worth having offline. Only written when the rate coupling is
+  // on, which keeps the output identical for every existing run.
+  if (lambda_coupling && lambda_rate_on
+      && lambda_rate_node.n_elem == ta.n_elem)
+    elas.store_point_field(frame, lambda_rate_node, string("lambda_rate"));
 }
 
 void CardiacElectromechanic::update_pv_jacobian(double t)

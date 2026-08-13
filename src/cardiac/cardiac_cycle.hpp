@@ -137,8 +137,21 @@ private:
   bool   lambda_rate_on  = false;  //!< -lamrate 1 also feeds d(lambda)/dt
   double lambda_min_clip = 0.7;    //!< guard rails on the value handed over
   double lambda_max_clip = 1.3;
-  arma::vec lambda_node;           //!< lambda_f per node
-  arma::vec lambda_prev;           //!< previous lambda_node, for the rate
+
+  //! Guard rail on d(lambda)/dt, in the CELL MODEL's own time unit (1/ms for
+  //! ToRORd). The Land distortion equation has
+  //!     ZETAS_ss = (A/cds) * lambda_rate = 249 * lambda_rate,
+  //! so lambda_rate = -0.004 /ms (4 lengths/s, the model's Vmax) already
+  //! drives ZETAS to -1, where (ZETAS+1) changes sign and the active tension
+  //! goes NEGATIVE. A negative Ta is a compressive fibre stress and inverts
+  //! elements. The default 0.003 keeps ZETAS above -0.75 with the stock
+  //! parameters. Set to 0 (-lamratemax 0) to disable the clamp entirely and
+  //! recover the previous, unguarded behaviour.
+  double lambda_rate_max_clip = 0.003;
+
+  arma::vec lambda_node;           //!< lambda_f per node, after clipping
+  arma::vec lambda_raw;            //!< lambda_f per node, BEFORE clipping
+  arma::vec lambda_prev;           //!< previous lambda_raw, for the rate
   arma::vec lambda_rate_node;      //!< d(lambda_f)/dt, cell-model time units
   bool   lambda_prev_valid = false;
 

@@ -1038,7 +1038,7 @@ double jsrMidpoint = 1.7;
 
 double bt=4.75;
 double a_rel=0.5*bt;
-double Jrel_inf=a_rel*(-ICaL)/(1.0+pow((jsrMidpoint/cajsr),8.0));
+double Jrel_inf  = a_rel *(-ICaL_ss)/(1.0+pow((jsrMidpoint/cajsr),8.0));   // era -ICaL
 if (celltype==MCELL)
     Jrel_inf=Jrel_inf*1.7;
 double tau_rel=bt/(1.0+0.0123/cajsr);
@@ -1050,7 +1050,7 @@ double dJrelnp=(Jrel_inf-Jrel_np)/tau_rel;                     // Rush-Larsen
 
 double btp=1.25*bt;
 double a_relp=0.5*btp;
-double Jrel_infp=a_relp*(-ICaL)/(1.0+pow((jsrMidpoint/cajsr),8.0));
+double Jrel_infp = a_relp*(-ICaL_ss)/(1.0+pow((jsrMidpoint/cajsr),8.0));   // era -ICaL
 if (celltype==MCELL)
     Jrel_infp=Jrel_infp*1.7;
 double tau_relp=btp/(1.0+0.0123/cajsr);

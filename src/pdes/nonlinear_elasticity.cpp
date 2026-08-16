@@ -1669,7 +1669,7 @@ void NonlinearElasticity::set_active_stress(arma::vec ta)
   material->set_Ta(ta); 
 }
 
-void NonlinearElasticity::run(const string & mshfile, const string & parfile)
+void NonlinearElasticity::run(const string & mshfile, const string & parfile, const string & restorefile)
 {
   // TODO: esta fixo para formato XML, mas pensando em remover codigo do .par
 
@@ -1700,6 +1700,13 @@ void NonlinearElasticity::run(const string & mshfile, const string & parfile)
 
   pre_solve();
   cout << "Initial cavity volume: " << total_volume_cavity() << "\n";
+
+
+  if(restorefile != "")
+  {
+    restore_checkpoint(restorefile);
+  }
+
 
   solve();
   
@@ -2045,4 +2052,40 @@ void NonlinearElasticity::update(petsc::Vector & uu, double s)
       if( ldgof[idx] )
         x[i][d] = x[i][d] + s * umat(i,d);
     }
+}
+
+void NonlinearElasticity::restore_checkpoint(std::string restfilename)
+{
+    cout << "Evaluating mechanical checkpoint file: " << restfilename << "..." << endl;
+
+    int chk_step, chk_load, chk_dofs;
+    double chk_time;
+
+    writer.read_mech_checkpoint_metadata(restfilename, chk_step, chk_time, chk_load, chk_dofs);
+
+    if (chk_dofs != num_dofs) {
+        throw std::runtime_error("Mismatch Error: Checkpoint DOFs differ from loaded mesh.");
+    }
+
+    // Aloca vetor plano para receber as coordenadas HDF5
+    std::vector<double> flat_x(num_dofs, 0.0);
+    writer.read_mech_checkpoint_data(restfilename, flat_x.data(), fext0.memptr());
+
+    int n_dim = msh.get_n_dim();
+    int n_nodes = msh.get_n_points();
+    
+    for(int i = 0; i < n_nodes; i++) {
+        for(int d = 0; d < n_dim; d++) {
+            int idx = (i * n_dim) + d;
+            x[i][d] = flat_x[idx]; 
+            U(idx) = x[i][d] - x0[i][d]; 
+        }
+    }
+
+  
+    for (int i = 0; i < chk_load; i++) {
+        lc.update();
+    }
+
+    cout << "  -> Restart configured starting from load increment " << chk_load << "." << endl;
 }

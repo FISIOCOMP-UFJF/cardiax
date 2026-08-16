@@ -931,3 +931,116 @@ void WriterHDF5::read_checkpoint_data(const std::string &filename, double *vm, d
 
     H5Fclose(file_id);
 }
+
+void WriterHDF5::write_mech_checkpoint(int step, double current_time, int load_increment,
+                                       const double *x_current, const double *fext0, int num_dofs)
+{
+    std::string chk_filename = "checkpoint_step_" + std::to_string(step) + ".h5";
+    hid_t file_id;
+    bool is_new_file = false;
+
+    std::ifstream f(chk_filename.c_str());
+    if (f.good()) {
+        f.close();
+        file_id = H5Fopen(chk_filename.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
+    } else {
+        f.close();
+        file_id = H5Fcreate(chk_filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+        is_new_file = true;
+    }
+
+    if (is_new_file) {
+        hid_t space_scalar = H5Screate(H5S_SCALAR);
+        hid_t attr_step = H5Acreate(file_id, "step", H5T_NATIVE_INT, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
+        H5Awrite(attr_step, H5T_NATIVE_INT, &step);
+        H5Aclose(attr_step);
+
+        hid_t attr_time = H5Acreate(file_id, "time", H5T_NATIVE_DOUBLE, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
+        H5Awrite(attr_time, H5T_NATIVE_DOUBLE, &current_time);
+        H5Aclose(attr_time);
+        H5Sclose(space_scalar);
+    }
+
+    hid_t group_mech;
+    if (H5Lexists(file_id, "/mechanics", H5P_DEFAULT) > 0) {
+        group_mech = H5Gopen2(file_id, "/mechanics", H5P_DEFAULT);
+    } else {
+        group_mech = H5Gcreate2(file_id, "/mechanics", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    }
+
+    if (H5Aexists(group_mech, "load_increment")) H5Adelete(group_mech, "load_increment");
+    hid_t space_scalar = H5Screate(H5S_SCALAR);
+    hid_t attr_load = H5Acreate(group_mech, "load_increment", H5T_NATIVE_INT, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
+    H5Awrite(attr_load, H5T_NATIVE_INT, &load_increment);
+    H5Aclose(attr_load);
+    H5Sclose(space_scalar);
+
+    auto save_array = [&](const char* name, hid_t space, const double* data) {
+        hid_t dset;
+        if (H5Lexists(group_mech, name, H5P_DEFAULT) > 0) {
+            dset = H5Dopen2(group_mech, name, H5P_DEFAULT);
+        } else {
+            dset = H5Dcreate(group_mech, name, H5T_NATIVE_DOUBLE, space, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        }
+        H5Dwrite(dset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
+        H5Dclose(dset);
+    };
+
+    hsize_t dims[1] = { (hsize_t)num_dofs };
+    hid_t space_nodal = H5Screate_simple(1, dims, NULL);
+    save_array("x_current", space_nodal, x_current);
+    save_array("fext0", space_nodal, fext0);
+    H5Sclose(space_nodal);
+
+    H5Gclose(group_mech);
+    H5Fclose(file_id);
+}
+
+void WriterHDF5::read_mech_checkpoint_metadata(const std::string &filename, 
+                                               int &step, double &time, int &load_increment, int &num_dofs)
+{
+    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    
+    hid_t attr_step = H5Aopen(file_id, "step", H5P_DEFAULT);
+    H5Aread(attr_step, H5T_NATIVE_INT, &step);
+    H5Aclose(attr_step);
+
+    hid_t attr_time = H5Aopen(file_id, "time", H5P_DEFAULT);
+    H5Aread(attr_time, H5T_NATIVE_DOUBLE, &time);
+    H5Aclose(attr_time);
+
+    hid_t group_mech = H5Gopen2(file_id, "/mechanics", H5P_DEFAULT);
+    hid_t attr_load = H5Aopen(group_mech, "load_increment", H5P_DEFAULT);
+    H5Aread(attr_load, H5T_NATIVE_INT, &load_increment);
+    H5Aclose(attr_load);
+
+    hid_t dset_x = H5Dopen2(group_mech, "x_current", H5P_DEFAULT);
+    hid_t space_x = H5Dget_space(dset_x);
+    hsize_t dims[1];
+    H5Sget_simple_extent_dims(space_x, dims, NULL);
+    num_dofs = (int)dims[0];
+    
+    H5Sclose(space_x);
+    H5Dclose(dset_x);
+    H5Gclose(group_mech);
+    H5Fclose(file_id);
+}
+
+void WriterHDF5::read_mech_checkpoint_data(const std::string &filename, 
+                                           double *x_current, double *fext0)
+{
+    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    hid_t group_mech = H5Gopen2(file_id, "/mechanics", H5P_DEFAULT);
+
+    auto read_dataset = [&](const char* name, double* data) {
+        hid_t dset = H5Dopen2(group_mech, name, H5P_DEFAULT);
+        H5Dread(dset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
+        H5Dclose(dset);
+    };
+
+    read_dataset("x_current", x_current);
+    read_dataset("fext0", fext0);
+
+    H5Gclose(group_mech);
+    H5Fclose(file_id);
+}

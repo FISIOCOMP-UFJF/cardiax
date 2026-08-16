@@ -90,7 +90,7 @@ public:
   void reset();
 
   //! Run simulation
-  void run(const string & mshfile, const string & parfile);
+  void run(const string & mshfile, const string & parfile, const string & restorefile = "");
 
   void set_pressure_Ta(int mlv, double plv, int mrv, double prv, arma::vec ta);
 
@@ -136,12 +136,9 @@ public:
   //! Controls loading (incremental Newton)
   LoadControl lc;
 
-  void gambiarra(bool b) {
-    cout << "PRESS MAP " << pressure_map.size() << endl;
-    pressure_map.clear();
-    cout << "PRESS MAP " << pressure_map.size() << endl;
-  }
-
+  //! Restore mechanical state from a checkpoint HDF5 file
+  void restore_checkpoint(std::string restfilename);
+  
 protected:
   
   int num_dofs;                   //!< Number of dofs (per node?)

@@ -25,7 +25,7 @@ void usage()
 
 int main(int argc, const char* argv[])
 {
-  std::string smethod, mshfile, parfile, outdir, extension;
+  std::string smethod, mshfile, parfile, outdir, extension, restorefile;
 
   // Parse command line options
   if (argc <= 1) usage();
@@ -34,7 +34,8 @@ int main(int argc, const char* argv[])
   outdir  = CommandLineArgs::read("-o","output/");
   mshfile = CommandLineArgs::read("-f","null");
   parfile = CommandLineArgs::read("-p","null");
-  smethod = CommandLineArgs::read("-s","tl");
+  smethod = CommandLineArgs::read("-s","ul");
+  restorefile = CommandLineArgs::read("-restore", "");
 
   extension = file_extension(mshfile);
   if(extension == "xml")
@@ -65,31 +66,20 @@ int main(int argc, const char* argv[])
     {
       msg("Updated Lagrangian Formulation");
       esolver = new UpdatedLagrangian();
+      msg("Solving problem");
+      esolver->run(mshfile, parfile, restorefile);
     }
     else if(smethod=="tl")
     {
       msg("Total Lagrangian Formulation");
       esolver = new TotalLagrangian();
+      msg("Solving problem");
+      esolver->run(mshfile, parfile);
     }
-      /*
-      else if(smethod=="tlsnes")
-      {
-        msg("Total Lagrangian Formulation SNES");
-        esolver = new TotalLagrangianSNES();
-      }
-      */
     else
     {
       throw std::runtime_error("Unknown formulation. Please use TL or UL.");
     }
-
-    // msg("Setting material and elasticity type");
-    // msg("Setting boundary conditions");
-    // esolver->config(mshfile, parfile);
-    // esolver->set_output_step(true);
-
-    msg("Solving problem");
-    esolver->run(mshfile, parfile);
 
     delete esolver;
   }

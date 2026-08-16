@@ -868,6 +868,34 @@ void UpdatedLagrangian::solve()
 
     // update penalty parameter
     al_update(lc.increment());
+
+    // LUCAS: PLACEHOLDER
+    int checkpoint_rate = 5;
+    
+    if (lc.increment() % checkpoint_rate == 0)
+    {
+        cout << "  -> Saving Mechanical Checkpoint at increment: " << lc.increment() << endl;
+        
+        int n_nodes = msh.get_n_points();
+        int n_dim = msh.get_n_dim();
+        std::vector<double> flat_x(num_dofs, 0.0);
+        
+        for(int i = 0; i < n_nodes; i++) {
+            for(int d = 0; d < n_dim; d++) {
+                flat_x[(i * n_dim) + d] = x[i][d];
+            }
+        }
+
+        writer.write_mech_checkpoint(
+            lc.increment(),      // step geral (usamos o próprio incremento)
+            0.0,                 // tempo (dummy 0.0 para mecânica quase-estática isolada)
+            lc.increment(),      // load_increment para o LoadControl
+            flat_x.data(),       // coordenadas absolutas deformadas
+            fext0.memptr(),      // forças externas nodais antigas
+            num_dofs             // tamanho dos arrays nodais
+        );
+    }
+
   }
 
   // prepare to leave

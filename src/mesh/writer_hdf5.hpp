@@ -52,6 +52,15 @@ public:
   void read_checkpoint_metadata(const std::string &filename, int &step, double &time, int &num_nodes, int &num_vars);
 
   void read_checkpoint_data(const std::string &filename, double *vm, double *state_vars);
+
+  void write_mech_checkpoint(int step, double current_time, int load_increment,
+                               const double *x_current, const double *fext0, int num_dofs);
+
+    void read_mech_checkpoint_metadata(const std::string &filename, 
+                                       int &step, double &time, int &load_increment, int &num_dofs);
+
+    void read_mech_checkpoint_data(const std::string &filename, 
+                                   double *x_current, double *fext0);
 private:
     
   //! XMF File

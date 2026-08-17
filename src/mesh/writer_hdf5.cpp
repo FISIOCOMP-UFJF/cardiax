@@ -932,7 +932,7 @@ void WriterHDF5::read_checkpoint_data(const std::string &filename, double *vm, d
     H5Fclose(file_id);
 }
 
-void WriterHDF5::write_mech_checkpoint(int step, double current_time, int load_increment,
+void WriterHDF5::write_mech_checkpoint(int step, double current_time, int load_increment, double load_factor,
                                        const double *x_current, const double *fext0, int num_dofs)
 {
     std::string chk_filename = "checkpoint_step_" + std::to_string(step) + ".h5";
@@ -968,11 +968,18 @@ void WriterHDF5::write_mech_checkpoint(int step, double current_time, int load_i
         group_mech = H5Gcreate2(file_id, "/mechanics", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     }
 
-    if (H5Aexists(group_mech, "load_increment")) H5Adelete(group_mech, "load_increment");
     hid_t space_scalar = H5Screate(H5S_SCALAR);
+    
+    if (H5Aexists(group_mech, "load_increment")) H5Adelete(group_mech, "load_increment");
     hid_t attr_load = H5Acreate(group_mech, "load_increment", H5T_NATIVE_INT, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
     H5Awrite(attr_load, H5T_NATIVE_INT, &load_increment);
     H5Aclose(attr_load);
+
+    if (H5Aexists(group_mech, "load_factor")) H5Adelete(group_mech, "load_factor");
+    hid_t attr_lf = H5Acreate(group_mech, "load_factor", H5T_NATIVE_DOUBLE, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
+    H5Awrite(attr_lf, H5T_NATIVE_DOUBLE, &load_factor);
+    H5Aclose(attr_lf);
+
     H5Sclose(space_scalar);
 
     auto save_array = [&](const char* name, hid_t space, const double* data) {
@@ -988,16 +995,18 @@ void WriterHDF5::write_mech_checkpoint(int step, double current_time, int load_i
 
     hsize_t dims[1] = { (hsize_t)num_dofs };
     hid_t space_nodal = H5Screate_simple(1, dims, NULL);
+    
     save_array("x_current", space_nodal, x_current);
     save_array("fext0", space_nodal, fext0);
+    
     H5Sclose(space_nodal);
-
     H5Gclose(group_mech);
     H5Fclose(file_id);
 }
 
 void WriterHDF5::read_mech_checkpoint_metadata(const std::string &filename, 
-                                               int &step, double &time, int &load_increment, int &num_dofs)
+                                               int &step, double &time, int &load_increment, 
+                                               double &load_factor, int &num_dofs)
 {
     hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
     
@@ -1010,9 +1019,14 @@ void WriterHDF5::read_mech_checkpoint_metadata(const std::string &filename,
     H5Aclose(attr_time);
 
     hid_t group_mech = H5Gopen2(file_id, "/mechanics", H5P_DEFAULT);
+    
     hid_t attr_load = H5Aopen(group_mech, "load_increment", H5P_DEFAULT);
     H5Aread(attr_load, H5T_NATIVE_INT, &load_increment);
     H5Aclose(attr_load);
+
+    hid_t attr_lf = H5Aopen(group_mech, "load_factor", H5P_DEFAULT);
+    H5Aread(attr_lf, H5T_NATIVE_DOUBLE, &load_factor);
+    H5Aclose(attr_lf);
 
     hid_t dset_x = H5Dopen2(group_mech, "x_current", H5P_DEFAULT);
     hid_t space_x = H5Dget_space(dset_x);

@@ -2059,15 +2059,13 @@ void NonlinearElasticity::restore_checkpoint(std::string restfilename)
     cout << "Evaluating mechanical checkpoint file: " << restfilename << "..." << endl;
 
     int chk_step, chk_load, chk_dofs;
-    double chk_time;
-
-    writer.read_mech_checkpoint_metadata(restfilename, chk_step, chk_time, chk_load, chk_dofs);
+    double chk_time, chk_load_factor; 
+    writer.read_mech_checkpoint_metadata(restfilename, chk_step, chk_time, chk_load, chk_load_factor, chk_dofs);
 
     if (chk_dofs != num_dofs) {
         throw std::runtime_error("Mismatch Error: Checkpoint DOFs differ from loaded mesh.");
     }
 
-    // Aloca vetor plano para receber as coordenadas HDF5
     std::vector<double> flat_x(num_dofs, 0.0);
     writer.read_mech_checkpoint_data(restfilename, flat_x.data(), fext0.memptr());
 
@@ -2082,10 +2080,11 @@ void NonlinearElasticity::restore_checkpoint(std::string restfilename)
         }
     }
 
-  
-    for (int i = 0; i < chk_load; i++) {
-        lc.update();
-    }
+    int config_total_increments = lc.get_nincs();
 
-    cout << "  -> Restart configured starting from load increment " << chk_load << "." << endl;
+    lc.restart_from_checkpoint(chk_load, chk_load_factor, config_total_increments);
+    cout << "  -> Restart configured from load increment " << chk_load 
+         << " (Load: " << chk_load_factor * 100 << "%)." << endl;
+    cout << "  -> New step resolution: " << (config_total_increments - chk_load) 
+         << " increments remaining. New load step (dlamb): " << lc.load_step() << endl;
 }

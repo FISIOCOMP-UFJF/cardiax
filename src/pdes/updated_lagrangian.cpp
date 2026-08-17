@@ -887,12 +887,13 @@ void UpdatedLagrangian::solve()
         }
 
         writer.write_mech_checkpoint(
-            lc.increment(),      // step geral (usamos o próprio incremento)
-            0.0,                 // tempo (dummy 0.0 para mecânica quase-estática isolada)
-            lc.increment(),      // load_increment para o LoadControl
-            flat_x.data(),       // coordenadas absolutas deformadas
-            fext0.memptr(),      // forças externas nodais antigas
-            num_dofs             // tamanho dos arrays nodais
+            lc.increment(),      
+            0.0,                 
+            lc.increment(),      
+            lc.load(), 
+            flat_x.data(),       
+            fext0.memptr(),      
+            num_dofs             
         );
     }
 

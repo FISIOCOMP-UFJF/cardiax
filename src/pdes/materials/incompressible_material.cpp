@@ -28,7 +28,48 @@ double IncompressibleMaterial::active_strain_energy(MaterialData * md,
   arma::mat Cbar = pow(J,-(2.0/3.0)) * C;
   double I4f  = dot(f0, Cbar*f0);
 
-  return 0.5 * md->get_active_stress() * (I4f - 1.0);
+  double psi = 0.5 * md->get_active_stress() * (I4f - 1.0);
+
+  // Stabilisation of the velocity-dependent active tension (Regazzoni &
+  // Quarteroni, CMAME 373 (2021) 113506). The scheme replaces Ta by
+  //     Ta + Ka * (lambda - lambda_prev)
+  // in the stress. Adding it here as the elastic energy of the attached
+  // crossbridges,
+  //     psi_stab = 0.5 * Ka * (lambda - lambda_prev)^2,
+  // is equivalent at the level of the stress -- d(psi_stab)/dE gives exactly
+  // Ka*(lambda - lambda_prev)*dlambda/dE -- but has one decisive advantage:
+  // the stress and the elasticity tensor are obtained here by finite
+  // differences of this function, so the stabilisation enters the TANGENT as
+  // well, for free.
+  //
+  // That matters more than it might seem. Ka = Lfac*(Tref/dr)*A*(XS+XW) with
+  // A = 10, so Ka runs roughly 20x larger than Ta itself and, in systole,
+  // two to three orders of magnitude above the passive fibre stiffness --
+  // which is precisely Regazzoni's Ka > Kp condition. Feeding a stiffness
+  // that large to the residual while hiding it from the Jacobian turns
+  // Newton into a modified-Newton iteration with a very poor operator: it
+  // converges linearly at best, and a single overshoot inverts an element.
+  //
+  // Written as a quadratic in lambda the term is also a genuine potential,
+  // so the tangent stays symmetric and positive semi-definite, which is what
+  // the CG/AMG solver expects.
+  const double Ka = md->get_active_stiffness();
+  if (Ka > 0.0)
+  {
+    // Full I4f, not the isochoric one: the same definition used to build
+    // lambda_prev in NonlinearElasticity::fiber_stretch_elements. Mixing the
+    // two would leave a spurious offset of order J^(-1/3) inside the
+    // increment.
+    const double I4f_full = dot(f0, C*f0);
+    if (I4f_full > 0.0)
+    {
+      const double lam = sqrt(I4f_full);
+      const double dlam = lam - md->get_lambda_prev();
+      psi += 0.5 * Ka * dlam * dlam;
+    }
+  }
+
+  return psi;
 }
 
 void IncompressibleMaterial::add_pressure(double press, 

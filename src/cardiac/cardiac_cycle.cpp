@@ -1,6 +1,9 @@
 #include <armadillo>
 #include <cmath>
+#include <iomanip>
+#include <ios>
 #include "util/command_line_args.h"
+#include "odes/torord_land.hpp"   // land_active_stiffness()
 #include "cardiac_cycle.hpp"
 #include "util/pugixml.hpp"
 
@@ -209,6 +212,10 @@ void CardiacElectromechanic::config(const string &basename)
     // Land gives Ta in kPa; the x5 factor follows the fenicsx-pulse demo.
     set_active_tension_source(49, 5.0 * kPa_to_p);
     set_vm_source(0);                     // Vm is state variable 0
+    // Land distortion states, for the negative-Ta diagnostic only. Indices
+    // match the reads at the top of torord_land.cpp:
+    //   43 = XS, 44 = XW, 47 = ZETAS, 48 = ZETAW
+    set_land_state_indices(43, 44, 47, 48);
     double amp = CommandLineArgs::read("-stimamp", -53.0);
     double dur = CommandLineArgs::read("-stimdur", 2.0 * ephy.ms_to_solver_time());
     set_lat_stimulus(amp, dur);
@@ -237,6 +244,8 @@ void CardiacElectromechanic::config(const string &basename)
   lambda_min_clip = CommandLineArgs::read("-lammin", 0.7);
   lambda_max_clip = CommandLineArgs::read("-lammax", 1.3);
   lambda_rate_max_clip = CommandLineArgs::read("-lamratemax", 0.003);
+  lambda_rate_delay    = CommandLineArgs::read("-lamratedelay", 0);
+  stabilize_active     = (CommandLineArgs::read("-lamstab", 1) != 0);
 
   if (lambda_coupling)
   {
@@ -260,13 +269,43 @@ void CardiacElectromechanic::config(const string &basename)
            << endl;
       if (lambda_rate_on)
       {
+        // Ta = Lfac*(Tref/dr)*[ (ZETAS+1)*XS + ZETAW*XW ], and in the
+        // relaxed limit ZETAS -> 249.1*rate, ZETAW -> 24.6*rate. Ta changes
+        // sign when
+        //     rate < -XS / (249.1*XS + 24.6*XW).
+        // With XS >> XW that reduces to rate < -1/249.1 = -0.004, the
+        // ZETAS-driven case the old message described. But in diastole and
+        // early systole XS is SMALL while XW stays around 0.15, and then the
+        // ZETAW*XW term dominates: at XS = 0.01, XW = 0.15 the threshold is
+        // already -0.0016. The single constant cap cannot express that, so
+        // print both regimes instead of only the favourable one.
         if (lambda_rate_max_clip > 0.0)
+        {
           cout << "   |d(lambda)/dt| limitado a " << lambda_rate_max_clip
-               << " (unidade de tempo do modelo celular); ZETAS fica acima de "
-               << -249.128 * lambda_rate_max_clip << endl;
+               << " (unidade de tempo do modelo celular)" << endl;
+          cout << "   Ta muda de sinal em rate < -XS/(249.1*XS + 24.6*XW):"
+               << endl;
+          cout << "     XS=0.20, XW=0.15 (sistole)  -> limiar -0.0037"
+               << (lambda_rate_max_clip < 0.0037 ? "  [coberto]"
+                                                 : "  [NAO coberto]") << endl;
+          cout << "     XS=0.01, XW=0.15 (diastole) -> limiar -0.0016"
+               << (lambda_rate_max_clip < 0.0016 ? "  [coberto]"
+                                                 : "  [NAO coberto]") << endl;
+        }
         else
-          cout << "   *** |d(lambda)/dt| SEM limite (-lamratemax 0): ZETAS"
-               << " pode passar de -1 e gerar tensao ativa negativa" << endl;
+          cout << "   *** |d(lambda)/dt| SEM limite (-lamratemax 0): a tensao"
+               << " ativa pode ficar negativa e inverter elementos" << endl;
+
+        if (lambda_rate_delay > 0)
+          cout << "   d(lambda)/dt mantido em zero nos primeiros "
+               << lambda_rate_delay << " passo(s) (inflacao passiva)" << endl;
+
+        cout << "   estabilizacao Regazzoni-Quarteroni: "
+             << (stabilize_active ? "LIGADA (Ta -> Ta + Ka*dlambda)"
+                                  : "*** DESLIGADA (-lamstab 0): esquema"
+                                    " segregado puro, instavel quando"
+                                    " Ka > Kp")
+             << endl;
       }
     }
   }
@@ -377,6 +416,20 @@ void CardiacElectromechanic::Solve_System(double tt, double pressure, double pre
 
 
   elas.set_pressure_Ta(30, pressure, 20, pressure2, ta);
+
+  // Stabilisation of the velocity-dependent active tension. lambda_node is
+  // lambda at the last converged mechanics solve, i.e. exactly the lambda^(k)
+  // the increment is measured from: update_fiber_stretch() runs at the top of
+  // the step, before the cells and before this solve. Both vectors are empty
+  // when the stabilisation does not apply, which restores the old behaviour.
+  // lambda_raw, not lambda_node: the increment (lambda_current - lambda_prev)
+  // must difference two values produced by the same rule, and the material
+  // computes lambda_current from the raw deformation. Differencing against
+  // the CLIPPED field would manufacture a jump the moment a node enters or
+  // leaves [-lammin, -lammax], and Ka multiplies that jump by a stiffness of
+  // order 10^6.
+  elas.set_active_stabilization(ka, lambda_raw);
+
   elas.solve();
   elas.reset();
 
@@ -620,16 +673,145 @@ void CardiacElectromechanic::update_active_tension()
 
   ta = ta * ((ta_scale != 0.0) ? ta_scale : T_ref);
 
+  update_active_stiffness();
+
   // Diagnostic only -- the values are NOT modified here. A negative active
-  // tension means ZETAS dropped below -1 in the Land submodel; the mechanics
-  // then sees a compressive fibre stress, which is what inverts elements a
-  // few steps later. Seeing this line before the negative Jacobian confirms
-  // the chain lambda_rate -> ZETAS -> Ta < 0 -> det(F) < 0.
+  // tension is a compressive fibre stress, which is what inverts elements a
+  // few steps later, so this line is the warning that precedes the negative
+  // Jacobian.
   if (lambda_rate_on && ta.n_elem > 0 && ta.min() < 0.0)
-    cout << "  [MEF  ] *** ATENCAO: tensao ativa negativa em "
-         << arma::accu(ta < 0.0) << " no(s), min = " << ta.min()
-         << ". ZETAS passou de -1; REDUZA -lamratemax (limite mais"
-         << " apertado)." << endl;
+    report_negative_ta();
+}
+
+void CardiacElectromechanic::update_active_stiffness()
+{
+  // The stabilisation only has a job when the active tension actually depends
+  // on the shortening velocity. Without -lamrate, ZETAS and ZETAW stay at
+  // rest, Ta has no velocity dependence, and there is no feedback loop to
+  // stabilise -- so leave the mechanics exactly as it was.
+  if (!stabilize_active || !lambda_rate_on || land_xs_index < 0
+      || land_xw_index < 0 || lambda_raw.n_elem != ta.n_elem)
+  {
+    ka.reset();
+    return;
+  }
+
+  if (land_xs.n_elem != ta.n_elem)
+  {
+    land_xs.zeros(ta.n_elem);
+    land_xw.zeros(ta.n_elem);
+    land_zetas.zeros(ta.n_elem);
+    land_zetaw.zeros(ta.n_elem);
+  }
+
+  ephy.get_cells().get_var(land_xs_index, land_xs);
+  ephy.get_cells().get_var(land_xw_index, land_xw);
+
+  ka.set_size(ta.n_elem);
+  for (arma::uword i = 0; i < ta.n_elem; i++)
+    ka(i) = land_active_stiffness(lambda_raw(i), land_xs(i), land_xw(i));
+
+  // Ka comes out of the Land submodel in kPa, exactly like Ta. It therefore
+  // needs the SAME conversion that ta received two lines above; using a
+  // different scale would leave a factor of 5000 between the stabilisation
+  // term and the tension it is supposed to stabilise.
+  ka = ka * ((ta_scale != 0.0) ? ta_scale : T_ref);
+}
+
+void CardiacElectromechanic::report_negative_ta()
+{
+  const int n_neg = static_cast<int>(arma::accu(ta < 0.0));
+
+  cout << "  [MEF  ] *** ATENCAO: tensao ativa negativa em " << n_neg
+       << "/" << ta.n_elem << " no(s), min = " << ta.min() << endl;
+
+  // Without the Land state indices there is nothing further to say; the
+  // decomposition below is specific to that submodel.
+  if (land_xs_index < 0 || land_xw_index < 0
+      || land_zetas_index < 0 || land_zetaw_index < 0)
+    return;
+
+  // Cells::get_var writes into v(i) without resizing it, exactly like the
+  // pre-sized `ta` and `vm_node` buffers filled elsewhere. Sizing these here
+  // rather than in config() keeps the allocation next to its only use and
+  // costs nothing after the first call.
+  if (land_xs.n_elem != ta.n_elem)
+  {
+    land_xs.zeros(ta.n_elem);
+    land_xw.zeros(ta.n_elem);
+    land_zetas.zeros(ta.n_elem);
+    land_zetaw.zeros(ta.n_elem);
+  }
+
+  ephy.get_cells().get_var(land_xs_index,    land_xs);
+  ephy.get_cells().get_var(land_xw_index,    land_xw);
+  ephy.get_cells().get_var(land_zetas_index, land_zetas);
+  ephy.get_cells().get_var(land_zetaw_index, land_zetaw);
+
+  // Ta = Lfac*(Tref/dr)*[ (ZETAS+1)*XS + ZETAW*XW ]. The prefactor is
+  // positive, so the sign is decided entirely by the bracket. Attribute each
+  // negative node to whichever of the two terms is responsible:
+  //
+  //   "ZETAS": (ZETAS+1) < 0, i.e. the shortening was fast enough and
+  //            sustained enough (tau_s = 24.9 ms) for the strong-crossbridge
+  //            distortion to overshoot -1. This is the mechanism the old
+  //            message assumed, and it needs |rate| > 1/249.1 = 0.004.
+  //
+  //   "ZETAW": (ZETAS+1) >= 0 but ZETAW*XW still outweighs (ZETAS+1)*XS.
+  //            tau_w = 2.46 ms, so ZETAW tracks the instantaneous rate
+  //            almost algebraically at any usable dtc, and when XS is small
+  //            -- diastole, early systole, or any node not yet activated --
+  //            a rate well inside -lamratemax is already enough. This is the
+  //            common case, and the reason tightening -lamratemax alone does
+  //            not fix the problem.
+  int n_zetas = 0, n_zetaw = 0;
+  double worst_rate = 0.0;
+  double xs_at_worst = 0.0, xw_at_worst = 0.0;
+  double worst_ta = 0.0;
+
+  const bool have_rate = (lambda_rate_node.n_elem == ta.n_elem);
+
+  for (arma::uword i = 0; i < ta.n_elem; i++)
+  {
+    if (ta(i) >= 0.0) continue;
+
+    if (land_zetas(i) + 1.0 < 0.0) n_zetas++;
+    else                           n_zetaw++;
+
+    if (ta(i) < worst_ta)
+    {
+      worst_ta    = ta(i);
+      xs_at_worst = land_xs(i);
+      xw_at_worst = land_xw(i);
+      worst_rate  = have_rate ? lambda_rate_node(i) : 0.0;
+    }
+  }
+
+  cout << "  [MEF  ]   termo dominante: ZETAW*XW em " << n_zetaw
+       << " no(s), (ZETAS+1)<0 em " << n_zetas << " no(s)" << endl;
+  cout << "  [MEF  ]   no pior no: XS = " << xs_at_worst
+       << ", XW = " << xw_at_worst
+       << ", ZETAS = " << land_zetas.min()
+       << ", ZETAW = " << land_zetaw.min() << endl;
+
+  if (have_rate)
+  {
+    // The rate at which THIS node would have changed sign, from
+    //     rate_crit = -XS / (249.1*XS + 24.6*XW).
+    // Printing it next to the actual rate shows directly whether
+    // -lamratemax could ever have prevented this node, or whether the
+    // threshold was already below any cap worth using.
+    const double denom = 249.128 * xs_at_worst + 24.639 * xw_at_worst;
+    const double rate_crit = (denom > 0.0) ? -xs_at_worst / denom : 0.0;
+    cout << "  [MEF  ]   d(lambda)/dt nesse no = " << worst_rate
+         << ", limiar de troca de sinal = " << rate_crit << endl;
+
+    if (n_zetaw > n_zetas && lambda_rate_max_clip > 0.0
+        && std::fabs(rate_crit) < lambda_rate_max_clip)
+      cout << "  [MEF  ]   o limiar esta ABAIXO de -lamratemax ("
+           << lambda_rate_max_clip << "): apertar o clip nao resolve"
+           << " sozinho." << endl;
+  }
 }
 
 void CardiacElectromechanic::update_fiber_stretch(double dt_solver)
@@ -679,8 +861,23 @@ void CardiacElectromechanic::update_fiber_stretch(double dt_solver)
          << lambda_min_clip << ", " << lambda_max_clip << "]" << endl;
 
   // d(lambda)/dt by backward difference, in the cell model's time unit.
+  //
+  // Held at zero for the first lambda_rate_delay calls: the passive inflation
+  // moves lambda from 1 to ~1.1 over the first few steps, and differencing
+  // that gives a rate an order of magnitude past the sign-change threshold
+  // while nothing physiological is happening yet. lambda_prev keeps being
+  // updated during the delay, so the first real rate is a proper one-step
+  // difference and not a jump accumulated over the whole warm-up.
+  lambda_step_count++;
+  const bool rate_active = lambda_rate_on
+                        && (lambda_step_count > lambda_rate_delay);
+
+  if (lambda_rate_on && !rate_active && !quiet_solve)
+    cout << "  [MEF  ] d(lambda)/dt suprimido (passo "
+         << lambda_step_count << "/" << lambda_rate_delay << ")" << endl;
+
   int n_rate_clipped = 0;
-  if (lambda_rate_on && dt_cell > 0.0 && lambda_prev_valid
+  if (rate_active && dt_cell > 0.0 && lambda_prev_valid
       && lambda_prev.n_elem == lambda_raw.n_elem)
   {
     lambda_rate_node = (lambda_raw - lambda_prev) / dt_cell;
@@ -727,15 +924,19 @@ void CardiacElectromechanic::update_fiber_stretch(double dt_solver)
          << ", mean = " << arma::mean(lambda_node)
          << ", max = " << lambda_node.max() << endl;
 
-    if (lambda_rate_on)
+    if (rate_active)
     {
-      // ZETAS_ss = -(A/cds)*|rate| is the worst case the Land submodel will
-      // relax towards if this rate persists. Printing it makes the margin to
-      // the sign change at -1 visible without post-processing.
+      // Both distortion states, not just ZETAS. They relax towards
+      //   ZETAS_ss = 249.1*rate  (tau_s = 24.9 ms, slow to build up)
+      //   ZETAW_ss =  24.6*rate  (tau_w =  2.46 ms, essentially immediate)
+      // so ZETAS is the larger number but ZETAW is the one already at its
+      // steady value within a single dtc. Printing both makes it visible
+      // which term is loaded before Ta actually changes sign.
       const double r_abs = arma::max(arma::abs(lambda_rate_node));
       cout << "  [MEF  ] d(lambda)/dt: min = " << lambda_rate_node.min()
-           << ", max = " << lambda_rate_node.max()
-           << "  -> ZETAS_ss no pior caso = " << -249.128 * r_abs << endl;
+           << ", max = " << lambda_rate_node.max() << endl;
+      cout << "  [MEF  ]   pior caso: ZETAS_ss = " << -249.128 * r_abs
+           << ", ZETAW_ss = " << -24.639 * r_abs << endl;
       if (n_rate_clipped > 0)
         cout << "  [MEF  ] " << n_rate_clipped << "/"
              << lambda_rate_node.n_elem << " node(s) com |d(lambda)/dt|"
@@ -1054,10 +1255,17 @@ void CardiacElectromechanic::solve_circulation(int num_beats, double dt_circ)
 
     if (log_now)
     {
+      // std::defaultfloat restores the FORMAT but not the PRECISION, so the
+      // setprecision(1) below used to leak into every line printed until
+      // something else set it again -- which is why the MEF diagnostics came
+      // out as "lambda_f: min = 1, mean = 1, max = 1" and hid exactly the
+      // digits they exist to show. Save and restore it explicitly.
+      const std::streamsize prec0 = cout.precision();
       cout << "\n[t = " << std::fixed << std::setprecision(1)
            << (t + dt_circ) * 1000.0 << " ms | step " << i + 1 << "/" << nsteps
            << " | beat " << beat + 1 << "/" << num_beats << "]"
            << std::defaultfloat << endl;
+      cout.precision(prec0);
     }
 
     // ---- 0. mechano-electric feedback -----------------------------

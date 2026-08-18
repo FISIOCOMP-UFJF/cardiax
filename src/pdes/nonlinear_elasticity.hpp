@@ -83,10 +83,12 @@ public:
   //! meaningful after solve() has run. Resizes lam_e to n_elements.
   void fiber_stretch_elements(arma::vec & lam_e);
 
-  //! Same quantity projected onto the NODES by unweighted averaging over the
-  //! elements sharing each node. The cell models live on the nodes (one ODE
+  //! Same quantity projected onto the NODES by averaging over the elements
+  //! sharing each node, WEIGHTED by the reference element volume vol0 (the
+  //! lumped L2 projection). The cell models live on the nodes (one ODE
   //! system per mesh point), so this is the form the electrophysiology needs.
-  //! Resizes lam_n to n_points.
+  //! Falls back to unweighted averaging if vol0 has not been filled yet
+  //! (calc_volume(true), called from pre_solve()). Resizes lam_n to n_points.
   void fiber_stretch_nodes(arma::vec & lam_n);
   petsc::Matrix & get_K() { return K; }
   void get_displacements(arma::mat & umat);
@@ -119,6 +121,13 @@ public:
   void run(const string & mshfile, const string & parfile);
 
   void set_pressure_Ta(int mlv, double plv, int mrv, double prv, arma::vec ta);
+
+  //! Hand the mechanics the fields needed to stabilise a velocity-dependent
+  //! active tension: the nodal active stiffness Ka and the nodal fibre
+  //! stretch at the previous converged solve. Passing empty vectors (the
+  //! default state) disables the stabilisation entirely.
+  void set_active_stabilization(const arma::vec & ka,
+                                const arma::vec & lam_prev);
 
   void set_active_stress(arma::vec ta); 
 

@@ -24,6 +24,14 @@ public:
   void set_active_stress(double act_stress) {active_stress = act_stress; };
   double get_active_stress() { return active_stress; };
 
+  //! Stabilisation of the velocity-dependent active tension, at this
+  //! integration point: the active stiffness Ka and the fibre stretch at the
+  //! previous converged mechanics solve. Ka = 0 disables it.
+  void set_active_stabilization(double Ka, double lam_prev)
+  { active_stiffness = Ka; lambda_prev = lam_prev; };
+  double get_active_stiffness() const { return active_stiffness; };
+  double get_lambda_prev() const { return lambda_prev; };
+
   // Kinematics ----------------------------------------------------------------
 
   //! Calculates Left Cauchy-Green tensor b = F F^T
@@ -59,6 +67,11 @@ private:
   //! Local material orientation (orthotropic materials)
   arma::vec3 f, s, n;
   double active_stress;
+
+  //! Stabilisation fields; zero by default so that every material that never
+  //! calls set_active_stabilization behaves exactly as before.
+  double active_stiffness = 0.0;
+  double lambda_prev = 0.0;
 
 };
 

@@ -284,16 +284,44 @@ void NonlinearElasticity::fiber_stretch_nodes(arma::vec & lam_n)
   const int nen     = msh.get_nen();
 
   lam_n.zeros(npoints);
-  arma::vec count(npoints, arma::fill::zeros);
+  arma::vec wsum(npoints, arma::fill::zeros);
+
+  // Weight each element by its REFERENCE volume rather than counting it once.
+  //
+  // lambda_f = ||F f0|| is defined on the reference configuration, so the
+  // consistent projection onto the nodes is the L2 projection, whose lumped
+  // (row-summed) form is exactly the vol0-weighted average below. Unweighted
+  // averaging is only equivalent on a uniform mesh: on an unstructured
+  // tetrahedral mesh with elements spanning an order of magnitude in size, a
+  // node surrounded by one large and several small elements gets a value
+  // dominated by the small ones, which is inconsistent under refinement and
+  // adds a spatial error that does not shrink with h.
+  //
+  // That error matters here far more than it would for plain visualisation:
+  // lambda_n is differenced in TIME to build lambda_rate, and the mesh-induced
+  // scatter does not cancel in the difference. It shows up as a per-node
+  // offset that the backward difference turns into rate noise.
+  //
+  // vol0 is filled by calc_volume(true), called from pre_solve(). If that has
+  // not run the entries are zero, so fall back to unweighted averaging rather
+  // than dividing by zero.
+  const bool use_vol =
+      (vol0.n_elem == static_cast<arma::uword>(nelem)) && (arma::accu(vol0) > 0.0);
 
   std::vector<int> pnums(nen);
   for (int e = 0; e < nelem; e++)
   {
+    // A degenerate or inverted element can carry a non-positive vol0; giving
+    // it zero weight is better than letting it flip the sign of the local
+    // average.
+    const double w = use_vol ? std::max(vol0(e), 0.0) : 1.0;
+    if (w <= 0.0) continue;
+
     msh.get_element_pt_nums(e, pnums);
     for (int i = 0; i < nen; i++)
     {
-      lam_n(pnums[i]) += lam_e(e);
-      count(pnums[i]) += 1.0;
+      lam_n(pnums[i]) += w * lam_e(e);
+      wsum(pnums[i])  += w;
     }
   }
 
@@ -301,7 +329,7 @@ void NonlinearElasticity::fiber_stretch_nodes(arma::vec & lam_n)
   // at 1 keeps the cell model at its neutral, undeformed behaviour instead of
   // feeding it a division by zero.
   for (int i = 0; i < npoints; i++)
-    lam_n(i) = (count(i) > 0.0) ? lam_n(i) / count(i) : 1.0;
+    lam_n(i) = (wsum(i) > 0.0) ? lam_n(i) / wsum(i) : 1.0;
 }
 
 double NonlinearElasticity::volume_LV()
@@ -2301,6 +2329,12 @@ void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double p
 void NonlinearElasticity::set_active_stress(arma::vec ta)
 {
   material->set_Ta(ta); 
+}
+
+void NonlinearElasticity::set_active_stabilization(const arma::vec & ka,
+                                                   const arma::vec & lam_prev)
+{
+  material->set_active_stabilization(ka, lam_prev);
 }
 
 void NonlinearElasticity::run(const string & mshfile, const string & parfile)

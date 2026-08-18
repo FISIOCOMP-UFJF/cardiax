@@ -129,6 +129,34 @@ private:
   //! Read the active tension from the cell model into `ta`
   void update_active_tension();
 
+  //! Fill `ka` with the nodal active stiffness of the Land submodel, used by
+  //! the mechanics to stabilise the velocity feedback. Clears `ka` (which
+  //! disables the stabilisation) whenever it does not apply.
+  void update_active_stiffness();
+
+  arma::vec ka;                    //!< active stiffness per node, model units
+
+  //! State-variable indices of the Land distortion submodel, used only by the
+  //! negative-Ta diagnostic. Set for ToRORdLand; left at -1 for any model
+  //! whose Ta does not decompose this way, which disables the diagnostic.
+  //!     Ta = Lfac*(Tref/dr)*[ (ZETAS+1)*XS + ZETAW*XW ]
+  void set_land_state_indices(int xs, int xw, int zetas, int zetaw)
+  { land_xs_index = xs; land_xw_index = xw;
+    land_zetas_index = zetas; land_zetaw_index = zetaw; }
+
+  int land_xs_index    = -1;
+  int land_xw_index    = -1;
+  int land_zetas_index = -1;
+  int land_zetaw_index = -1;
+
+  //! Scratch buffers for the diagnostic, kept as members so the per-step
+  //! report does not reallocate four nodal vectors every call.
+  arma::vec land_xs, land_xw, land_zetas, land_zetaw;
+
+  //! Report WHICH term of the Land active tension went negative, and at what
+  //! stretch rate. Called from update_active_tension() when ta.min() < 0.
+  void report_negative_ta();
+
   // ---- mechano-electric feedback: fibre stretch --------------------
   // After each mechanical solve, lambda_f = sqrt(I4f) is evaluated per
   // element, averaged onto the nodes, and handed to the cell model, where it
@@ -148,6 +176,23 @@ private:
   //! parameters. Set to 0 (-lamratemax 0) to disable the clamp entirely and
   //! recover the previous, unguarded behaviour.
   double lambda_rate_max_clip = 0.003;
+
+  //! Number of INITIAL calls to update_fiber_stretch() during which the rate
+  //! is forced to zero (-lamratedelay N, default 0 = previous behaviour).
+  //! The passive inflation takes lambda from 1 to ~1.1 over the first few
+  //! steps; differencing that transient produces d(lambda)/dt of order
+  //! 0.01 /ms, several times the threshold at which the active tension
+  //! changes sign, before the mechanics has settled into anything physical.
+  //! lambda itself (and therefore ca50 and h(lambda)) stays coupled
+  //! throughout -- only the distortion terms ZETAS/ZETAW are held off.
+  //! -lamstab 1 (default) enables the Regazzoni-Quarteroni stabilisation of
+  //! the velocity-dependent active tension. Set to 0 to recover the plain
+  //! segregated scheme, which is unstable whenever the active stiffness
+  //! exceeds the passive one -- useful only for reproducing older runs.
+  bool stabilize_active = true;
+
+  int  lambda_rate_delay = 0;
+  int  lambda_step_count = 0;      //!< calls to update_fiber_stretch() so far
 
   arma::vec lambda_node;           //!< lambda_f per node, after clipping
   arma::vec lambda_raw;            //!< lambda_f per node, BEFORE clipping

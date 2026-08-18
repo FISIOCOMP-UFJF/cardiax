@@ -138,6 +138,7 @@ public:
 
   //! Restore mechanical state from a checkpoint HDF5 file
   void restore_checkpoint(std::string restfilename);
+  void save_checkpoint(bool save){ save_state = save; }; 
   
 protected:
   
@@ -148,6 +149,7 @@ protected:
   Mesh msh;                       //!< Computational mesh
   std::string filename;           //!< Input filename
   std::string basename;           //!< Substring of the filename with basename
+  bool save_state;           //!< Save checkpoint flag 
 
   //! Boundary conditions
   std::map<int,arma::vec3> neumann_map;         //!< Traction boundary cond

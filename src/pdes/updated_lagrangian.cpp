@@ -801,6 +801,8 @@ void UpdatedLagrangian::solve()
 
   int nits;
   int num_nz_prescribed = get_num_nz_prescribed();
+  int n_nodes = msh.get_n_points();
+  int n_dim = msh.get_n_dim();
 
   // create nonlinear solver
   if (nls == NULL)
@@ -869,34 +871,27 @@ void UpdatedLagrangian::solve()
     // update penalty parameter
     al_update(lc.increment());
 
-    // LUCAS: PLACEHOLDER
-    int checkpoint_rate = 5;
-    
-    if (lc.increment() % checkpoint_rate == 0)
-    {
-        cout << "  -> Saving Mechanical Checkpoint at increment: " << lc.increment() << endl;
-        
-        int n_nodes = msh.get_n_points();
-        int n_dim = msh.get_n_dim();
-        std::vector<double> flat_x(num_dofs, 0.0);
-        
-        for(int i = 0; i < n_nodes; i++) {
-            for(int d = 0; d < n_dim; d++) {
-                flat_x[(i * n_dim) + d] = x[i][d];
-            }
-        }
+    if(save_state){
+      std::vector<double> flat_x(num_dofs, 0.0);
+      
+      for(int i = 0; i < n_nodes; i++) {
+          for(int d = 0; d < n_dim; d++) {
+              flat_x[(i * n_dim) + d] = x[i][d];
+          }
+      }
 
-        writer.write_mech_checkpoint(
-            lc.increment(),      
-            0.0,                 
-            lc.increment(),      
-            lc.load(), 
-            flat_x.data(),       
-            fext0.memptr(),      
-            num_dofs             
-        );
+      writer.write_mech_checkpoint(
+          0.0,      
+          0.0,                 
+          lc.increment(),      
+          lc.load(), 
+          flat_x.data(),       
+          fext0.memptr(),      
+          num_dofs             
+      );
+      // FIM LUCAS:
     }
-
+      
   }
 
   // prepare to leave

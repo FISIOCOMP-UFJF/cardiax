@@ -939,15 +939,9 @@ void WriterHDF5::write_mech_checkpoint(int step, double current_time, int load_i
     hid_t file_id;
     bool is_new_file = false;
 
-    std::ifstream f(chk_filename.c_str());
-    if (f.good()) {
-        f.close();
-        file_id = H5Fopen(chk_filename.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-    } else {
-        f.close();
-        file_id = H5Fcreate(chk_filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-        is_new_file = true;
-    }
+    file_id = H5Fcreate(chk_filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    is_new_file = true;
+    
 
     if (is_new_file) {
         hid_t space_scalar = H5Screate(H5S_SCALAR);

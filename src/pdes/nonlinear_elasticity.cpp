@@ -2056,7 +2056,7 @@ void NonlinearElasticity::update(petsc::Vector & uu, double s)
 
 void NonlinearElasticity::restore_checkpoint(std::string restfilename)
 {
-    cout << "Evaluating mechanical checkpoint file: " << restfilename << "..." << endl;
+    cout << "Evaluating mechanical checkpoint file: " << restfilename << endl;
 
     int chk_step, chk_load, chk_dofs;
     double chk_time, chk_load_factor; 
@@ -2083,8 +2083,8 @@ void NonlinearElasticity::restore_checkpoint(std::string restfilename)
     int config_total_increments = lc.get_nincs();
 
     lc.restart_from_checkpoint(chk_load, chk_load_factor, config_total_increments);
-    cout << "  -> Restart configured from load increment " << chk_load 
+    cout << "     Restart configured from load increment " << chk_load 
          << " (Load: " << chk_load_factor * 100 << "%)." << endl;
-    cout << "  -> New step resolution: " << (config_total_increments - chk_load) 
-         << " increments remaining. New load step (dlamb): " << lc.load_step() << endl;
+    cout << "     New step resolution: " << (config_total_increments - chk_load) 
+         << " increments remaining. New load step: " << lc.load_step() << endl;
 }

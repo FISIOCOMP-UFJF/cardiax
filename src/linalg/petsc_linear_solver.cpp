@@ -5,6 +5,12 @@
 namespace petsc
 {
 
+#ifdef AMGX_SOLVER
+// Definition of the instance counter declared in the header. Zero-initialised
+// before any LinearSolver can be constructed, including file-scope statics.
+int LinearSolver::_amgx_live = 0;
+#endif
+
 void callback(const char *msg, int length)
 {
         const char *aux = msg;
@@ -21,12 +27,14 @@ void LinearSolver::init()
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
 
 #ifdef AMGX_SOLVER
-  static bool amgx_initialized = false;
-  if (!amgx_initialized) {
+  // AMGX_initialize() is global and must be paired with exactly one
+  // AMGX_finalize(). _amgx_live counts the instances that currently hold AMGX
+  // objects, so the library is brought up on the first one and taken down by
+  // the destructor of the last -- not once per LinearSolver, which is what
+  // used to happen.
+  if (_amgx_live == 0) {
       AMGX_SAFE_CALL(AMGX_initialize());
       AMGX_SAFE_CALL(AMGX_register_print_callback(&callback));
-      
-      amgx_initialized = true;
   }
 
   const std::string amgxConfigPath = CommandLineArgs::read("-amgx", "./configs/CG_DILU.json");
@@ -43,7 +51,7 @@ void LinearSolver::init()
       std::cout << "[AMGX] Using config file: " << amgxConfigPath << std::endl;
       AMGX_SAFE_CALL(AMGX_config_create_from_file(&_amgx_config, amgxConfigPath.c_str()));
   } else {
-      std::cout << "[AMGX] AVISO: file '" << amgxConfigPath << "' not found." << std::endl;
+      std::cout << "[AMGX] WARNING: file '" << amgxConfigPath << "' not found." << std::endl;
       std::cout << "[AMGX] Using fallback configuration (CG + MULTICOLOR_DILU)." << std::endl;
       AMGX_SAFE_CALL(AMGX_config_create(&_amgx_config, fallbackConfig.c_str()));
   }
@@ -54,6 +62,11 @@ void LinearSolver::init()
   AMGX_SAFE_CALL(AMGX_vector_create(&_amgx_b, _amgx_rsrc, AMGX_mode_dDDI));
   AMGX_SAFE_CALL(AMGX_vector_create(&_amgx_x, _amgx_rsrc, AMGX_mode_dDDI));
   AMGX_SAFE_CALL(AMGX_solver_create(&_amgx_solver, _amgx_rsrc, AMGX_mode_dDDI, _amgx_config));
+
+  // Set last: the destructor keys off this flag, so it must only become true
+  // once every handle above exists.
+  _amgx_ready = true;
+  _amgx_live++;
 
 #endif
 }

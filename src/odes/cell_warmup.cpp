@@ -266,65 +266,65 @@ bool CellWarmup::run(const arma::ivec & types, const arma::vec & ab,
 
   if (opt.bcl_ms <= 0.0 || opt.dt_ms <= 0.0)
   {
-    std::cout << " *** warm up: BCL (" << opt.bcl_ms << " ms) ou dt ("
-              << opt.dt_ms << " ms) invalidos; pre-condicionamento"
-              << " desligado." << std::endl;
+    std::cout << " *** warm up: invalid BCL (" << opt.bcl_ms << " ms) or dt ("
+              << opt.dt_ms << " ms); pre-conditioning"
+              << " disabled." << std::endl;
     return false;
   }
 
-  std::cout << "\n=== Warm up do modelo celular 0D ===" << std::endl;
+  std::cout << "\n=== 0D cell model warm up ===" << std::endl;
 
   build_groups(types, ab, n_cells);
 
   const int ngroups = (int) grp_type.size();
   const long steps_per_beat = std::llround(opt.bcl_ms / opt.dt_ms);
 
-  std::cout << " Modelo: " << (opt.model_name.empty() ? "?" : opt.model_name)
-            << " (" << nvars << " variaveis de estado, unidade nativa "
+  std::cout << " Model: " << (opt.model_name.empty() ? "?" : opt.model_name)
+            << " (" << nvars << " state variables, native unit "
             << unit << " ms)" << std::endl;
-  std::cout << " Protocolo: " << opt.beats << " batimentos, BCL = "
+  std::cout << " Protocol: " << opt.beats << " beats, BCL = "
             << opt.bcl_ms << " ms, dt = " << opt.dt_ms << " ms" << std::endl;
-  std::cout << " Estimulo: amplitude " << opt.stim_amp << ", duracao "
+  std::cout << " Stimulus: amplitude " << opt.stim_amp << ", duration "
             << opt.stim_dur_ms << " ms" << std::endl;
-  std::cout << " Fase do estado guardado: " << phase_wrapped
-            << " ms apos o estimulo";
-  if (phase_wrapped == 0.0) std::cout << " (repouso)";
+  std::cout << " Phase of the stored state: " << phase_wrapped
+            << " ms after the stimulus";
+  if (phase_wrapped == 0.0) std::cout << " (rest)";
   std::cout << std::endl;
   if (opt.phase_from_lat)
-    std::cout << "   fase deslocada por no: fase_i = " << phase_wrapped
-              << " - lat_i (amostragem a cada " << opt.sample_ms << " ms)"
+    std::cout << "   phase shifted per node: phase_i = " << phase_wrapped
+              << " - lat_i (sampled every " << opt.sample_ms << " ms)"
               << std::endl;
-  std::cout << " Estiramento durante o warm up: lambda = " << opt.lambda
+  std::cout << " Stretch during warm up: lambda = " << opt.lambda
             << ", d(lambda)/dt = 0" << std::endl;
-  std::cout << " Celulas: " << n_cells << " no(s) -> " << ngroups
-            << " grupo(s) (tipo x faixa de ab, -warmup_abbins "
+  std::cout << " Cells: " << n_cells << " node(s) -> " << ngroups
+            << " group(s) (type x ab bin, -warmup_abbins "
             << opt.ab_bins << ")" << std::endl;
   if (opt.ab_bins <= 1 && ab.n_elem == (arma::uword) n_cells)
-    std::cout << "   gradiente apicobasal IGNORADO no warm up: um grupo por"
-              << " tipo celular, ab = 0.5 (neutro). O gradiente continua"
-              << " ativo na simulacao." << std::endl;
-  std::cout << " Custo: " << ngroups << " x " << (opt.beats + 1) << " x "
+    std::cout << "   apicobasal gradient IGNORED during warm up: one group per"
+              << " cell type, ab = 0.5 (neutral). The gradient stays"
+              << " active in the simulation." << std::endl;
+  std::cout << " Cost: " << ngroups << " x " << (opt.beats + 1) << " x "
             << steps_per_beat << " = "
             << (double) ngroups * (opt.beats + 1) * steps_per_beat
-            << " passos de EDO" << std::endl;
+            << " ODE steps" << std::endl;
 
   if (model->lat_var_index() >= 0)
-    std::cout << " *** AVISO: este modelo e fenomenologico e e disparado"
-              << " pelo tempo de ativacao, nao por corrente de estimulo."
-              << " O warm up provavelmente nao faz sentido para ele."
+    std::cout << " *** WARNING: this model is phenomenological and is triggered"
+              << " by activation time, not by a stimulus current."
+              << " The warm up probably makes no sense for it."
               << std::endl;
 
   // ---- cache --------------------------------------------------------
   if (load_cache())
   {
     is_ready = true;
-    std::cout << " Estado lido do cache " << opt.cache
-              << "; pre-condicionamento pulado." << std::endl;
-    std::cout << "=== Warm up concluido ===\n" << std::endl;
+    std::cout << " State read from cache " << opt.cache
+              << "; pre-conditioning skipped." << std::endl;
+    std::cout << "=== Warm up done ===\n" << std::endl;
     return true;
   }
 
-  // ---- estado do modelo a preservar ---------------------------------
+  // ---- model state to preserve --------------------------------------
   const int    type0   = model->get_celltype();
   const double ab0     = model->get_apicobasal();
   const double lam0    = model->get_stretch();
@@ -361,8 +361,8 @@ bool CellWarmup::run(const arma::ivec & types, const arma::vec & ab,
 
       if (!y.is_finite())
       {
-        std::cout << "\n *** warm up: o modelo divergiu (NaN/Inf) no"
-                  << " batimento " << beat + 1 << ". Reduza -warmup_dt."
+        std::cout << "\n *** warm up: the model diverged (NaN/Inf) on"
+                  << " beat " << beat + 1 << ". Reduce -warmup_dt."
                   << std::endl;
         model->set_celltype(type0);
         model->set_apicobasal(ab0);
@@ -392,7 +392,7 @@ bool CellWarmup::run(const arma::ivec & types, const arma::vec & ab,
 
     rest_state[g] = y;
 
-    std::cout << beats_run << " batimento(s), deriva final "
+    std::cout << beats_run << " beat(s), final drift "
               << std::scientific << std::setprecision(2) << d
               << std::defaultfloat;
     if (nvars > 0)
@@ -401,12 +401,12 @@ bool CellWarmup::run(const arma::ivec & types, const arma::vec & ab,
     std::cout << std::endl;
 
     if (opt.tol > 0.0 && d >= opt.tol)
-      std::cout << "   *** AVISO: deriva ainda acima de -warmup_tol ("
-                << opt.tol << ") apos " << beats_run
-                << " batimentos; aumente -warmup_beats." << std::endl;
+      std::cout << "   *** WARNING: drift still above -warmup_tol ("
+                << opt.tol << ") after " << beats_run
+                << " beats; increase -warmup_beats." << std::endl;
   }
 
-  // ---- restaura o estado do modelo ----------------------------------
+  // ---- restore the model state --------------------------------------
   model->set_celltype(type0);
   model->set_apicobasal(ab0);
   model->set_stretch(lam0);
@@ -415,7 +415,7 @@ bool CellWarmup::run(const arma::ivec & types, const arma::vec & ab,
   is_ready = true;
   save_cache();
 
-  std::cout << "=== Warm up concluido ===\n" << std::endl;
+  std::cout << "=== Warm up done ===\n" << std::endl;
   return true;
 }
 
@@ -507,8 +507,8 @@ bool CellWarmup::load_cache()
   if (!std::getline(in, line)) return false;
   if (line != fingerprint())
   {
-    std::cout << " Cache " << opt.cache << " existe mas foi gerado com outros"
-              << " parametros; sera recalculado." << std::endl;
+    std::cout << " Cache " << opt.cache << " exists but was generated with different"
+              << " parameters; it will be recomputed." << std::endl;
     return false;
   }
 
@@ -559,7 +559,7 @@ void CellWarmup::save_cache() const
   std::ofstream out(opt.cache.c_str());
   if (!out.is_open())
   {
-    std::cout << " *** warm up: nao foi possivel gravar o cache "
+    std::cout << " *** warm up: could not write the cache "
               << opt.cache << std::endl;
     return;
   }
@@ -596,5 +596,5 @@ void CellWarmup::save_cache() const
   }
 
   out.close();
-  std::cout << " Estado do ciclo limite gravado em " << opt.cache << std::endl;
+  std::cout << " Limit-cycle state written to " << opt.cache << std::endl;
 }

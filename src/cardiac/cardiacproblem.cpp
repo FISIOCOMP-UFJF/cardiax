@@ -106,14 +106,14 @@ int read_nodal_field(const pugi::xml_document & doc, const char * name,
     n++;
   }
 
-  cout << "   " << name << ": " << n << "/" << ndofs << " nos";
+  cout << "   " << name << ": " << n << "/" << ndofs << " nodes";
   if (n > 0) cout << ", min " << v.min() << " max " << v.max();
-  if (out_of_range > 0) cout << " (" << out_of_range << " id(s) fora de faixa)";
+  if (out_of_range > 0) cout << " (" << out_of_range << " id(s) out of range)";
   cout << endl;
 
   if (n > 0 && n != ndofs)
-    cout << " *** AVISO: bloco <" << name << "> incompleto; os nos sem valor"
-         << " ficaram em zero." << endl;
+    cout << " *** WARNING: block <" << name << "> incomplete; nodes without a"
+         << " value were left at zero." << endl;
 
   return n;
 }
@@ -127,7 +127,7 @@ void CardiacProblem::read_cobiveco(const std::string & mshfile)
   pugi::xml_document doc;
   if (!doc.load_file(mshfile.c_str()))
   {
-    cout << " Cobiveco: nao foi possivel abrir " << mshfile << endl;
+    cout << " Cobiveco: could not open " << mshfile << endl;
     return;
   }
 
@@ -148,13 +148,13 @@ void CardiacProblem::read_cobiveco(const std::string & mshfile)
   if (n_tv > 0)
   {
     for (int i = 0; i < ndofs; i++) cbv_tv(i) = (tv(i) > 0.5) ? 1 : 0;
-    cout << "   tv: " << arma::accu(cbv_tv == 0) << " nos no VE, "
-         << arma::accu(cbv_tv == 1) << " nos no VD" << endl;
+    cout << "   tv: " << arma::accu(cbv_tv == 0) << " nodes in the LV, "
+         << arma::accu(cbv_tv == 1) << " nodes in the RV" << endl;
   }
 
   cbv_loaded = (n_tm > 0);
   if (!cbv_loaded)
-    cout << " Sem coordenadas Cobiveco na malha; tipo celular inalterado."
+    cout << " No Cobiveco coordinates in the mesh; cell types left unchanged."
          << endl;
 }
 
@@ -164,8 +164,8 @@ void CardiacProblem::set_cell_types_from_tm(double endo_mid, double mid_epi)
 
   if (cells == nullptr)
   {
-    cout << " *** set_cell_types_from_tm() chamado antes de init();"
-         << " tipo celular inalterado." << endl;
+    cout << " *** set_cell_types_from_tm() called before init();"
+         << " cell types left unchanged." << endl;
     return;
   }
 
@@ -183,16 +183,16 @@ void CardiacProblem::set_cell_types_from_tm(double endo_mid, double mid_epi)
 
   cells->set_cell_types(n, vtypes.data());
 
-  cout << " Tipo celular a partir de tm (endo < " << endo_mid
+  cout << " Cell type from tm (endo < " << endo_mid
        << " <= mid <= " << mid_epi << " < epi): "
        << n_endo << " endo, " << n_mid << " mid, " << n_epi << " epi" << endl;
 
-  // Se quase nao ha celulas mid, a malha nao resolve a espessura da parede e
-  // a heterogeneidade transmural fica reduzida a um degrau endo/epi.
+  // If there are almost no mid cells the mesh does not resolve the wall
+  // thickness, and transmural heterogeneity collapses to an endo/epi step.
   if (20 * n_mid < n)
-    cout << " *** AVISO: menos de 5% das celulas sao mid. A malha"
-         << " provavelmente nao tem resolucao transmural suficiente para"
-         << " heterogeneidade endo/mid/epi." << endl;
+    cout << " *** WARNING: fewer than 5% of the cells are mid. The mesh"
+         << " probably lacks the transmural resolution needed for"
+         << " endo/mid/epi heterogeneity." << endl;
 }
 
 void CardiacProblem::set_apicobasal_from_ab()
@@ -201,24 +201,24 @@ void CardiacProblem::set_apicobasal_from_ab()
 
   if (cells == nullptr)
   {
-    cout << " *** set_apicobasal_from_ab() chamado antes de init();"
-         << " gradiente apicobasal desligado." << endl;
+    cout << " *** set_apicobasal_from_ab() called before init();"
+         << " apicobasal gradient disabled." << endl;
     return;
   }
 
   cells->set_apicobasal(cbv_ab);
 
-  // O fator e o mesmo que o modelo celular aplica; imprimi-lo aqui deixa
-  // visivel no log a faixa efetiva, que e o que importa conferir.
+  // The factor is the one the cell model applies; printing it here puts the
+  // effective range in the log, which is what is worth checking.
   const double f_min = std::pow(0.2, 2.0 * cbv_ab.min() - 1.0);
   const double f_max = std::pow(0.2, 2.0 * cbv_ab.max() - 1.0);
-  cout << " Gradiente apicobasal ligado: ab de " << cbv_ab.min() << " a "
-       << cbv_ab.max() << " -> fator de GKs de " << f_min
-       << " (mais apical) a " << f_max << " (mais basal)" << endl;
+  cout << " Apicobasal gradient on: ab from " << cbv_ab.min() << " to "
+       << cbv_ab.max() << " -> GKs factor from " << f_min
+       << " (most apical) to " << f_max << " (most basal)" << endl;
 
   if (cbv_ab.min() < 0.0 || cbv_ab.max() > 1.0)
-    cout << " *** AVISO: ab fora de [0,1]; o fator de GKs extrapola a faixa"
-         << " 5x-0.2x prevista." << endl;
+    cout << " *** WARNING: ab outside [0,1]; the GKs factor extrapolates"
+         << " beyond the intended 5x-0.2x range." << endl;
 }
 
 
@@ -311,23 +311,23 @@ void CardiacProblem::warmup_cells(const arma::vec & lat)
   const bool   have_lat    = (lat.n_elem == static_cast<arma::uword>(n));
 
   if (warmup->uses_lat() && !have_lat)
-    cout << " *** warm up: -warmup_lat 1 pedido, mas nao ha LAT por no;"
-         << " todas as celulas comecam na mesma fase." << endl;
+    cout << " *** warm up: -warmup_lat 1 requested, but there is no per-node"
+         << " LAT; every cell starts at the same phase." << endl;
 
   arma::vec y(cells->get_ode_size());
 
   for (int i = 0; i < n; i++)
   {
-    // lat vem na unidade de tempo do solver; CellWarmup trabalha em ms.
+    // lat arrives in the solver time unit; CellWarmup works in ms.
     const double lat_ms = have_lat ? lat(i) * ms_per_unit : 0.0;
     warmup->state_for_cell(i, lat_ms, y.memptr());
     cells->set_system_state(i, y.memptr());
   }
 
-  cout << " Condicoes iniciais de " << n << " celula(s) substituidas pelo"
-       << " estado do ciclo limite (fase " << warmup->get_phase_ms()
+  cout << " Initial conditions of " << n << " cell(s) replaced by the"
+       << " limit-cycle state (phase " << warmup->get_phase_ms()
        << " ms";
-  if (warmup->uses_lat() && have_lat) cout << ", deslocada pelo LAT de cada no";
+  if (warmup->uses_lat() && have_lat) cout << ", shifted by each node's LAT";
   cout << ")." << endl;
 }
 

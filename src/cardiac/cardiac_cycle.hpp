@@ -65,14 +65,14 @@ public:
     std::ofstream outFile(filename);
     if (!outFile.is_open())
     {
-      std::cerr << "Erro: Nao foi possivel abrir o arquivo" << filename << std::endl;
+      std::cerr << "Error: could not open file " << filename << std::endl;
     }
     for (size_t i = 0; i < activeStressCurve.size(); ++i)
     {
       outFile << timePoints[i] << " " << activeStressCurve[i] << "\n";
     }
     outFile.close();
-    std::cout << "Dados da tensão ativa salvos em: " << filename << std::endl;
+    std::cout << "Active tension data saved to: " << filename << std::endl;
   }
 
 private:

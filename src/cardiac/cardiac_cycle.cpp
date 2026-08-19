@@ -149,7 +149,7 @@ void CardiacElectromechanic::config(const string &basename)
   if (CommandLineArgs::read("-abgrad", 1))
     ephy.set_apicobasal_from_ab();
   else
-    cout << " Gradiente apicobasal desligado por -abgrad 0" << endl;
+    cout << " Apicobasal gradient disabled by -abgrad 0" << endl;
 
   // Declare the time unit the EP problem runs in. Ionic models such as
   // ToRORd are written in ms and need a step of ~0.01-0.02 ms with explicit
@@ -209,8 +209,11 @@ void CardiacElectromechanic::config(const string &basename)
 
   if (cellmodel == "ToRORdLand")
   {
-    // Land gives Ta in kPa; the x5 factor follows the fenicsx-pulse demo.
-    set_active_tension_source(49, 5.0 * kPa_to_p);
+    // Land gives Ta in kPa. Any further gain now comes from the per-material
+    // ta_scale attribute in the mesh XML instead of a constant hidden here, so
+    // that a single place controls it. NOTE: ta_scale = 5.0 in the XML
+    // reproduces the factor that used to sit on this line.
+    set_active_tension_source(49, kPa_to_p);
     set_vm_source(0);                     // Vm is state variable 0
     // Land distortion states, for the negative-Ta diagnostic only. Indices
     // match the reads at the top of torord_land.cpp:
@@ -219,9 +222,9 @@ void CardiacElectromechanic::config(const string &basename)
     double amp = CommandLineArgs::read("-stimamp", -53.0);
     double dur = CommandLineArgs::read("-stimdur", 2.0 * ephy.ms_to_solver_time());
     set_lat_stimulus(amp, dur);
-    cout << " Active tension: state variable 49 (kPa) x 5.0 x " << kPa_to_p
-         << " -> " << 5.0 * kPa_to_p << " model pressure units per kPa"
-         << endl;
+    cout << " Active tension: state variable 49 (kPa) x " << kPa_to_p
+         << " model pressure units per kPa"
+         << " (further gain from the per-material ta_scale)" << endl;
     cout << " LAT stimulus: amplitude " << amp << ", duration " << dur
          << " (solver time units)" << endl;
   }
@@ -253,19 +256,19 @@ void CardiacElectromechanic::config(const string &basename)
     // model that ignores it would look like the coupling was active.
     if (cellmodel != "ToRORdLand")
     {
-      cout << " *** -lam 1 pedido, mas o modelo celular '" << cellmodel
-           << "' nao usa estiramento; acoplamento desligado." << endl;
+      cout << " *** -lam 1 requested, but cell model '" << cellmodel
+           << "' does not use stretch; coupling disabled." << endl;
       lambda_coupling = false;
     }
     else
     {
-      cout << " Acoplamento mecano-eletrico LIGADO: lambda_f = sqrt(I4f)"
-           << " por no -> ToRORd-Land" << endl;
-      cout << "   lambda limitado a [" << lambda_min_clip << ", "
+      cout << " Mechano-electric feedback ON: lambda_f = sqrt(I4f)"
+           << " per node -> ToRORd-Land" << endl;
+      cout << "   lambda clipped to [" << lambda_min_clip << ", "
            << lambda_max_clip << "]" << endl;
       cout << "   d(lambda)/dt: "
-           << (lambda_rate_on ? "ligado" : "desligado (contracao isometrica"
-                                           " do ponto de vista da celula)")
+           << (lambda_rate_on ? "on" : "off (isometric contraction as far as"
+                                       " the cell is concerned)")
            << endl;
       if (lambda_rate_on)
       {
@@ -282,35 +285,34 @@ void CardiacElectromechanic::config(const string &basename)
         if (lambda_rate_max_clip > 0.0)
         {
           cout << "   |d(lambda)/dt| limitado a " << lambda_rate_max_clip
-               << " (unidade de tempo do modelo celular)" << endl;
-          cout << "   Ta muda de sinal em rate < -XS/(249.1*XS + 24.6*XW):"
+               << " (in the cell model's time unit)" << endl;
+          cout << "   Ta changes sign for rate < -XS/(249.1*XS + 24.6*XW):"
                << endl;
-          cout << "     XS=0.20, XW=0.15 (sistole)  -> limiar -0.0037"
-               << (lambda_rate_max_clip < 0.0037 ? "  [coberto]"
-                                                 : "  [NAO coberto]") << endl;
-          cout << "     XS=0.01, XW=0.15 (diastole) -> limiar -0.0016"
-               << (lambda_rate_max_clip < 0.0016 ? "  [coberto]"
-                                                 : "  [NAO coberto]") << endl;
+          cout << "     XS=0.20, XW=0.15 (systole)  -> threshold -0.0037"
+               << (lambda_rate_max_clip < 0.0037 ? "  [covered]"
+                                                 : "  [NOT covered]") << endl;
+          cout << "     XS=0.01, XW=0.15 (diastole) -> threshold -0.0016"
+               << (lambda_rate_max_clip < 0.0016 ? "  [covered]"
+                                                 : "  [NOT covered]") << endl;
         }
         else
-          cout << "   *** |d(lambda)/dt| SEM limite (-lamratemax 0): a tensao"
-               << " ativa pode ficar negativa e inverter elementos" << endl;
+          cout << "   *** |d(lambda)/dt| UNBOUNDED (-lamratemax 0): the active"
+               << " tension may turn negative and invert elements" << endl;
 
         if (lambda_rate_delay > 0)
-          cout << "   d(lambda)/dt mantido em zero nos primeiros "
-               << lambda_rate_delay << " passo(s) (inflacao passiva)" << endl;
+          cout << "   d(lambda)/dt held at zero for the first "
+               << lambda_rate_delay << " step(s) (passive inflation)" << endl;
 
-        cout << "   estabilizacao Regazzoni-Quarteroni: "
-             << (stabilize_active ? "LIGADA (Ta -> Ta + Ka*dlambda)"
-                                  : "*** DESLIGADA (-lamstab 0): esquema"
-                                    " segregado puro, instavel quando"
-                                    " Ka > Kp")
+        cout << "   Regazzoni-Quarteroni stabilisation: "
+             << (stabilize_active ? "ON (Ta -> Ta + Ka*dlambda)"
+                                  : "*** OFF (-lamstab 0): plain segregated"
+                                    " scheme, unstable whenever Ka > Kp")
              << endl;
       }
     }
   }
   else
-    cout << " Acoplamento mecano-eletrico desligado (use -lam 1 para ligar)"
+    cout << " Mechano-electric feedback off (use -lam 1 to enable)"
          << endl;
 
   elas.config(mshfile, parfile);
@@ -722,8 +724,8 @@ void CardiacElectromechanic::report_negative_ta()
 {
   const int n_neg = static_cast<int>(arma::accu(ta < 0.0));
 
-  cout << "  [MEF  ] *** ATENCAO: tensao ativa negativa em " << n_neg
-       << "/" << ta.n_elem << " no(s), min = " << ta.min() << endl;
+  cout << "  [MEF  ] *** WARNING: negative active tension at " << n_neg
+       << "/" << ta.n_elem << " node(s), min = " << ta.min() << endl;
 
   // Without the Land state indices there is nothing further to say; the
   // decomposition below is specific to that submodel.
@@ -787,9 +789,9 @@ void CardiacElectromechanic::report_negative_ta()
     }
   }
 
-  cout << "  [MEF  ]   termo dominante: ZETAW*XW em " << n_zetaw
-       << " no(s), (ZETAS+1)<0 em " << n_zetas << " no(s)" << endl;
-  cout << "  [MEF  ]   no pior no: XS = " << xs_at_worst
+  cout << "  [MEF  ]   dominant term: ZETAW*XW at " << n_zetaw
+       << " node(s), (ZETAS+1)<0 at " << n_zetas << " node(s)" << endl;
+  cout << "  [MEF  ]   at the worst node: XS = " << xs_at_worst
        << ", XW = " << xw_at_worst
        << ", ZETAS = " << land_zetas.min()
        << ", ZETAW = " << land_zetaw.min() << endl;
@@ -803,14 +805,14 @@ void CardiacElectromechanic::report_negative_ta()
     // threshold was already below any cap worth using.
     const double denom = 249.128 * xs_at_worst + 24.639 * xw_at_worst;
     const double rate_crit = (denom > 0.0) ? -xs_at_worst / denom : 0.0;
-    cout << "  [MEF  ]   d(lambda)/dt nesse no = " << worst_rate
-         << ", limiar de troca de sinal = " << rate_crit << endl;
+    cout << "  [MEF  ]   d(lambda)/dt at that node = " << worst_rate
+         << ", sign-change threshold = " << rate_crit << endl;
 
     if (n_zetaw > n_zetas && lambda_rate_max_clip > 0.0
         && std::fabs(rate_crit) < lambda_rate_max_clip)
-      cout << "  [MEF  ]   o limiar esta ABAIXO de -lamratemax ("
-           << lambda_rate_max_clip << "): apertar o clip nao resolve"
-           << " sozinho." << endl;
+      cout << "  [MEF  ]   the threshold is BELOW -lamratemax ("
+           << lambda_rate_max_clip << "): tightening the clip alone"
+           << " will not fix this." << endl;
   }
 }
 
@@ -873,7 +875,7 @@ void CardiacElectromechanic::update_fiber_stretch(double dt_solver)
                         && (lambda_step_count > lambda_rate_delay);
 
   if (lambda_rate_on && !rate_active && !quiet_solve)
-    cout << "  [MEF  ] d(lambda)/dt suprimido (passo "
+    cout << "  [MEF  ] d(lambda)/dt suppressed (step "
          << lambda_step_count << "/" << lambda_rate_delay << ")" << endl;
 
   int n_rate_clipped = 0;
@@ -935,12 +937,12 @@ void CardiacElectromechanic::update_fiber_stretch(double dt_solver)
       const double r_abs = arma::max(arma::abs(lambda_rate_node));
       cout << "  [MEF  ] d(lambda)/dt: min = " << lambda_rate_node.min()
            << ", max = " << lambda_rate_node.max() << endl;
-      cout << "  [MEF  ]   pior caso: ZETAS_ss = " << -249.128 * r_abs
+      cout << "  [MEF  ]   worst case: ZETAS_ss = " << -249.128 * r_abs
            << ", ZETAW_ss = " << -24.639 * r_abs << endl;
       if (n_rate_clipped > 0)
         cout << "  [MEF  ] " << n_rate_clipped << "/"
-             << lambda_rate_node.n_elem << " node(s) com |d(lambda)/dt|"
-             << " limitado a " << lambda_rate_max_clip << endl;
+             << lambda_rate_node.n_elem << " node(s) with |d(lambda)/dt|"
+             << " capped at " << lambda_rate_max_clip << endl;
     }
   }
 }

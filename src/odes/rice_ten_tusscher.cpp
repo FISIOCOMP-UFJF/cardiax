@@ -245,7 +245,7 @@ void RiceTenTusscher::init(double * values) const
 }
 
 void RiceTenTusscher::equation(const double time, const double * statevars, 
-                               double * values)
+                               double * values, double istim)
 {
   // copy values
   V = statevars[0];
@@ -552,19 +552,7 @@ void RiceTenTusscher::equation(const double time, const double * statevars,
                  + (1.*exp(0.1*((V-E_K)-10.))))/(1.+exp(-0.5*(V-E_K)));
   double xK1_inf = alpha_K1/(alpha_K1 + beta_K1);
   
-//  double i_stimAmplitude = -52.0;
-//  double i_stimStart = 50.0;
-//  double i_stimEnd = 500000.0;
-//  double i_stimPeriod = 1000.0;
-//  double i_stimPulseDuration = 1.0;
-//  if(((time>=i_stimStart)&&(time<=i_stimEnd)&&
-//     (((time-i_stimStart)-(floor(((time-i_stimStart)/i_stimPeriod))
-//          *i_stimPeriod))<=i_stimPulseDuration)))
-//    Istim = i_stimAmplitude;
-//  else
-//    Istim=0;  
-   
-  Istim = i_stim;
+  Istim = istim;
   
   IK1 = (g_K1*xK1_inf*pow((K_o/5.4000),1.0/2.0)*(V-E_K));
   INaK  = P_NaK*(K_o*Na_i)/((K_o+K_mk)*(Na_i+K_mNa)*(1.+0.1245*exp(-0.1*VFORT)+0.0353*exp(-VFORT)));

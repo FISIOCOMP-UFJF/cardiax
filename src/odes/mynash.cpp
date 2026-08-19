@@ -23,7 +23,7 @@ void MyNashPanfilov::init(double * values) const
   }
 }
 
-void MyNashPanfilov::equation(const double time, const double *rY, double *rDY)
+void MyNashPanfilov::equation(const double time, const double *rY, double *rDY, double istim)
 {
   // State variables
   const double V  = rY[0];
@@ -43,7 +43,7 @@ void MyNashPanfilov::equation(const double time, const double *rY, double *rDY)
   const double Vthreshold   = 0.05;
   const double auxThreshold = 0.1;
   
-  double Istim = i_stim;
+  double Istim = istim;
   
   // Calculations
   double d_dt_v	= -k*V*(V-a)*(V-1.0) - r*V + Istim;

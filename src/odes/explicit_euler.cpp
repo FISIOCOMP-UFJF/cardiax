@@ -6,7 +6,7 @@ ExplicitEuler::ExplicitEuler(CellModel *model)
   cout << "ODE solver: Explicit Euler" << endl;
 }
 
-void ExplicitEuler::advance(double * y, double & t, double & dt)
+void ExplicitEuler::advance(double * y, double & t, double & dt, double istim)
 {
   const int n = ode->get_num_state_vars();
   
@@ -17,7 +17,7 @@ void ExplicitEuler::advance(double * y, double & t, double & dt)
   //y[0] = (y[0] + 88.54) / 115.50;
   
   // Evaluate ODE rhs equations
-  ode->equation(t, y, dydt.memptr());
+  ode->equation(t, y, dydt.memptr(), istim);
   
   // Advance
   for (int i=0; i<n; i++)

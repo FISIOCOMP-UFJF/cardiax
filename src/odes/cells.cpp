@@ -48,7 +48,7 @@ void Cells::advance(double t, double dt, const double istim,
 		                const std::set<uint> & snodes)
 {
   std::set<uint>::iterator it;
-    
+  
   for (uint system=0; system<num_systems; system++)
   {
     // compute offset for ODE

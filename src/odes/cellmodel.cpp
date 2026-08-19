@@ -35,14 +35,14 @@ CellModel::~CellModel()
 
 void CellModel::advance(double *statevars, double t, double dt)
 {
-  i_stim = 0.0;
-  ode_solver->advance(statevars, t, dt);
+  // i_stim = 0.0;
+  ode_solver->advance(statevars, t, dt, 0.0);
 }
 
 void CellModel::advance(double *statevars, double t, double dt, double istim)
 {
-  i_stim = istim;
-  ode_solver->advance(statevars, t, dt);
+  // i_stim = istim;
+  ode_solver->advance(statevars, t, dt, istim);
 }
 
 void CellModel::compute_jacobian(double *states, double t, arma::mat &jac)
@@ -174,10 +174,11 @@ void CellModel::solveTest(double stim, double sstart, double sstop,
     // Check and then apply stimulus if necessary
     apply_stimulus = (t >= sstart) && (t <= sstop);
 
-    if (apply_stimulus)
-      set_stimulus(stim);
-    else
-      set_stimulus(0.0);
+    // LUCAS:
+    //if (apply_stimulus)
+    //  set_stimulus(stim);
+    //else
+    //  set_stimulus(0.0);
 
     // Advance in time using ODESolver
     ode_solver->advance(y.memptr(), t, dt);

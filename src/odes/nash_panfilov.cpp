@@ -15,7 +15,7 @@ void NashPanfilov::init(double * values) const
   values[2] = 0.0;
 }
 
-void NashPanfilov::equation(const double time, const double *rY, double *rDY)
+void NashPanfilov::equation(const double time, const double *rY, double *rDY, double istim)
 {
   // State variables
   const double V  = rY[0];
@@ -32,7 +32,7 @@ void NashPanfilov::equation(const double time, const double *rY, double *rDY)
   const double kTa = 13.7; // 47.9 ou 10 kPa
     
   // Calculations
-  double d_dt_v  = k*V*(V-a)*(1.0-V) - r*V + i_stim;
+  double d_dt_v  = k*V*(V-a)*(1.0-V) - r*V + istim;
   double d_dt_r  = (eps + (mu1 * r)/(mu2 + V)) * (-r - k*V*(V-b-1.0));
   double d_dt_Ta = rateswitchEr(V) * (kTa * (V) - Ta);
   

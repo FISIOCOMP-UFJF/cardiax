@@ -29,7 +29,7 @@ public:
   virtual ~ODESolver() {}
 
   // Interface for ODE solvers
-  virtual void advance(double * y, double & t, double & dt) = 0;
+  virtual void advance(double * y, double & t, double & dt, double istim=0.0) = 0;
 
   // Factory method to create ODE solvers
   static ODESolver * create(std::string method, CellModel *cell);

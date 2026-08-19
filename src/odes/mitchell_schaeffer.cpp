@@ -17,7 +17,7 @@ void MitchellSchaeffer::init(double * values) const
 
 void MitchellSchaeffer::equation(const double time,
 				 const double * statevars,
-				 double * values)
+				 double * values, double istim)
 {
   // State variables
   const double v  = statevars[0];
@@ -35,7 +35,7 @@ void MitchellSchaeffer::equation(const double time,
   // Calculations
   double j_in   = (h * (v*v*(1.-v)))/tau_in;
   double j_out  = -v/tau_out;
-  double j_stim = i_stim;
+  double j_stim = istim;
 
   values[0] = j_in + j_out + j_stim;
   values[1] = (v < v_gate) ? ((1.-h)/tau_open) : (-h/tau_close);

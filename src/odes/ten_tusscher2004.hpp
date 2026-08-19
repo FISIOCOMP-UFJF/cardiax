@@ -20,7 +20,7 @@ class TenTusscher2004 : public CellModel
   virtual void init(double * values) const;
 
   //! Compute RHS equations for the TT2 model
-  virtual void equation(const double t, const double * sv, double * values);
+  virtual void equation(const double t, const double * sv, double * values, double istim);
 
 };
 

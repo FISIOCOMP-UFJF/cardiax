@@ -26,7 +26,7 @@ class LuoRudy : public CellModel
   virtual void init(double * values) const;
   
   //! Compute RHS equations for the LRI model
-  virtual void equation(const double time, const double * sv, double * values);
+  virtual void equation(const double time, const double * sv, double * values, double istim);
 
 };
 

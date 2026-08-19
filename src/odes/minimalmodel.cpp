@@ -29,7 +29,7 @@ void MinimalModel::init(double *values) const {
 
 }
 
-void MinimalModel::equation(const double t, const double * sv, double * values){
+void MinimalModel::equation(const double t, const double * sv, double * values, double istim){
     double u = sv[0];
     const double v = sv[1];
     const double w = sv[2];
@@ -38,7 +38,7 @@ void MinimalModel::equation(const double t, const double * sv, double * values){
     const double ta = sv[5];
 
     const double dt = 0.01; 
-    double stim_current = i_stim;
+    double stim_current = istim;
 
     //u = (u + 88.54) / 115.50;
 

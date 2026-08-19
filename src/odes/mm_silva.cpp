@@ -20,7 +20,7 @@ void MMSilva::init(double * values) const
   values[5] = 0.0; //ta
 }
 
-void MMSilva::equation(const double time, const double *rY, double *rDY)
+void MMSilva::equation(const double time, const double *rY, double *rDY, double istim)
 {
   // State variables
   const double u  = rY[0];
@@ -108,7 +108,7 @@ void MMSilva::equation(const double time, const double *rY, double *rDY)
 
   fina_ta = ((p11+p22)/2) + ((p11-p22)/2)*tanh(-gamma33*(ca - aa));
 
-  du_dt = -(jfi + jso + jsi) + i_stim;
+  du_dt = -(jfi + jso + jsi) + istim;
   dv_dt = (1 - H(u, thetav)) * (vinf - v) / tauv - H(u, thetav) * v / tauvmais;
   dw_dt = (1 - H(u, thetaw)) * (winf - w) / tauw - H(u, thetaw) * w / tauwmais;
   ds_dt = ((1 + tanh(ks * (u - us))) / 2.0 - s) / taus;

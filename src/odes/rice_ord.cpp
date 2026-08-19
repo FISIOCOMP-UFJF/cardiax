@@ -93,7 +93,7 @@ void RiceOHaraRudy::init(double * values) const
 }
 
 void RiceOHaraRudy::equation(const double time, const double * statevars, 
-                             double * values)
+                             double * values, double istim)
 {  
   // ---------------------------------------------------------------------------
   // ORd parameters
@@ -878,7 +878,7 @@ void RiceOHaraRudy::equation(const double time, const double * statevars,
   //else
   //  Ist = 0;  
   
-  Ist = i_stim;
+  Ist = istim;
       
   //voltage();------------------------------------------------------------------
   //v+=-dt*(INa+INaL+Ito+ICaL+ICaNa+ICaK+IKr+IKs+IK1+INaCa+INaK+INab+IKb+IpCa+ICab+Ist);

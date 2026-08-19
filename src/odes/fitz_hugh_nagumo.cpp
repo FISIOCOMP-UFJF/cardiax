@@ -15,7 +15,7 @@ void FitzHughNagumo::init(double * values) const
 
 void FitzHughNagumo::equation(const double time,
 			      const double * statevars,
-			      double * values)
+			      double * values, double istim)
 {
   // State variables
   const double v = statevars[0];
@@ -28,7 +28,7 @@ void FitzHughNagumo::equation(const double time,
 
   // Calculations
   double v3 = pow(v,3);
-  double dVdt = ((1.0/eps) * (v-((1.0/3.0)*v3)-w)) + i_stim;
+  double dVdt = ((1.0/eps) * (v-((1.0/3.0)*v3)-w)) + istim;
   double dWdt = eps * (v - gamma*w + beta);
 
   values[0] = dVdt;

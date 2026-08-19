@@ -26,7 +26,7 @@ class SimpleODE : public CellModel
   virtual void init(double * values) const;
 
   /// Compute RHS equations for SimpleODE
-  virtual void equation(const double t, const double * sv, double * values);
+  virtual void equation(const double t, const double * sv, double * values, double istim);
 
   /// New member function to compute exact solution and save to file
   void dump_exact();

@@ -12,7 +12,7 @@ MinimalVentricular::MinimalVentricular() : CellModel(4), paramset(false)
 }
     
 void MinimalVentricular::equation(const double time, const double * statevars, 
-                                  double * values)
+                                  double * values, double istim)
 {
   // state variables
   const double u  = statevars[0];
@@ -36,7 +36,7 @@ void MinimalVentricular::equation(const double time, const double * statevars,
   double j_fi   = -v*H(u-thetav)*(u-thetav)*(uu-u) / tau_fi;
   double j_so   = (u-uo)*(1-H(u-thetaw))/tau_o + H(u-thetaw)/tau_so;
   double j_si   = -H(u-thetaw)*w*s/tau_si;
-  double j_stim = i_stim;
+  double j_stim = istim;
     
   values[0] = -(j_fi + j_so + j_si + j_stim); // V(mv) = 85.7*u - 84
   values[1] = (1.0-H(u-thetav))*(v_inf-v)/tau_vb - H(u-thetav)*v/tauvp;

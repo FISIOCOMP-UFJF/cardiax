@@ -80,7 +80,7 @@ void TenTusscherTa::init(double * values) const
   values[20] = 0.0;      // AUX
 }
 
-void TenTusscherTa::equation(const double time, const double * statevars, double * values)
+void TenTusscherTa::equation(const double time, const double * statevars, double * values, double istim)
 {
   // State variables
   const double V = statevars[0];   // Transmembrane potential
@@ -229,7 +229,7 @@ void TenTusscherTa::equation(const double time, const double * statevars, double
   double IpK = (GpK * (V - E_K)) / (1.0 + exp((25.0 - V) / 5.98));
   double IpCa = (GpCa * Ca_i) / (Ca_i + KpCa);
   
-  double Istim = i_stim; 
+  double Istim = istim; 
   
   //double Istim = /*i_stim*/stim(time);
 //   if(Istim!=0.0)printf(":::::::%f\n", Istim);

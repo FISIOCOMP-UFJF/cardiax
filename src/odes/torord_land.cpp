@@ -215,7 +215,7 @@ void TorordLand::init(double * values) const
             //values[48] = 0.000000e+00;
 }
 
-void TorordLand::equation(const double time, const double *rY, double *rDY)
+void TorordLand::equation(const double time, const double *rY, double *rDY, double istim)
 {
     // Current modifiers
     double INa_Multiplier =  1.0;
@@ -243,7 +243,7 @@ void TorordLand::equation(const double time, const double *rY, double *rDY)
     double celltype = type;
 
     // Get the stimulus current from the current cell
-    double calc_I_stim = i_stim;
+    double calc_I_stim = istim;
 
     // State variables (same order as the original Matlab script)
     double v = rY[0];

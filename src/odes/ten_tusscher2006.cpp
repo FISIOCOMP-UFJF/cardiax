@@ -70,7 +70,7 @@ void TenTusscher2006::init(double * values) const
 }
 
 void TenTusscher2006::equation(const double time, const double * statevars,
-                               double * values)
+                               double * values, double istim)
 {
   // State variables
   const double V = statevars[0];      // Membrane variable
@@ -163,7 +163,7 @@ void TenTusscher2006::equation(const double time, const double * statevars,
   double INaCa = (K_NaCa * ((exp((gamma * V * F) / (R * T)) * pow(Na_i, 3) * Cao) - (exp(((gamma - 1.0) * V * F) / (R * T)) * pow(Nao, 3) * Ca_i * alpha))) / ((pow(Km_Nai, 3) + pow(Nao, 3)) * (Km_Ca + Cao) * (1.0 + (K_sat * exp(((gamma - 1.0) * V * F) / (R * T)))));  
 
   // Stimulus  
-  double Istim = i_stim;
+  double Istim = istim;
   
 //  double Istim;  
 //  double amp = -52.0;

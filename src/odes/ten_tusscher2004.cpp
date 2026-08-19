@@ -43,7 +43,7 @@ void TenTusscher2004::init(double * values) const
 
 void TenTusscher2004::equation(const double time, 
                                const double * statevars, 
-                               double * values)
+                               double * values, double istim)
 {
   // State variables
   const double V = statevars[0];        // Membrane variable
@@ -198,7 +198,7 @@ void TenTusscher2004::equation(const double time,
 //    else
 //      Istim = 0.0;
 
-  double Istim = i_stim;
+  double Istim = istim;
 
   // Gating variables
   double xr1_inf   = 1.0 / (1.0 + exp(((-26.0) - V) / 7.0));

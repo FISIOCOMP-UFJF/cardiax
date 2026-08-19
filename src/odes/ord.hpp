@@ -18,7 +18,7 @@ public:
   virtual void init(double * values) const;
 
   //! Compute RHS equations for the ORd model
-  virtual void equation(const double t, const double * sv, double * values);
+  virtual void equation(const double t, const double * sv, double * values, double istim);
  
 };
 

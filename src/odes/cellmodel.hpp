@@ -66,7 +66,8 @@ class CellModel
   void set_celltype(int ctype);
 
   //! Set the stimulus
-  void set_stimulus(double stim) { i_stim = stim; }
+  // LUCAS:
+  // void set_stimulus(double stim) { i_stim = stim; }
 
   //! Set timestep and time to print
   void setup(string method, double timestep, double tf, double tp=1.0);
@@ -97,7 +98,7 @@ class CellModel
 
   //! Compute ODE equations
   virtual void equation(const double time, const double * statevars,
-                        double * values) = 0;
+                        double * values, double istim=0) = 0;
 
   //! RL variables
   std::set<int> rlvars;
@@ -117,7 +118,8 @@ class CellModel
   TimeStepper * ts;
 
   //! Stimulus value
-  double i_stim;
+  // LUCAS:
+  // double i_stim;
 
   //! Used to compute jacobian
   arma::vec f1, f2;

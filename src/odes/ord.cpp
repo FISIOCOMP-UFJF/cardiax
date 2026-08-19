@@ -230,7 +230,7 @@ void OHaraRudy::init(double * values) const
 }
 
 void OHaraRudy::equation(const double time, const double * statevars, 
-                         double * values)
+                         double * values, double istim)
 {
   // ---------------------------------------------------------------------------
   // get current values
@@ -785,7 +785,7 @@ else if(type==MCELL)
   IpCa=GpCa*cai/(0.0005+cai);
   
   //stimulus();-----------------------------------------------------------------
-  double i_stimAmplitude = -80.0;
+  /*double i_stimAmplitude = -80.0;
   double i_stimStart = 50.0;
   double i_stimEnd = 150000.0;
   double i_stimPeriod = 1000.0;
@@ -797,8 +797,9 @@ else if(type==MCELL)
     Ist = i_stimAmplitude;
   else
     Ist = 0;
-     
-  //Ist = i_stim;
+  */
+
+  Ist = istim;
   
   /*
   if ((t>(start+n*CL) && t<(start+duration+n*CL-dt)))

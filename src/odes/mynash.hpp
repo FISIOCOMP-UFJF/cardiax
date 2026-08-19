@@ -33,7 +33,7 @@ class MyNashPanfilov : public CellModel
   virtual void init(double * values) const;
 
   //! Compute RHS equations for the NP model
-  virtual void equation(const double t, const double * sv, double * values);
+  virtual void equation(const double t, const double * sv, double * values, double istim);
 
  private:
 

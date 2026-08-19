@@ -15,7 +15,7 @@ class RungeKutta4 : public ODESolver
   RungeKutta4 (CellModel *p);
   
   // Interface
-  virtual void advance(double *y, double & t, double & dt);  
+  virtual void advance(double *y, double & t, double & dt, double istim);  
 
 };
 

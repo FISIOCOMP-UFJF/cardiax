@@ -15,7 +15,7 @@ class MinimalModel : public CellModel
 public:
     MinimalModel();
     virtual void init(double *values) const override;
-    virtual void equation(const double t, const double * sv, double * values, double istim);
+    virtual void equation(const double t, const double * sv, double * values, double istim,  double * m_ptr);
     
 
 // private:

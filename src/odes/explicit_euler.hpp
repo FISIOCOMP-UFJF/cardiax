@@ -16,7 +16,7 @@ public:
   ExplicitEuler (CellModel *model);
  
   // Interface
-  virtual void advance(double *y, double & t, double & dt, double istim);
+  virtual void advance(double *y, double & t, double & dt, double istim , double * m_ptr);
 
 private:
 

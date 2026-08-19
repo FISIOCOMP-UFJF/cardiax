@@ -15,7 +15,7 @@ void NashPanfilov::init(double * values) const
   values[2] = 0.0;
 }
 
-void NashPanfilov::equation(const double time, const double *rY, double *rDY, double istim)
+void NashPanfilov::equation(const double time, const double *rY, double *rDY, double istim,  double *m_ptr)
 {
   // State variables
   const double V  = rY[0];

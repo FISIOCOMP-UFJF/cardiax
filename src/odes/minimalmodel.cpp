@@ -29,7 +29,7 @@ void MinimalModel::init(double *values) const {
 
 }
 
-void MinimalModel::equation(const double t, const double * sv, double * values, double istim){
+void MinimalModel::equation(const double t, const double * sv, double * values, double istim,  double * m_ptr){
     double u = sv[0];
     const double v = sv[1];
     const double w = sv[2];

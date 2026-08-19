@@ -230,7 +230,7 @@ void OHaraRudy::init(double * values) const
 }
 
 void OHaraRudy::equation(const double time, const double * statevars, 
-                         double * values, double istim)
+                         double * values, double istim,  double *m_ptr)
 {
   // ---------------------------------------------------------------------------
   // get current values

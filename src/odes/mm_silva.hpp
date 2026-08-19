@@ -20,7 +20,7 @@ class MMSilva : public CellModel
   virtual void init(double * values) const;
 
   //! Compute RHS equations for the NP model
-  virtual void equation(const double t, const double * sv, double * values, double istim);
+  virtual void equation(const double t, const double * sv, double * values, double istim,  double * m_ptr);
 
  private:
  

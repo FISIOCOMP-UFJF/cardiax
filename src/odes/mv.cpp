@@ -12,7 +12,7 @@ MinimalVentricular::MinimalVentricular() : CellModel(4), paramset(false)
 }
     
 void MinimalVentricular::equation(const double time, const double * statevars, 
-                                  double * values, double istim)
+                                  double * values, double istim,  double * m_ptr)
 {
   // state variables
   const double u  = statevars[0];

@@ -38,7 +38,7 @@ class CellModel
   void advance(double * statevars, double t, double dt);
 
   //! Advance ODE in time with ODE solver
-  void advance(double * statevars, double t, double dt, double istim);
+  void advance(double * statevars, double t, double dt, double istim,  double * m_ptr);
 
   //! Compute finite-difference Jacobian.
   //! Ref: "Numerical Methods for Unconstrained Optimization
@@ -98,7 +98,7 @@ class CellModel
 
   //! Compute ODE equations
   virtual void equation(const double time, const double * statevars,
-                        double * values, double istim=0) = 0;
+                        double * values, double istim=0,  double * m_ptr=nullptr) = 0;
 
   //! RL variables
   std::set<int> rlvars;

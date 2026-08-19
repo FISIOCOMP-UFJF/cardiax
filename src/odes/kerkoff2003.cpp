@@ -17,7 +17,7 @@ void Kerkoff2003::init(double * values) const
 
 void Kerkoff2003::equation(const double time,
 				 const double * statevars,
-				 double * values, double istim)
+				 double * values, double istim,  double * m_ptr)
 {
   // State variables
   const double lc  = statevars[0];

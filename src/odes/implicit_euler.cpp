@@ -20,7 +20,7 @@ ImplicitEuler::ImplicitEuler(CellModel * ode)
   cout << " ODE solver: Implicit Euler" << endl;
 }
 
-void ImplicitEuler::advance(double * y, double & t, double & dt, double istim)
+void ImplicitEuler::advance(double * y, double & t, double & dt, double istim,  double *m_ptr)
 {
   int it, num_states = ode->get_num_state_vars();
   bool done;

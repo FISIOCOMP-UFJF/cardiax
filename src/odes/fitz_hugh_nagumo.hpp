@@ -20,7 +20,7 @@ class FitzHughNagumo : public CellModel
   virtual void init(double * values) const;
   
   /// Compute RHS equations for the FHN model
-  virtual void equation(const double time, const double * sv, double * values, double istim);
+  virtual void equation(const double time, const double * sv, double * values, double istim,  double * m_ptr);
 
 };
 

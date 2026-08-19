@@ -245,7 +245,7 @@ void RiceTenTusscher::init(double * values) const
 }
 
 void RiceTenTusscher::equation(const double time, const double * statevars, 
-                               double * values, double istim)
+                               double * values, double istim,  double *m_ptr)
 {
   // copy values
   V = statevars[0];

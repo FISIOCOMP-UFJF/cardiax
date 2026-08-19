@@ -215,7 +215,7 @@ void TorordLand::init(double * values) const
             //values[48] = 0.000000e+00;
 }
 
-void TorordLand::equation(const double time, const double *rY, double *rDY, double istim)
+void TorordLand::equation(const double time, const double *rY, double *rDY, double istim,  double *m_ptr)
 {
     // Current modifiers
     double INa_Multiplier =  1.0;

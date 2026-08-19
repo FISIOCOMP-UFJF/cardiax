@@ -70,7 +70,7 @@ void TenTusscher2006::init(double * values) const
 }
 
 void TenTusscher2006::equation(const double time, const double * statevars,
-                               double * values, double istim)
+                               double * values, double istim,  double *m_ptr)
 {
   // State variables
   const double V = statevars[0];      // Membrane variable

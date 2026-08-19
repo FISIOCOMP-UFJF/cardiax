@@ -15,7 +15,7 @@ public:
   virtual void init(double * values) const; 
   
   //! Compute RHS equations for the LRI model
-  virtual void equation(const double time, const double * sv, double * values, double istim);
+  virtual void equation(const double time, const double * sv, double * values, double istim,  double * m_ptr);
   
   //! Initialize constants and parameters for cell type
   void init_params();

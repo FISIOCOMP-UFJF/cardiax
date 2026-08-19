@@ -20,7 +20,7 @@ void MMSilva::init(double * values) const
   values[5] = 0.0; //ta
 }
 
-void MMSilva::equation(const double time, const double *rY, double *rDY, double istim)
+void MMSilva::equation(const double time, const double *rY, double *rDY, double istim,  double * m_ptr)
 {
   // State variables
   const double u  = rY[0];

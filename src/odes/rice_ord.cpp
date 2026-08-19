@@ -93,7 +93,7 @@ void RiceOHaraRudy::init(double * values) const
 }
 
 void RiceOHaraRudy::equation(const double time, const double * statevars, 
-                             double * values, double istim)
+                             double * values, double istim,  double *m_ptr)
 {  
   // ---------------------------------------------------------------------------
   // ORd parameters

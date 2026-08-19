@@ -35,7 +35,7 @@ public:
   virtual void init(double * values) const;
 
   //! Compute RHS equations for the RiceTT2 model
-  virtual void equation(const double t, const double * sv, double * values, double istim);
+  virtual void equation(const double t, const double * sv, double * values, double istim,  double *m_ptr);
 
   //! TNNP vars
   double V, Xr1, Xr2, Xs, m, h, j, d, f, fCa, s, r, g, Ca_SR, Ca_i_total, Na_i, K_i;

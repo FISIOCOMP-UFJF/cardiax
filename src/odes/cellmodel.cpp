@@ -39,10 +39,10 @@ void CellModel::advance(double *statevars, double t, double dt)
   ode_solver->advance(statevars, t, dt, 0.0);
 }
 
-void CellModel::advance(double *statevars, double t, double dt, double istim)
+void CellModel::advance(double *statevars, double t, double dt, double istim, double * m_ptr)
 {
   // i_stim = istim;
-  ode_solver->advance(statevars, t, dt, istim);
+  ode_solver->advance(statevars, t, dt, istim, m_ptr);
 }
 
 void CellModel::compute_jacobian(double *states, double t, arma::mat &jac)

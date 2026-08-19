@@ -15,7 +15,7 @@ public:
   ~ImplicitEuler() {};
 
   /// Function to advance one time step
-  void advance(double *y, double & t, double & dt, double istim);
+  void advance(double *y, double & t, double & dt, double istim,  double *m_ptr);
 
 private:
 

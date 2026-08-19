@@ -27,7 +27,7 @@ public:
   void set_relative_tolerance(double tol) { rtol = tol; }
 
   // Function to advance one time step
-  virtual void advance(double *y, double & t, double & dt, double istim) = 0;
+  virtual void advance(double *y, double & t, double & dt, double istim,  double *m_ptr) = 0;
 
 protected:
 

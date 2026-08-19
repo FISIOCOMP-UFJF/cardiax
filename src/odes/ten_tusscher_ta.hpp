@@ -44,7 +44,7 @@ public:
     virtual void init(double * values) const;
 
     //! Compute RHS equations for the TT2 model
-    virtual void equation(const double t, const double * sv, double * values, double istim);
+    virtual void equation(const double t, const double * sv, double * values, double istim,  double *m_ptr);
 
     //! Return the value of a variable
     virtual double variable(const int index) const { return -1; }

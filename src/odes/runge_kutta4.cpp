@@ -8,7 +8,7 @@ RungeKutta4::RungeKutta4(CellModel *model)
        << "Runge Kutta 4" << endl;
 }
 
-void RungeKutta4::advance(double *sv, double &t, double & dt, double istim) 
+void RungeKutta4::advance(double *sv, double &t, double & dt, double istim,  double *m_ptr) 
 {
   int n = ode->get_num_state_vars();
   double rY[n], k1[n], k2[n], k3[n], k4[n];

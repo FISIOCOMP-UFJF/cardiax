@@ -11,7 +11,7 @@ void SimpleODE::init(double * values) const
 }
 
 void SimpleODE::equation(const double t, const double * statevars,
-			 double * values, double istim)
+			 double * values, double istim,  double *m_ptr)
 {
   // State variable
   const double u = statevars[0];

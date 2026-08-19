@@ -27,7 +27,7 @@ void LuoRudy::init(double * values) const
   values[7] = 0.0002;     // Cai; Units: millimolar;    Initial value: 0.0002
 }
 
-void LuoRudy::equation(const double time, const double * statevars, double * values, double istim)
+void LuoRudy::equation(const double time, const double * statevars, double * values, double istim,  double * m_ptr)
 {
   // State variables
   const double V = statevars[0]; // Membrane variable

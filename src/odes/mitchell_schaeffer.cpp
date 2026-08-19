@@ -17,7 +17,7 @@ void MitchellSchaeffer::init(double * values) const
 
 void MitchellSchaeffer::equation(const double time,
 				 const double * statevars,
-				 double * values, double istim)
+				 double * values, double istim,  double * m_ptr)
 {
   // State variables
   const double v  = statevars[0];

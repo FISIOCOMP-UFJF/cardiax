@@ -45,38 +45,61 @@ void Cells::advance(double t, double dt)
   }
 }
 
+// void Cells::advance(double t, double dt, const double istim,
+// 		                const std::set<uint> & snodes)
+// {
+//   for (uint system=0; system<num_systems; system++)
+//   {
+//     std::set<uint>::iterator it;
+//     // compute offset for ODE
+//     const uint offset = system * ode->get_num_state_vars();
+
+//     // LUCAS: tirei isso por enquanto, para tentar uma versao thread safe
+//     // if (types.size() != 0) ode->set_celltype( types(system) );
+
+//     // searching for node I in snodes system
+//     it = snodes.find(system);
+
+//     // time-stepping
+//     if (it != snodes.end())
+//       ode->advance(states+offset, t, dt, istim);
+//     else
+//       ode->advance(states+offset, t, dt);
+
+//     // update monitored values
+//     if (ode->get_num_monitored() > 0)
+//     {
+//       for(int j=0; j<ode->get_num_monitored(); j++)
+//       {
+//         double value = ode->get_monitored_value(j);
+//         const uint moffset = system * ode->get_num_monitored();
+//         monitored_values(moffset) = value;
+//       }
+//     }
+//   }
+// }
+
 void Cells::advance(double t, double dt, const double istim,
-		                const std::set<uint> & snodes)
+                    const std::set<uint> & snodes)
 {
-  std::set<uint>::iterator it;
-  
-  for (uint system=0; system<num_systems; system++)
+  #pragma omp parallel for
+  for (uint system = 0; system < num_systems; system++)
   {
-    // compute offset for ODE
+    std::set<uint>::iterator it;
     const uint offset = system * ode->get_num_state_vars();
-
-    // LUCAS: tirei isso por enquanto, para tentar uma versao thread safe
-    // if (types.size() != 0) ode->set_celltype( types(system) );
-
-    // searching for node I in snodes system
     it = snodes.find(system);
 
-    // time-stepping
-    if (it != snodes.end())
-      ode->advance(states+offset, t, dt, istim);
-    else
-      ode->advance(states+offset, t, dt);
-
-    // update monitored values
-    if (ode->get_num_monitored() > 0)
-    {
-      for(int j=0; j<ode->get_num_monitored(); j++)
-      {
-        double value = ode->get_monitored_value(j);
-        const uint moffset = system * ode->get_num_monitored();
-        monitored_values(moffset) = value;
-      }
+    // 1. Pega o ponteiro direto para a posição desta célula na matriz global
+    double* monitor_ptr = nullptr;
+    if (ode->get_num_monitored() > 0) {
+      const uint moffset = system * ode->get_num_monitored();
+      monitor_ptr = &monitored_values(moffset); // Endereço de memória direto
     }
+
+    double current_istim = (it != snodes.end()) ? istim : 0.0;
+    
+    // 2. Passa o ponteiro para o solver
+    ode->advance(states + offset, t, dt, current_istim, monitor_ptr);
   }
 }
 
@@ -92,7 +115,7 @@ void Cells::advance(double t, double dt, const arma::vec & stim_values)
     if (types.size() != 0) ode->set_celltype( types(system) );
 
     const double istim = stim_values(system);
-    ode->advance(states+offset, t, dt, istim);
+    ode->advance(states+offset, t, dt, istim, nullptr);
 
     // update monitored values
     if (ode->get_num_monitored() > 0)

@@ -80,7 +80,7 @@ void TenTusscherTa::init(double * values) const
   values[20] = 0.0;      // AUX
 }
 
-void TenTusscherTa::equation(const double time, const double * statevars, double * values, double istim)
+void TenTusscherTa::equation(const double time, const double * statevars, double * values, double istim,  double *m_ptr)
 {
   // State variables
   const double V = statevars[0];   // Transmembrane potential

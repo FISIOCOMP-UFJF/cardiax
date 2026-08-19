@@ -354,22 +354,25 @@ void Monodomain::solve_odes()
 {
   stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
   
-  if (stim_apply)
-  {
-    cells->advance(tip.time(), timestep, stim_val, stim_nodes);
-    stim_nodes.clear();
-  }
-  else if(stim_apply_nodes)
-  {
-    cout << "Aplicando estimulos " << tip.time() << endl;
-    cells->advance(tip.time(), timestep, stim_values);
-    stim_values.fill(0);
-    stim_apply_nodes = false;
-  }
-  else
-  {
-    cells->advance(tip.time(), timestep);
-  }
+  cells->advance(tip.time(), timestep, stim_val, stim_nodes);
+  stim_nodes.clear(); 
+
+  // if (stim_apply)
+  // {
+  //   cells->advance(tip.time(), timestep, stim_val, stim_nodes);
+  //   stim_nodes.clear();
+  // }
+  // else if(stim_apply_nodes)
+  // {
+  //   cout << "Aplicando estimulos " << tip.time() << endl;
+  //   cells->advance(tip.time(), timestep, stim_values);
+  //   stim_values.fill(0);
+  //   stim_apply_nodes = false;
+  // }
+  // else
+  // {
+  //   cells->advance(tip.time(), timestep);
+  // }
 
   cells->get_var(0, v0);  
   v0.assemble();

@@ -21,7 +21,7 @@ public:
 private:
 
   // Values of derivatives for computations
-  arma::vec dydt;
+  // arma::vec dydt;
 
 };
 

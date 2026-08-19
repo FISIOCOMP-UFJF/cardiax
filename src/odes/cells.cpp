@@ -21,6 +21,7 @@ Cells::~Cells()
 
 void Cells::advance(double t, double dt)
 {       
+  cout<<"Cell::advance sem snodes"<<endl; 
   for (uint system=0; system<num_systems; system++)    
   {
     // Compute offset for ODE
@@ -54,10 +55,11 @@ void Cells::advance(double t, double dt, const double istim,
     // compute offset for ODE
     const uint offset = system * ode->get_num_state_vars();
 
+    // LUCAS: tirei isso por enquanto, para tentar uma versao thread safe
+    // if (types.size() != 0) ode->set_celltype( types(system) );
+
     // searching for node I in snodes system
     it = snodes.find(system);
-
-    if (types.size() != 0) ode->set_celltype( types(system) );
 
     // time-stepping
     if (it != snodes.end())
@@ -80,6 +82,8 @@ void Cells::advance(double t, double dt, const double istim,
 
 void Cells::advance(double t, double dt, const arma::vec & stim_values)
 {
+  cout<<"Cell::advance COM stim_values"<<endl; 
+
   for (uint system=0; system<num_systems; system++)
   {
     // compute offset for ODE

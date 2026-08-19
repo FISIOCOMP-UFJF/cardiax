@@ -1,7 +1,7 @@
 #include "explicit_euler.hpp"
 
 ExplicitEuler::ExplicitEuler(CellModel *model) 
-  : ODESolver(model), dydt(model->get_num_state_vars())
+  : ODESolver(model)
 {
   cout << "ODE solver: Explicit Euler" << endl;
 }
@@ -15,6 +15,7 @@ void ExplicitEuler::advance(double * y, double & t, double & dt, double istim)
 
   //teste minimal model
   //y[0] = (y[0] + 88.54) / 115.50;
+  arma::vec dydt(n); 
   
   // Evaluate ODE rhs equations
   ode->equation(t, y, dydt.memptr(), istim);

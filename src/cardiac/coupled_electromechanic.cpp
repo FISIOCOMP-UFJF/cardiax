@@ -70,6 +70,7 @@ void Electromechanic::config(const string &basename)
 
   elas.config(mshfile, parfile);
   elas.set_output_step(false);
+  elas.save_checkpoint(false);
   elas.init();
   elas.setup_data_writer( static_cast<int> (T / dt_mech) + 1 );
 
@@ -139,6 +140,30 @@ void Electromechanic::solve()
   
   tip.reset();
 
+  std::string restart_file = CommandLineArgs::read("-restore", "");
+  int save_freq = static_cast<int>(dt_mech / dt); //TODO: improve this
+
+  if (!restart_file.empty())
+  {
+      int restored_step;
+      double restored_time;
+
+      double* state_vars = ephy->get_cells().get_state_vars();
+      elas.read_ep_checkpoint(restart_file, vm.memptr(), state_vars, restored_step, restored_time);
+
+      elas.restore_checkpoint(restart_file);
+      // elas.reset(); 
+      elas.lc.reset(); 
+
+      while (tip.time() < restored_time) {
+          tip.increase_time();
+          i += 1; 
+      }
+      ii = i / save_freq;
+      
+  }
+  // ==============================================================
+
   while (!tip.finished())
   {
     tip.increase_time();
@@ -191,14 +216,11 @@ void Electromechanic::solve()
       ephy->get_cells().get_monitored_values(0, ta); 
     }
 
-    int save_freq = static_cast<int>(dt_mech / dt); //TODO: improve this
-
     if (i % save_freq == 0) 
     {
       timer.enter("Elasticity");
       elas.set_active_stress(ta); 
       elas.solve();
-      elas.reset();
       timer.leave(); 
 
       timer.enter("Writing");
@@ -207,11 +229,27 @@ void Electromechanic::solve()
       elas.storeStress(ii);
       ii += 1;
       timer.leave(); 
+
+      int checkpoint_rate = tip.it(); 
+      if(tip.it() % checkpoint_rate == 0 && checkpoint_rate > 0)
+        {
+          timer.enter("Save Checkpoint");
+          cout << "Saving Coupled Checkpoint at t = " << tip.time() << " ms" << endl;
+          int num_state_vars =  ephy->get_cells().get_ode_size();
+          const double* state_vars = ephy->get_cells().get_state_vars();  
+
+          elas.save_coupled_checkpoint(
+              tip.it(), tip.time(), 
+              vm.memptr(), state_vars, num_state_vars
+          );
+          
+          timer.leave(); 
+        }
+
+      elas.reset();
     }  
 
-    // LUCAS:
-    // if checkpoint:
-    // salvar tudo
+   
   }
   
   elas.timer.summary();

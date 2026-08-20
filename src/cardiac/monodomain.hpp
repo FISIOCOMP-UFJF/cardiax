@@ -43,7 +43,6 @@ public:
   //! Restore monodomain from a checkpoint file
   void restore_checkpoint(string restfilename);
 
-  // LUCAS: 
   void set_checkpoint_interval(double interval) {checkpoint_interval = interval;};
 
 protected:

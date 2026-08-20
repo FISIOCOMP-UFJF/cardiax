@@ -836,7 +836,10 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
 
 void WriterHDF5::write_checkpoint(int step, double current_time, const double *vm, const double *state_vars, int num_state_vars)
 {
-    std::string chk_filename = "checkpoint_step_" + std::to_string(step) + ".h5";
+    char time_buf[64];
+    std::sprintf(time_buf, "%.2f", current_time); 
+    
+    std::string chk_filename = "checkpoint_t_" + std::string(time_buf) + "ms.h5";
 
     hid_t file_id = H5Fcreate(chk_filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     
@@ -935,14 +938,15 @@ void WriterHDF5::read_checkpoint_data(const std::string &filename, double *vm, d
 void WriterHDF5::write_mech_checkpoint(int step, double current_time, int load_increment, double load_factor,
                                        const double *x_current, const double *fext0, int num_dofs)
 {
-    std::string chk_filename = "checkpoint_step_" + std::to_string(step) + ".h5";
+    std::string final_filename = "checkpoint_step_" + std::to_string(step) + ".h5";
+    std::string temp_filename = "checkpoint_mech_tmp.h5";
+    
     hid_t file_id;
     bool is_new_file = false;
 
-    file_id = H5Fcreate(chk_filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    file_id = H5Fcreate(temp_filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     is_new_file = true;
     
-
     if (is_new_file) {
         hid_t space_scalar = H5Screate(H5S_SCALAR);
         hid_t attr_step = H5Acreate(file_id, "step", H5T_NATIVE_INT, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
@@ -995,7 +999,10 @@ void WriterHDF5::write_mech_checkpoint(int step, double current_time, int load_i
     
     H5Sclose(space_nodal);
     H5Gclose(group_mech);
+    
     H5Fclose(file_id);
+
+    std::rename(temp_filename.c_str(), final_filename.c_str());
 }
 
 void WriterHDF5::read_mech_checkpoint_metadata(const std::string &filename, 
@@ -1051,4 +1058,79 @@ void WriterHDF5::read_mech_checkpoint_data(const std::string &filename,
 
     H5Gclose(group_mech);
     H5Fclose(file_id);
+}
+
+void WriterHDF5::write_coupled_checkpoint(int step, double current_time, 
+                                          const double *vm, const double *state_vars, int num_state_vars,
+                                          int load_increment, double load_factor, 
+                                          const double *x_current, const double *fext0, int num_dofs)
+{
+    char time_buf[64];
+    std::sprintf(time_buf, "%.2f", current_time); 
+    
+    std::string final_filename = "checkpoint_t_" + std::string(time_buf) + "ms.h5";
+    std::string temp_filename = "checkpoint_coupled_tmp.h5";
+
+    hid_t file_id = H5Fcreate(temp_filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+
+    hid_t space_scalar = H5Screate(H5S_SCALAR);
+    
+    hid_t attr_step = H5Acreate(file_id, "step", H5T_NATIVE_INT, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
+    H5Awrite(attr_step, H5T_NATIVE_INT, &step);
+    H5Aclose(attr_step);
+
+    hid_t attr_time = H5Acreate(file_id, "time", H5T_NATIVE_DOUBLE, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
+    H5Awrite(attr_time, H5T_NATIVE_DOUBLE, &current_time);
+    H5Aclose(attr_time);
+
+    
+    hid_t group_ep = H5Gcreate2(file_id, "/ep", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    hsize_t np = mesh->get_n_points();
+
+    // vm
+    hsize_t dims_vm[1] = { np };
+    hid_t space_vm = H5Screate_simple(1, dims_vm, NULL);
+    hid_t dataset_vm = H5Dcreate(group_ep, "vm", H5T_NATIVE_DOUBLE, space_vm, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_vm, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, vm);
+    H5Dclose(dataset_vm);
+    H5Sclose(space_vm);
+
+    // state_variables
+    hsize_t dims_sv[2] = { np, (hsize_t)num_state_vars };
+    hid_t space_sv = H5Screate_simple(2, dims_sv, NULL);
+    hid_t dataset_sv = H5Dcreate(group_ep, "state_variables", H5T_NATIVE_DOUBLE, space_sv, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dataset_sv, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, state_vars);
+    H5Dclose(dataset_sv);
+    H5Sclose(space_sv);
+
+    H5Gclose(group_ep);
+
+    hid_t group_mech = H5Gcreate2(file_id, "/mechanics", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    hid_t attr_load = H5Acreate(group_mech, "load_increment", H5T_NATIVE_INT, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
+    H5Awrite(attr_load, H5T_NATIVE_INT, &load_increment);
+    H5Aclose(attr_load);
+
+    hid_t attr_lf = H5Acreate(group_mech, "load_factor", H5T_NATIVE_DOUBLE, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
+    H5Awrite(attr_lf, H5T_NATIVE_DOUBLE, &load_factor);
+    H5Aclose(attr_lf);
+
+    hsize_t dims_mech[1] = { (hsize_t)num_dofs };
+    hid_t space_mech = H5Screate_simple(1, dims_mech, NULL);
+
+    hid_t dset_x = H5Dcreate(group_mech, "x_current", H5T_NATIVE_DOUBLE, space_mech, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dset_x, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, x_current);
+    H5Dclose(dset_x);
+
+    hid_t dset_fext = H5Dcreate(group_mech, "fext0", H5T_NATIVE_DOUBLE, space_mech, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Dwrite(dset_fext, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, fext0);
+    H5Dclose(dset_fext);
+
+    H5Sclose(space_mech);
+    H5Gclose(group_mech);
+
+    H5Sclose(space_scalar);
+    H5Fclose(file_id);
+
+    std::rename(temp_filename.c_str(), final_filename.c_str());
 }

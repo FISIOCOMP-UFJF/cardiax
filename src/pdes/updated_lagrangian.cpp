@@ -824,6 +824,11 @@ void UpdatedLagrangian::solve()
   while (lc.has_load())
   {
     lc.update();
+
+    u = 0.0;
+    udisp.zeros();
+    react = 0.0;
+    
     // augmented Lagrangian
     int al_iter = 0;
 
@@ -889,7 +894,6 @@ void UpdatedLagrangian::solve()
           fext0.memptr(),      
           num_dofs             
       );
-      // FIM LUCAS:
     }
       
   }

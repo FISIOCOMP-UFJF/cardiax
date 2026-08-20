@@ -304,7 +304,6 @@ void Monodomain::solve()
   // initial_conditions();
     
   // loop in time
-  // LUCAS
   int step = tip.it() / tip.pr();
   int checkpoint_rate = (int) std::round(checkpoint_interval / timestep);
   if (checkpoint_rate <= 0) checkpoint_rate = -1; 

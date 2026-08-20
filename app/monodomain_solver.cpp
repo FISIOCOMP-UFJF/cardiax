@@ -78,7 +78,6 @@ int main(int argc, const char *argv[])
 				monodomain.setup_types(typefile);
 
 			monodomain.initial_conditions();
-			// LUCAS:
       monodomain.set_checkpoint_interval(checkpoint_interval);
       if(restfilename != "")
       {

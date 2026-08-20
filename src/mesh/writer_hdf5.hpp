@@ -46,7 +46,6 @@ public:
   void write_xdmf(const std::string & file, int nsteps, double step, bool bido=false);
 
   //! Write checkpoint state file
-  // LUCAS:
   void write_checkpoint(int step, double current_time, const double *vm, const double *state_vars, int num_state_vars);
   
   void read_checkpoint_metadata(const std::string &filename, int &step, double &time, int &num_nodes, int &num_vars);
@@ -62,6 +61,11 @@ public:
 
   void read_mech_checkpoint_data(const std::string &filename, 
                                  double *x_current, double *fext0);
+
+  void write_coupled_checkpoint(int step, double current_time, 
+                                const double *vm, const double *state_vars, int num_state_vars,
+                                int load_increment, double load_factor, 
+                                const double *x_current, const double *fext0, int num_dofs);
 
 private:
     

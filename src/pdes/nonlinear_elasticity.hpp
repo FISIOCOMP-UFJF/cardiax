@@ -139,6 +139,12 @@ public:
   //! Restore mechanical state from a checkpoint HDF5 file
   void restore_checkpoint(std::string restfilename);
   void save_checkpoint(bool save){ save_state = save; }; 
+  void read_ep_checkpoint(const std::string &filename, double *vm, double *state_vars, 
+                          int &step, double &time);
+  void save_coupled_checkpoint(int ep_step, double ep_time, 
+                               const double* vm, const double* state_vars, 
+                               int num_state_vars);
+                              
   
 protected:
   

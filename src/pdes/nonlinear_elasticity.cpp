@@ -1462,7 +1462,6 @@ void NonlinearElasticity::output_vtk(const int cont, const int step)
 
 void NonlinearElasticity::output_vtk(const int step, const arma::vec & v, const arma::vec & displ)
 {
-  // LUCAS: talvez a fonte de ter dois arquivos de saida
   cout << "Writing Data\n";
   writer.write_vm_step(step, v.memptr());
   writer.write_displ_step(step, displ.memptr());
@@ -2087,4 +2086,36 @@ void NonlinearElasticity::restore_checkpoint(std::string restfilename)
          << " (Load: " << chk_load_factor * 100 << "%)." << endl;
     cout << "     New step resolution: " << (config_total_increments - chk_load) 
          << " increments remaining. New load step: " << lc.load_step() << endl;
+}
+
+void NonlinearElasticity::save_coupled_checkpoint(int ep_step, double ep_time, 
+                                                  const double* vm, const double* state_vars, 
+                                                  int num_state_vars)
+{
+    int n_nodes = msh.get_n_points();
+    int n_dim = msh.get_n_dim();
+    
+    std::vector<double> flat_x(num_dofs, 0.0);
+    for(int i = 0; i < n_nodes; i++) {
+        for(int d = 0; d < n_dim; d++) {
+            flat_x[(i * n_dim) + d] = x[i][d];
+        }
+    }
+
+    writer.write_coupled_checkpoint(
+        ep_step, ep_time,
+        vm, state_vars, num_state_vars,
+        lc.increment(), lc.load(),
+        flat_x.data(), fext0.memptr(), num_dofs
+    );
+}
+
+void NonlinearElasticity::read_ep_checkpoint(const std::string &filename, double *vm, double *state_vars, 
+                                             int &step, double &time)
+{
+    int num_nodes, num_vars;
+    
+    writer.read_checkpoint_metadata(filename, step, time, num_nodes, num_vars);
+    
+    writer.read_checkpoint_data(filename, vm, state_vars);
 }

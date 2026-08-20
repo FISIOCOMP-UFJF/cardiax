@@ -23,17 +23,12 @@ set(
   materials/holzapfel_ogden.cpp
 )
 
-# Definição da biblioteca (Isto está perfeito)
 add_library(PDE ${PDE_SRC})
 
-# [NOVO] Exporta os headers do PDE para outros módulos
-target_include_directories(PDE PRIVATE
+target_include_directories(PDE PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-# [MODIFICADO] Linka as dependências como PUBLIC
-# Isso garante que qualquer alvo que linkar 'PDE' (como 'Cardiac')
-# também receba as propriedades de 'FEM', 'ODE', e 'LinAlg'.
 target_link_libraries(PDE PUBLIC
     FEM
     ODE

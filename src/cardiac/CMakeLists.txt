@@ -16,7 +16,7 @@ set(CARDIAC_SRC
     
 add_library(Cardiac ${CARDIAC_SRC})
 
-target_include_directories(Cardiac PRIVATE
+target_include_directories(Cardiac PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 

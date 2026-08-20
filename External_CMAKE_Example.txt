@@ -1,0 +1,23 @@
+cmake_minimum_required(VERSION 3.10)
+project(PaperValidation)
+
+# 1. Defina caminhos absolutos para o repositório do CardiaX
+# (Substitua pelos caminhos reais no seu sistema)
+set(CARDIAX_SOURCE_DIR "/caminho/absoluto/para/cardiax")
+set(CARDIAX_BUILD_DIR  "/caminho/absoluto/para/cardiax/build")
+
+add_executable(meu_experimento main.cpp)
+
+# 2. Diga ao compilador onde achar os .h do CardiaX
+# Se você tiver uma pasta "include" central, aponte para ela, 
+# ou aponte para a pasta SRC se os headers estiverem lá.
+target_include_directories(meu_experimento PRIVATE 
+    ${CARDIAX_SOURCE_DIR}/src/cardiac
+    # adicione outras pastas do CardiaX que você precisar incluir diretamente
+)
+
+# 3. Diga ao linker onde estão os arquivos .so (libCardiac.so, libUtil.so, etc)
+target_link_directories(meu_experimento PRIVATE ${CARDIAX_BUILD_DIR})
+
+# 4. Link as bibliotecas do CardiaX que você vai usar
+target_link_libraries(meu_experimento PRIVATE Cardiac)

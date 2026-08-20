@@ -4,6 +4,7 @@
 
 cmake_minimum_required(VERSION 3.12)
 project(Cardiax C CXX)
+set(BUILD_SHARED_LIBS ON)
 
 if(POLICY CMP0144)
   cmake_policy(SET CMP0144 OLD)

@@ -2271,6 +2271,65 @@ void NonlinearElasticity::storeStress(int step)
   writer.write_cell_field_step(step, rad_strain.memptr(), string("rad_strain"));
 }
 
+void NonlinearElasticity::effective_active_tension(const arma::vec & ta_nodal,
+                                                   arma::vec & ta_elem) const
+{
+  const int ne = msh.get_n_elements();
+  ta_elem.zeros(ne);
+
+  if (material == nullptr || ta_nodal.n_elem == 0) return;
+
+  std::vector<int> pnums;
+  for (int iel = 0; iel < ne; iel++)
+  {
+    msh.get_element_pt_nums(iel, pnums);
+    if (pnums.empty()) continue;
+
+    // Mesmo lookup usado na montagem: marcador do elemento -> material ->
+    // ta_scale. Constante sobre o elemento.
+    const double s = material->active_scale(msh.get_element_index(iel));
+
+    double acc = 0.0;
+    int    cnt = 0;
+    for (std::size_t j = 0; j < pnums.size(); j++)
+    {
+      const int p = pnums[j];
+      if (p >= 0 && (arma::uword) p < ta_nodal.n_elem) { acc += ta_nodal(p); cnt++; }
+    }
+    if (cnt > 0) ta_elem(iel) = (acc / cnt) * s;
+  }
+}
+
+
+void NonlinearElasticity::active_scale_field(arma::vec & scale_elem) const
+{
+  const int ne = msh.get_n_elements();
+  scale_elem.zeros(ne);
+  if (material == nullptr) return;
+
+  for (int iel = 0; iel < ne; iel++)
+    scale_elem(iel) = material->active_scale(msh.get_element_index(iel));
+}
+
+
+void NonlinearElasticity::store_cell_field(int step, const arma::vec & v,
+                                           const std::string & name)
+{
+  // O writer copia exatamente n_elements valores; um vetor maior e inofensivo,
+  // um menor leria alem do fim.
+  const arma::uword ne = msh.get_n_elements();
+  if (v.n_elem < ne)
+  {
+    cout << " Warning: cell field '" << name << "' has " << v.n_elem
+         << " entries but the mesh has " << ne
+         << " elements; not written." << endl;
+    return;
+  }
+
+  writer.write_cell_field_step(step, v.memptr(), name);
+}
+
+
 void NonlinearElasticity::store_point_field(int step, const arma::vec & v,
                                             const std::string & name)
 {

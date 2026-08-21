@@ -2,6 +2,8 @@
 #include <cmath>
 #include <iomanip>
 #include <ios>
+#include <stdexcept>
+#include <algorithm>
 #include "util/command_line_args.h"
 #include "odes/torord_land.hpp"   // land_active_stiffness()
 #include "cardiac_cycle.hpp"
@@ -107,15 +109,12 @@ void CardiacElectromechanic::config(const string &basename)
   // notably a much smaller dt for stiff ionic cell models. So an explicitly
   // given -t / -dt wins over the values implied by the curve.
   double dt_from_curve = T / (size - 1);
-  double T_cli  = CommandLineArgs::read("-t", -1.0);
-  double dt_cli = CommandLineArgs::read("-dt", -1.0);
+  double T_cli  = CommandLineArgs::read("-t",  -1.0,
+      "TETO de tempo de simulacao; com -circ 1 e opcional", "tempo");
+  double dt_cli = CommandLineArgs::read("-dt", -1.0,
+      "passo de tempo da EP, na unidade de -tunit", "tempo");
 
-  if (T_cli > 0.0 && T_cli != T)
-  {
-    cout << " total_time from the mesh (" << T << ") overridden by -t "
-         << T_cli << endl;
-    T = T_cli;
-  }
+  // dt primeiro: a margem do span da EP e expressa em passos.
   if (dt_cli > 0.0)
   {
     cout << " dt from the pvloop curve (" << dt_from_curve
@@ -124,6 +123,98 @@ void CardiacElectromechanic::config(const string &basename)
   }
   else
     dt = dt_from_curve;
+
+  // -------------------------------------------------------------------
+  // TRES quantidades, TRES donos
+  //
+  //   periodo cardiaco   <- -hr / -bpm
+  //   duracao da rodada  <- -beats * periodo, LIMITADA por -t
+  //   BCL do warm up     <- -bcl, default = periodo cardiaco
+  //
+  // Antes de separar, -t acumulava as tres e elas so eram mutuamente
+  // compativeis com -beats 1:
+  //   -t curto  -> o relogio da EP terminava no meio da rodada e
+  //                Eikonal::advance() virava um no-op SILENCIOSO;
+  //   -t longo  -> o warm up recebia um BCL de varios batimentos e as
+  //                condicoes iniciais do ciclo limite eram de outra
+  //                frequencia.
+  // -------------------------------------------------------------------
+  const int use_circ_early = CommandLineArgs::read("-circ", 0,
+      "circulacao 0D em malha fechada (Regazzoni 2022)", "circulacao");
+
+  // Leituras puras, sem efeito colateral: set_solver_time_unit_ms() continua
+  // acontecendo mais abaixo, no lugar de sempre.
+  const string tunit_early     = CommandLineArgs::read("-tunit", string("s"),
+      "unidade de tempo da EP (s ou ms)", "tempo");
+  const double solver_ms_early = (tunit_early == "ms") ? 1.0 : 1000.0;
+  const double units_per_sec   = 1000.0 / solver_ms_early;
+
+  if (use_circ_early)
+  {
+    double hr  = CommandLineArgs::read("-hr",  -1.0,
+        "frequencia cardiaca em Hz (default 1.0 = 60 bpm)", "circulacao");
+    double bpm = CommandLineArgs::read("-bpm", -1.0,
+        "frequencia cardiaca em bpm (alternativa a -hr)", "circulacao");
+    if (bpm > 0.0) hr = bpm / 60.0;
+    if (hr  > 0.0) circ.set_heart_rate(hr);
+
+    const double tact = CommandLineArgs::read("-tact", -1.0,
+        "instante da ativacao eletrica ventricular, em s", "circulacao");
+    if (tact >= 0.0) circ.set_activation_time(tact);
+
+    const double emd = CommandLineArgs::read("-emd", -1.0,
+        "atraso eletromecanico estimulo -> inicio de Ta, em s", "circulacao");
+    if (emd >= 0.0) circ.set_emd(emd);
+
+    cout << "\n" << circ.describe_timing() << endl;
+
+    // Periodo cardiaco na unidade de tempo do solver.
+    const double RR = circ.period() * units_per_sec;
+
+    circ_num_beats = CommandLineArgs::read("-beats", 1,
+        "numero de batimentos", "circulacao");
+    if (circ_num_beats < 1) circ_num_beats = 1;
+
+    // -t e um TETO, nunca um alvo. Se nao cobrir os batimentos pedidos,
+    // reduz o numero de batimentos -- em vez de deixar o relogio da EP
+    // terminar no meio de um deles, que era o modo de falha silencioso.
+    if (T_cli > 0.0)
+    {
+      const int fits = static_cast<int>(std::floor(T_cli / RR + 1e-9));
+      if (fits < circ_num_beats)
+      {
+        cout << " *** -t " << T_cli << " " << tunit_early << " cobre apenas "
+             << fits << " batimento(s) de " << RR << " " << tunit_early
+             << "; -beats " << circ_num_beats << " reduzido para "
+             << std::max(1, fits) << endl;
+        circ_num_beats = std::max(1, fits);
+      }
+    }
+
+    // O span da EP cobre a rodada inteira mais dois passos de margem: o
+    // teste e finished() == (cur_time >= stop), entao sem margem o ultimo
+    // sub-passo seria descartado.
+    T = circ_num_beats * RR + 2.0 * dt;
+
+    // BCL do warm up: UM batimento, nunca a rodada inteira.
+    const double bcl_cli = CommandLineArgs::read("-bcl", -1.0,
+        "BCL do warm up celular (default: periodo cardiaco)", "warmup");
+    const double bcl     = (bcl_cli > 0.0) ? bcl_cli : RR;
+    ephy.set_warmup_bcl(bcl);
+
+    cout << " Heart period = " << RR << " " << tunit_early
+         << " | run = " << circ_num_beats << " beat(s)"
+         << " | EP span = " << T << " " << tunit_early
+         << " | warm-up BCL = " << bcl << " " << tunit_early << endl;
+  }
+  else if (T_cli > 0.0 && T_cli != T)
+  {
+    // Caminho legado: -t continua sendo a duracao da simulacao, e o BCL do
+    // warm up continua saindo dela (warmup_bcl fica em 0).
+    cout << " total_time from the mesh (" << T << ") overridden by -t "
+         << T_cli << endl;
+    T = T_cli;
+  }
 
   dt_mech = dt;
   cout << "size: " << size << endl;
@@ -176,7 +267,10 @@ void CardiacElectromechanic::config(const string &basename)
   cout << " EP span: T = " << T << " " << tunit << " = " << T_ms
        << " ms, dt = " << dt << " " << tunit << " = " << dt * solver_ms
        << " ms" << endl;
-  if (T_ms < 50.0 || T_ms > 20000.0)
+  // O teto escala com o numero de batimentos: com o span cobrindo a rodada
+  // inteira, 20 batimentos de 1 s sao 20000 ms legitimos.
+  const double T_ms_max = 20000.0 * std::max(1, circ_num_beats);
+  if (T_ms < 50.0 || T_ms > T_ms_max)
   {
     cout << "\n *** TIME UNIT WARNING ***" << endl;
     cout << " With -tunit " << tunit << ", the EP span works out to " << T_ms
@@ -331,11 +425,14 @@ void CardiacElectromechanic::config(const string &basename)
 
   if (use_circ)
   {
-    int    num_beats = CommandLineArgs::read("-beats", 1);
-    double dtc       = CommandLineArgs::read("-dtc", 1.0e-3);
+    // circ_num_beats ja foi resolvido contra o teto -t la em cima. Reler
+    // -beats aqui reintroduziria a divergencia justamente no caso em que o
+    // teto cortou.
+    double dtc = CommandLineArgs::read("-dtc", 1.0e-3,
+        "passo de tempo da circulacao, em s", "circulacao");
     int nsteps = static_cast<int>(std::round(circ.period() / dtc));
-    circ_n_frames = num_beats * nsteps / circ_out_every + 1;
-    cout << " Circulation output: " << num_beats * nsteps
+    circ_n_frames = circ_num_beats * nsteps / circ_out_every + 1;
+    cout << " Circulation output: " << circ_num_beats * nsteps
          << " steps, saving every " << circ_out_every << " -> "
          << circ_n_frames << " frame(s)" << endl;
     elas.setup_data_writer(circ_n_frames);
@@ -400,8 +497,68 @@ void CardiacElectromechanic::config(const string &basename)
     lambda_rate_node.zeros(npoints);
   }
 
+  // Contratilidade global. Separada do ta_scale por material de proposito: o
+  // primeiro e calibracao fisiologica e muda a cada rodada; o segundo e
+  // atributo anatomico, fixo pela geometria.
+  ta_scale_global = CommandLineArgs::read("-tascale", 1.0,
+      "escala GLOBAL de contratilidade, multiplica Ta em todos os nos",
+      "mecanica");
+
+  // Mapa do ta_scale por elemento: constante no tempo, calculado uma vez.
+  elas.active_scale_field(ta_scale_map);
+
+  if (ta_scale_map.n_elem > 0)
+  {
+    const double kpa2p = (ta_scale != 0.0) ? ta_scale : T_ref;
+    const double smax  = ta_scale_map.max();
+
+    cout << "\n Active tension pipeline:" << endl;
+    cout << "   1. cell model              Ta [kPa]" << endl;
+    cout << "   2. x " << kpa2p
+         << " (kPa -> model pressure units)" << endl;
+    cout << "   3. x " << ta_scale_global
+         << " (-tascale, global contractility, uniform over all nodes)"
+         << endl;
+    cout << "        -> logged as 'Ta max ... nodal', saved as 'active_stress'"
+         << endl;
+    cout << "   4. x ta_scale of the element's material, in ["
+         << ta_scale_map.min() << ", " << smax << "] (per element, exact,"
+         << " NOT interpolated)" << endl;
+    cout << "        -> logged as '... applied', saved as 'Ta_applied'" << endl;
+    cout << "   net: Ta of 1 kPa in the cell model becomes up to "
+         << kpa2p * ta_scale_global * smax << " model pressure units" << endl;
+
+    // Guarda contra escala dupla. Com o -tascale global, os valores do XML
+    // passam a ser FRACOES de contratilidade regional: 1 = miocardio normal,
+    // 0 = plug valvar, 0.2 = cicatriz. Um valor grande ali quase sempre e
+    // resto da convencao antiga, em que o XML carregava a magnitude.
+    if (smax > 1.5)
+    {
+      cout << "\n *** ATENCAO: o maior ta_scale de material e " << smax
+           << "." << endl;
+      cout << "     Com -tascale, os valores por material sao FRACOES de"
+           << " contratilidade regional" << endl;
+      cout << "     (1 = miocardio normal, 0 = passivo). Um valor > 1.5"
+           << " costuma ser resto da" << endl;
+      cout << "     convencao antiga, e multiplica com -tascale "
+           << ta_scale_global << " dando " << ta_scale_global * smax
+           << "x." << endl;
+      cout << "     Se a intencao era " << smax
+           << "x de contratilidade, ponha ta_scale=1 no XML e use -tascale "
+           << smax << "." << endl;
+    }
+  }
+
   //"Solve" the eikonal, to discover the lat in each element
   ephy.solve(basename);
+
+  // Registro de procedencia da rodada: toda flag lida ate aqui, com o valor
+  // resolvido e a marca [cli] ou [default]. Ligado por default de proposito
+  // -- o modo de falha caro nao e desconhecer uma flag, e nao perceber que
+  // ela ficou no default (-t ausente, -amgx caindo no fallback, etc).
+  if (CommandLineArgs::read("-dumpflags", 1,
+        "imprime o registro de flags no fim de config()", "diagnostico"))
+    CommandLineArgs::dump(cout);
 }
 
 
@@ -673,7 +830,18 @@ void CardiacElectromechanic::update_active_tension()
   else
     ephy.get_cells().get_var(ta_var_index, ta);
 
-  ta = ta * ((ta_scale != 0.0) ? ta_scale : T_ref);
+  // Duas escalas, com papeis distintos:
+  //   ta_scale (membro) = conversao kPa -> unidade de pressao do modelo
+  //   ta_scale_global   = contratilidade global, -tascale
+  // Ambas uniformes, aplicadas no campo NODAL. A terceira escala, a do
+  // material, e por elemento e entra so na montagem.
+  ta = ta * ((ta_scale != 0.0) ? ta_scale : T_ref) * ta_scale_global;
+
+  // Tensao efetivamente entregue a montagem: a media nodal de Ta em cada
+  // elemento vezes o ta_scale do material daquele elemento. Por elemento,
+  // porque ta_scale e constante por elemento -- um no na fronteira entre
+  // marcadores nao tem valor efetivo unico.
+  elas.effective_active_tension(ta, ta_applied);
 
   update_active_stiffness();
 
@@ -966,7 +1134,23 @@ void CardiacElectromechanic::save_node_fields(int frame)
   // been scaled by set_active_tension_source (kPa -> model pressure unit for
   // ToRORdLand, T_ref for Kerckhoffs). Divide by kPa_to_p when
   // post-processing if you want kPa.
+  // Ta nodal: modelo celular x (kPa -> unidades) x -tascale global. Uniforme,
+  // sem a escala do material. Divida por kPa_to_p e por -tascale para voltar
+  // aos kPa do modelo celular.
   elas.store_point_field(frame, ta, string("active_stress"));
+
+  // Tensao ativa EFETIVA, por elemento. "active_stress" acima e o valor
+  // nodal bruto do modelo celular; "Ta_applied" ja inclui o ta_scale do
+  // material e e a grandeza que aparece no residuo. Onde ta_scale = 0
+  // (plugs valvares, cicatriz) este campo e identicamente zero, o que torna
+  // a regiao passiva visivel no ParaView.
+  if (ta_applied.n_elem > 0)
+    elas.store_cell_field(frame, ta_applied, string("Ta_applied"));
+
+  // Mapa do multiplicador. Constante no tempo, gravado a cada frame para o
+  // XDMF ficar consistente e permitir sobrepor aos demais campos.
+  if (ta_scale_map.n_elem > 0)
+    elas.store_cell_field(frame, ta_scale_map, string("ta_scale"));
 
   // Fibre stretch, when the mechano-electric coupling is on. Saving it makes
   // it possible to see whether lambda is doing anything sensible before
@@ -1129,6 +1313,15 @@ void CardiacElectromechanic::solve_circulation(int num_beats, double dt_circ)
 
   timer.enter("solve_circulation");
 
+  // config() ja resolveu -beats contra o teto imposto por -t. O argumento
+  // chega direto da linha de comando pelo app e pode estar desatualizado.
+  if (circ_num_beats > 0 && num_beats != circ_num_beats)
+  {
+    cout << " *** -beats " << num_beats << " ajustado para " << circ_num_beats
+         << " (limite imposto por -t)" << endl;
+    num_beats = circ_num_beats;
+  }
+
   // --- initialisation, mirroring solve() ------------------------------
   // pre_solve() builds the elasticity matrices/vectors and the reference
   // configuration; initial_conditions() resets the cell model state.
@@ -1142,12 +1335,24 @@ void CardiacElectromechanic::solve_circulation(int num_beats, double dt_circ)
   update_active_tension();
 
   // --- initialise the 0D model from the actual 3D cavity volumes ------
+  // Sobrescrever V_LV/V_RV com os volumes da malha MUDA o volume sanguineo
+  // estressado: o estado inicial publicado tem V_LV = 118.5 e V_RV = 166.2
+  // mL, e uma malha tipica esta dezenas de mL abaixo disso. Sem compensacao,
+  // o modelo inteiro roda subenchido e o efeito e invisivel no log.
+  const double vtot0 = CommandLineArgs::read("-circ_vtot",
+      circ.total_volume(),
+      "volume sanguineo estressado em mL (default: o do estado inicial)",
+      "circulacao");
+
   double v_lv0 = elas.volume_LV();
   double v_rv0 = elas.volume_RV();
   circ.set_initial_volumes(v_lv0, v_rv0);
+  const double dv_realloc = circ.rebalance_total_volume(vtot0);
 
   cout << " Initial cavity volumes from the 3D mesh: LV = " << v_lv0
        << " mL, RV = " << v_rv0 << " mL" << endl;
+  cout << " Stressed blood volume held at " << vtot0 << " mL ("
+       << dv_realloc << " mL reallocated to the venous reservoirs)" << endl;
   cout << " Pressure conversion: 1 mmHg = " << mmHg_to_p
        << " model pressure units" << endl;
 
@@ -1225,6 +1430,26 @@ void CardiacElectromechanic::solve_circulation(int num_beats, double dt_circ)
   // be ms or s (see ephy_time_per_second above), while T is in seconds.
   // Without this the stimulus window would be tested against the wrong scale.
   const double stim_period = T * ephy_time_per_second;
+
+  // ---- o relogio da EP tem de cobrir a rodada INTEIRA -----------------
+  // Se estiver curto, estica: no caminho acoplado quem manda no tempo e este
+  // laco, nao o -t. A excecao abaixo so dispara se a aritmetica ficar
+  // inconsistente, e e MUITO preferivel ao no-op silencioso de
+  // Eikonal::advance(), que congela as celulas sem emitir nada.
+  const double total_ephy = num_beats * stim_period;
+  if (stop_ephy < total_ephy - 0.5 * dt_ephy)
+  {
+    const double novo = total_ephy + 2.0 * dt_ephy;
+    cout << " EP span esticado de " << stop_ephy << " para " << novo
+         << " para cobrir " << num_beats << " batimento(s)" << endl;
+    ephy.time_parameters().set_stop(novo);
+    stop_ephy = ephy.get_time_parameters().get_stop();
+  }
+  if (stop_ephy < total_ephy - 0.5 * dt_ephy)
+    throw std::runtime_error("EP span shorter than the run: the cell model "
+                             "would silently stop integrating partway "
+                             "through. Check -t, -hr and -beats.");
+
   if (stim_amplitude != 0.0)
     cout << " LAT stimulus: amplitude = " << stim_amplitude
          << ", duration = " << stim_duration
@@ -1314,9 +1539,21 @@ void CardiacElectromechanic::solve_circulation(int num_beats, double dt_circ)
     }
 
     if (log_now)
+    {
+      // Duas grandezas diferentes, e a distincao importa: 'ta' e o valor
+      // BRUTO do modelo celular e nao muda quando se mexe no ta_scale do
+      // XML; 'ta_applied' e o que a montagem realmente usa.
+      // 'nodal'   = ja inclui kPa->unidades e o -tascale global, uniforme.
+      // 'applied' = tambem inclui o ta_scale do material, por elemento.
+      // Nao sao proporcionais: o maximo nodal pode cair num no cujos
+      // elementos vizinhos sejam todos passivos.
       cout << "  [ODE  ] " << n_sub << " sub-steps"
            << (stimulating ? " (stimulus on)" : "")
-           << " -> Ta max = " << ta.max() << endl;
+           << " -> Ta max = " << ta.max() << " nodal";
+      if (ta_applied.n_elem > 0)
+        cout << ", " << ta_applied.max() << " applied";
+      cout << endl;
+    }
 
     if (i == 0 && beat == 0 && arma::max(arma::abs(ta)) == 0.0)
     {

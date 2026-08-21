@@ -4,24 +4,51 @@
 #include <algorithm>
 
 Regazzoni2020::Regazzoni2020()
-  : has_coupling(false),
+  : clamped(false),
+    has_coupling(false),
     p_la(0), p_lv(0), p_ra(0), p_rv(0),
     q_mv(0), q_av(0), q_tv(0), q_pv(0)
 {
+  tim = default_timing();
   par = default_parameters();
   y   = default_initial_state();
+
+  // Os TC/TR/tC de default_parameters() sao placeholders; a fonte da verdade
+  // e a especificacao tim. Derivar aqui garante que qualquer objeto recem
+  // construido ja esteja consistente, mesmo que ninguem chame set_heart_rate.
+  apply_timing();
+}
+
+Regazzoni2020::Timing Regazzoni2020::default_timing()
+{
+  Timing t;
+  t.t_act        = 0.00;   // solve_circulation() estimula em t = 0, T, 2T...
+  t.emd          = 0.04;   // ToRORd-Land: estimulo -> inicio da subida de Ta
+  t.TC_atria     = 0.17;   // sistole atrial, ~independente da frequencia
+  t.TR_atria     = 0.17;
+  t.TC_vent_ref  = 0.25;   // valores publicados, no periodo de referencia
+  t.TR_vent_ref  = 0.40;
+  t.RR_ref       = 1.00;   // os tempos publicados sao consistentes com 1.0 s
+  t.sys_exponent = 0.50;   // Bazett
+  t.atrial_max_fill = 0.90;
+  return t;
 }
 
 Regazzoni2020::Parameters Regazzoni2020::default_parameters()
 {
   Parameters p;
-  p.HR = 1.25;                     // Hz  -> 0.8 s period, 75 bpm
+
+  // 1.0 Hz. O valor anterior (1.25) era incompativel com os tC publicados:
+  // com RR = 0.8 s, tC_LA = 0.90 cai em 0.90 mod 0.8 = 0.10, exatamente o
+  // tC do ventriculo, e o atrio passava a contrair dentro da sistole.
+  p.HR = 1.0;
 
   //          EA      EB      TC    TR    tC    V0
-  p.LA = {  0.07,   0.18,  0.17, 0.17, 0.90,  4.0 };
-  p.LV = {  4.482,  0.170, 0.25, 0.40, 0.10, 42.0 };
-  p.RA = {  0.06,   0.07,  0.17, 0.17, 0.90,  4.0 };
-  p.RV = {  0.200,  0.029, 0.25, 0.40, 0.10, 16.0 };
+  // TC/TR/tC abaixo sao apenas placeholders: apply_timing() os sobrescreve.
+  p.LA = {  0.07,   0.18,  0.17, 0.17, 0.87,  4.0 };
+  p.LV = {  4.482,  0.170, 0.25, 0.40, 0.04, 42.0 };
+  p.RA = {  0.06,   0.07,  0.17, 0.17, 0.87,  4.0 };
+  p.RV = {  0.200,  0.029, 0.25, 0.40, 0.04, 16.0 };
 
   const Valve v = { 0.0075, 75006.2 };
   p.MV = v;  p.AV = v;  p.TV = v;  p.PV = v;
@@ -53,6 +80,160 @@ std::array<double,Regazzoni2020::NSTATE> Regazzoni2020::default_initial_state()
   s[Q_VEN_PUL] = 473.279;
   return s;
 }
+
+// ===========================================================================
+//  Tempos das camaras derivados da frequencia
+// ===========================================================================
+
+double Regazzoni2020::wrap(double x, double p)
+{
+  double r = std::fmod(x, p);
+  if (r < 0.0) r += p;
+  return r;
+}
+
+void Regazzoni2020::apply_timing()
+{
+  const double RR = period();
+  clamped = false;
+
+  // ---- ventriculos ---------------------------------------------------
+  // Escalonamento sublinear da sistole. Com sys_exponent = 0.5 (Bazett) a
+  // duracao sistolica varia com a raiz do periodo, que e o que a regressao
+  // de Weissler para QS2 produz aproximadamente entre 40 e 120 bpm.
+  const double s = std::pow(RR / tim.RR_ref, tim.sys_exponent);
+
+  double TC_v = tim.TC_vent_ref * s;
+  double TR_v = tim.TR_vent_ref * s;
+
+  // A ativacao mecanica do ventriculo comeca um EMD depois do estimulo. No
+  // caminho acoplado a elastancia ventricular nao e usada, mas manter os dois
+  // caminhos na mesma fase e o que permite usar o modo 0D puro como
+  // diagnostico comparavel.
+  const double t_vent = wrap(tim.t_act + tim.emd, RR);
+
+  par.LV.TC = par.RV.TC = TC_v;
+  par.LV.TR = par.RV.TR = TR_v;
+  par.LV.tC = par.RV.tC = t_vent;
+
+  // ---- atrios --------------------------------------------------------
+  // A duracao da sistole atrial e tratada como independente da frequencia.
+  // O que a frequencia muda e a janela diastolica disponivel; se ela ficar
+  // pequena demais, a sistole atrial e encurtada em vez de invadir a sistole
+  // ventricular.
+  const double diast = RR - (TC_v + TR_v);
+
+  double TC_a = tim.TC_atria;
+  double TR_a = tim.TR_atria;
+
+  if (diast <= 0.0)
+  {
+    // Sistole ventricular maior que o proprio ciclo: HR alto demais para a
+    // duracao sistolica configurada. Deixa uma sistole atrial minima e
+    // sinaliza; quem chamou decide o que fazer.
+    TC_a = 0.05 * RR;
+    TR_a = 0.05 * RR;
+    clamped = true;
+  }
+  else if (TC_a > tim.atrial_max_fill * diast)
+  {
+    const double f = (tim.atrial_max_fill * diast) / TC_a;
+    TC_a *= f;
+    TR_a *= f;
+    clamped = true;
+  }
+
+  // ANCORAGEM PELO FIM: a contracao atrial termina exatamente quando a
+  // pressao ventricular comeca a subir (t_act + emd). Esta e a linha que
+  // torna a sincronia AV automatica em qualquer frequencia -- tC atrial NAO
+  // e uma fracao fixa do ciclo.
+  const double t_atria = wrap(tim.t_act + tim.emd - TC_a, RR);
+
+  par.LA.TC = par.RA.TC = TC_a;
+  par.LA.TR = par.RA.TR = TR_a;
+  par.LA.tC = par.RA.tC = t_atria;
+}
+
+void Regazzoni2020::set_heart_rate(double hr_hz)
+{
+  if (hr_hz <= 0.0) return;
+  par.HR = hr_hz;
+  apply_timing();
+}
+
+void Regazzoni2020::set_activation_time(double t_act)
+{
+  tim.t_act = t_act;
+  apply_timing();
+}
+
+void Regazzoni2020::set_emd(double emd)
+{
+  tim.emd = emd;
+  apply_timing();
+}
+
+double Regazzoni2020::diastolic_window() const
+{
+  return period() - (par.LV.TC + par.LV.TR);
+}
+
+std::string Regazzoni2020::describe_timing() const
+{
+  const double RR = period();
+  std::ostringstream os;
+  os << std::fixed << std::setprecision(3);
+
+  os << " Cardiac timing: HR = " << par.HR * 60.0 << " bpm, RR = " << RR
+     << " s\n";
+  os << "   ventricular activation (stimulus) at t = " << tim.t_act
+     << " s, EMD = " << tim.emd << " s\n";
+  os << "   atria      : contract [" << par.LA.tC << ", "
+     << wrap(par.LA.tC + par.LA.TC, RR) << "), relax "
+     << par.LA.TR << " s"
+     << (par.LA.tC + par.LA.TC > RR ? "   (wraps)" : "") << "\n";
+  os << "   ventricles : contract [" << par.LV.tC << ", "
+     << wrap(par.LV.tC + par.LV.TC, RR) << "), relax "
+     << par.LV.TR << " s   (0D only; ignored when coupled)\n";
+  os << "   diastolic window = " << diastolic_window() << " s ("
+     << 100.0 * diastolic_window() / RR << " % of RR)";
+
+  if (clamped)
+    os << "\n   *** WARNING: the atrial systole had to be shortened to fit"
+          " the cycle.\n"
+          "       The check uses the 0D ventricular window (TC+TR). When the"
+          " 3D model\n"
+          "       supplies p_LV/p_RV that window is only an estimate: what"
+          " matters is\n"
+          "       whether Ta has actually relaxed before t = "
+       << std::fixed << std::setprecision(3) << par.LA.tC
+       << " s. Raise sys_exponent,\n"
+          "       shorten TC_vent_ref/TR_vent_ref, or lower the heart rate.";
+
+  return os.str();
+}
+
+// ===========================================================================
+//  Volume
+// ===========================================================================
+
+double Regazzoni2020::rebalance_total_volume(double vtot)
+{
+  const double dv = vtot - total_volume();
+  const double C  = par.SYS.C_VEN + par.PUL.C_VEN;
+  if (C <= 0.0) return 0.0;
+
+  // Deslocamento comum de pressao nos dois reservatorios venosos: eles sao os
+  // vasos de capacitancia e absorvem a diferenca sem alterar o gradiente
+  // arterio-venoso que define o ponto de operacao.
+  const double dp = dv / C;
+  y[p_VEN_SYS] += dp;
+  y[p_VEN_PUL] += dp;
+
+  return dv;
+}
+
+// ===========================================================================
 
 double Regazzoni2020::activation(const Chamber & c, double t) const
 {

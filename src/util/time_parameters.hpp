@@ -40,6 +40,19 @@ public:
   inline double get_dt() const   { return time_step;  }
   inline double get_stop() const { return stop;       }
 
+  //! Redefine o instante final e recalcula nsteps/size.
+  //!
+  //! No caminho acoplado quem manda no tempo e o laco da circulacao, nao o
+  //! -t. Sem isto, finished() dispara no meio da rodada e advance() vira um
+  //! no-op SILENCIOSO: as celulas param de integrar, Ta congela e nenhuma
+  //! mensagem e emitida. O sintoma aparece como "a tensao ativa nao sobe".
+  inline void set_stop(double t)
+  {
+    stop   = t;
+    nsteps = (int) ((stop - start) / time_step);
+    if (print_rate > 0) size = (nsteps / print_rate);
+  }
+
   inline bool finished ()
   {
     return (cur_time < stop) ? false : true;

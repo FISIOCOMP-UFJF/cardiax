@@ -138,6 +138,20 @@ public:
   //! Change total time
   void set_totaltime(double t) { totaltime = t; }
 
+  //! BCL do warm up celular, na unidade de tempo do SOLVER.
+  //!
+  //! 0 = derivar de totaltime (comportamento legado, correto quando -t cobre
+  //! exatamente um batimento). No caminho acoplado totaltime cobre a rodada
+  //! INTEIRA e portanto nao serve como BCL: config() poe aqui o periodo
+  //! cardiaco. -warmup_bcl (em ms) ainda sobrescreve os dois, porque e lido
+  //! depois, dentro de CellWarmup::options_from_command_line().
+  void set_warmup_bcl(double b) { warmup_bcl = b; }
+
+  //! Acesso NAO-const as time parameters, para que o caminho acoplado possa
+  //! esticar o span da EP ate cobrir a rodada. Sem isto, stop e imutavel
+  //! depois do construtor e advance() vira um no-op silencioso ao atingi-lo.
+  TimeParameters & time_parameters() { return tip; }
+
   //! Change print rate
   void set_printrate(double r) { printrate = r; }
 
@@ -168,6 +182,8 @@ protected:
   bool re_assembly_mats;
   double timestep;
   double totaltime;
+  //! Ver set_warmup_bcl(). 0 = derivar de totaltime.
+  double warmup_bcl = 0.0;
   double printrate;
   double printrate_apd;
 

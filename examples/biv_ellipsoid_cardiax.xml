@@ -12,11 +12,11 @@
                 <coefficients>2000, 8, 2, 4, 0, 200000.0</coefficients>
           </material>
 -->             
-          <material id="0" type="HolzapfelOgden">
-            <coefficients>2280, 1685, 0.0, 0.0, 9.726, 15.779, 0.0, 0.0, 0, 100000.0</coefficients>
+          <material id="0" type="HolzapfelOgden" ta_scale="5.0">
+            <coefficients>2280, 1685, 0.0, 0.0, 9.726, 15.779, 0.0, 0.0, 0, 1e6.0</coefficients>
           </material>
-          <material id="1" type="HolzapfelOgden">
-            <coefficients>2280, 1685, 0.0, 0.0, 9.726, 15.779, 0.0, 0.0, 0, 100000.0</coefficients>
+          <material id="1" type="HolzapfelOgden" ta_scale="5.0">
+            <coefficients>2280, 1685, 0.0, 0.0, 9.726, 15.779, 0.0, 0.0, 0, 1e6.0</coefficients>
           </material>          
       <ninc>1</ninc>
     </parameters>
@@ -27,8 +27,8 @@
           <node id="3" marker="30" value="0.0"/>
    </pressure>
   <spring>
-          <node id="1" marker="10" type="normal" value="1e6"/>
-          <node id="2" marker="40" type="normal" value="1e7"/>
+          <node id="1" marker="10" type="normal" value="1e5"/>
+          <node id="2" marker="40" type="normal" value="1e6"/>
   </spring>
 <!--
 <prescribed_displacement>
@@ -101179,7 +101179,7 @@
         <rad>-0.295471,0.953155,-0.064745</rad>
     </element>
   </local_basis>
-<pvloop size="801" total_time="0.800000" passive_time="0.0" C_art="0.014" C_ven="0.3" R_ao="3850.0" V_ven_zero="3300.0" P_o="500.0" B_LA="0.049" V_art_zero="580.0" tau="25.0" R_ven="1400.0" A_LA="58.67" R_mv="1750.0" E_es_LA="60.0" p_art="10800.0" p_ven="1600.0" T_max="200.0" R_per="140000.0" stroke_volume="0.0" T_ref="1200."  >
+<pvloop size="801" total_time="1.0" passive_time="0.0" C_art="0.014" C_ven="0.3" R_ao="3850.0" V_ven_zero="3300.0" P_o="500.0" B_LA="0.049" V_art_zero="580.0" tau="25.0" R_ven="1400.0" A_LA="58.67" R_mv="1750.0" E_es_LA="60.0" p_art="10800.0" p_ven="1600.0" T_max="200.0" R_per="140000.0" stroke_volume="0.0" T_ref="1200."  >
     <step time="0.0" pressure="0.0" active_tension="0.0" />
     <step time="0.001" pressure="14.492753623188404" active_tension="0.0" />
     <step time="0.002" pressure="28.98550724637681" active_tension="0.0" />

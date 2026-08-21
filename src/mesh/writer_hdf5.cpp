@@ -210,6 +210,26 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     status = H5Sclose(dataspace_id);
     //fim teste
 
+    // TENSAO ATIVA EFETIVAMENTE APLICADA (por elemento).
+    // Media nodal de Ta no elemento vezes o ta_scale do material. E o que a
+    // montagem usa; o campo nodal "active_stress" e o valor BRUTO do modelo
+    // celular, antes da escala por material, e os dois nao coincidem.
+    dataspace_id = H5Screate_simple(2, dims, NULL);
+    dataset_id = H5Dcreate(file_id, "/vertex_field/Ta_applied",
+                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
+                           props, H5P_DEFAULT);
+    status = H5Dclose(dataset_id);
+    status = H5Sclose(dataspace_id);
+
+    // Mapa do multiplicador ta_scale por elemento. Constante no tempo, mas
+    // gravado como campo para poder ser sobreposto aos demais no ParaView.
+    dataspace_id = H5Screate_simple(2, dims, NULL);
+    dataset_id = H5Dcreate(file_id, "/vertex_field/ta_scale",
+                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
+                           props, H5P_DEFAULT);
+    status = H5Dclose(dataset_id);
+    status = H5Sclose(dataspace_id);
+
     dataspace_id = H5Screate_simple(2, dims, NULL);
     dataset_id = H5Dcreate(file_id, "/vertex_field/long_strain", H5T_NATIVE_DOUBLE,
                          dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
@@ -789,6 +809,42 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "            </Attribute>\n";
 
         //teste cell field
+        //Ta_applied -- tensao ativa efetivamente aplicada pela mecanica
+        xmf << "            <Attribute Name=\"Ta_applied\" \n"
+            << "                AttributeType=\"Scalar\" \n"
+            << "                Center=\"Cell\">\n"
+            << "            <DataItem ItemType=\"HyperSlab\" \n"
+            << "                Dimensions=\"1 " << ne << "\" \n"
+            << "                Type=\"HyperSlab\">\n"
+            << "                <DataItem Dimensions=\"3 2\" Format=\"XML\">\n"
+            << "                    " << i << " 0 \n"
+            << "                    1 1 \n"
+            << "                    1 " << ne <<"\n"
+            << "                </DataItem>\n"
+            << "                <DataItem Name=\"Cells\" \n"
+            << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
+            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/Ta_applied\n"
+            << "                </DataItem>\n"
+            << "            </DataItem>\n"
+            << "            </Attribute>\n";
+        //ta_scale -- mapa do multiplicador por elemento
+        xmf << "            <Attribute Name=\"ta_scale\" \n"
+            << "                AttributeType=\"Scalar\" \n"
+            << "                Center=\"Cell\">\n"
+            << "            <DataItem ItemType=\"HyperSlab\" \n"
+            << "                Dimensions=\"1 " << ne << "\" \n"
+            << "                Type=\"HyperSlab\">\n"
+            << "                <DataItem Dimensions=\"3 2\" Format=\"XML\">\n"
+            << "                    " << i << " 0 \n"
+            << "                    1 1 \n"
+            << "                    1 " << ne <<"\n"
+            << "                </DataItem>\n"
+            << "                <DataItem Name=\"Cells\" \n"
+            << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
+            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/ta_scale\n"
+            << "                </DataItem>\n"
+            << "            </DataItem>\n"
+            << "            </Attribute>\n";
         //stress
         xmf << "            <Attribute Name=\"stress\" \n"
             << "                AttributeType=\"Scalar\" \n"

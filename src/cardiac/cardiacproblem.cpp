@@ -282,9 +282,15 @@ void CardiacProblem::warmup_cells(const arma::vec & lat)
     // sobrescrevem qualquer um dos dois.
     const double ms_per_unit = cells->get_solver_time_unit_ms();
 
+    // BCL do warm up: warmup_bcl quando definido (caminho acoplado, onde
+    // totaltime cobre varios batimentos e portanto NAO serve como BCL),
+    // senao totaltime (caminho legado, onde -t e um batimento).
+    const double default_bcl =
+      (warmup_bcl > 0.0 ? warmup_bcl : totaltime) * ms_per_unit;
+
     CellWarmup::Options opt =
-      CellWarmup::options_from_command_line(totaltime * ms_per_unit,
-                                            timestep  * ms_per_unit,
+      CellWarmup::options_from_command_line(default_bcl,
+                                            timestep * ms_per_unit,
                                             cell_name,
                                             mesh_filename);
 

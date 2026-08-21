@@ -109,6 +109,26 @@ public:
 
   //! Write a node-centred scalar field (e.g. "vm", "active_stress") into the
   //! HDF5/XDMF output for the given output step.
+  //! Tensao ativa EFETIVA por elemento: a media nodal de Ta sobre os nos do
+  //! elemento, vezes o ta_scale do material daquele elemento.
+  //!
+  //! E a grandeza que a montagem realmente usa
+  //! (updated_lagrangian.cpp: md->set_active_stress(Ta_ip * lc.load() *
+  //! ta_scale_el)), e NAO a que ta.max() imprime -- aquela e o valor bruto do
+  //! modelo celular, antes da escala por material. Sao por elemento porque
+  //! ta_scale e constante por elemento: um no na fronteira entre marcadores
+  //! nao tem um valor efetivo unico, e forcar um campo nodal ali inventaria
+  //! um numero que a mecanica nunca viu.
+  void effective_active_tension(const arma::vec & ta_nodal,
+                                arma::vec & ta_elem) const;
+
+  //! Escala de tensao ativa de cada elemento, para inspecao/saida.
+  void active_scale_field(arma::vec & scale_elem) const;
+
+  //! Grava um campo por ELEMENTO (cell-centred) no HDF5/XDMF.
+  void store_cell_field(int step, const arma::vec & v,
+                        const std::string & name);
+
   void store_point_field(int step, const arma::vec & v,
                          const std::string & name);
   void storeLVvolumes(string basename);

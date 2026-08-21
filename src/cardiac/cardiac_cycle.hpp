@@ -117,6 +117,23 @@ private:
   double ephy_time_per_second = 0.0;//!< EP time units per second (0 = detect)
   int    ta_var_index = -1;        //!< <0 = monitored 0; else state variable
   double ta_scale = 0.0;           //!< 0 = use T_ref
+
+  //! Escala GLOBAL de contratilidade (-tascale). Multiplica Ta em todos os
+  //! nos por igual, depois da conversao kPa -> unidade de pressao. E o botao
+  //! de calibracao fisiologica: muda de rodada para rodada.
+  //!
+  //! Distinto do ta_scale POR MATERIAL do XML, que e um atributo anatomico
+  //! fixo pela geometria (1 = miocardio contratil, 0 = plug valvar, valores
+  //! intermediarios = cicatriz). Os dois se multiplicam.
+  double ta_scale_global = 1.0;
+
+  //! Tensao ativa EFETIVA por elemento, ta_nodal * ta_scale do material.
+  //! E o que a mecanica aplica de fato; 'ta' guarda o valor BRUTO do modelo
+  //! celular, antes da escala por material.
+  arma::vec ta_applied;
+
+  //! Mapa do multiplicador ta_scale por elemento (constante no tempo).
+  arma::vec ta_scale_map;
   double stim_amplitude = 0.0;     //!< LAT stimulus amplitude (0 = disabled)
   double stim_duration = 0.002;    //!< LAT stimulus duration (solver units)
 
@@ -212,6 +229,12 @@ private:
   int circ_solves = 0;             //!< 3D solves performed (cost counter)
   int circ_out_every = 8;          //!< save the mesh every N circulation steps
   int circ_n_frames = 1;           //!< frames allocated for the writer
+
+  //! Numero de batimentos efetivamente rodado, ja resolvido em config()
+  //! contra o teto imposto por -t. solve_circulation() usa ESTE valor, nao
+  //! o argumento recebido -- o app le -beats direto da linha de comando e
+  //! nao sabe do limite.
+  int circ_num_beats = 1;
   std::ofstream circ_file;
 
   //! Invert the 3D model: find the cavity pressures reproducing the target

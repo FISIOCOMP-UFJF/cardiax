@@ -1878,20 +1878,19 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   tload = fext;
 
   //
-  // assemble residual vector r
+  // 1. Pré-alocação global para o resíduo de TODOS os elementos
   //
-  
-  // 2. Inicia a região paralela principal
+  std::vector<double> all_Re(n_elem * n_dofs);
+  std::vector<int> all_dnums(n_elem * n_dofs);
+
+  // 2. Inicia a região paralela principal (Cálculo pesado livre de Locks)
   #pragma omp parallel
   {
-    // 3. ISOLAMENTO CRÍTICO: Vetores e instâncias instanciados DENTRO do escopo
-    // para que cada thread tenha a sua própria cópia
     arma::vec Re(n_dofs);
     std::vector<int> dnums;
     MxFE * local_fe = fespace.createFE();
     Quadrature * local_qd = Quadrature::create(0, local_fe->get_type());
 
-    // 4. Distribuição da carga de elementos
     #pragma omp for schedule(dynamic)
     for(int i = 0; i < n_elem; i++)
     {
@@ -1899,29 +1898,43 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
       elem_resid(i, local_fe, local_qd, Re);
       fespace.get_element_dofs_u(i, dnums);
 
-      // 5. PROTEÇÃO DE ESCRITA: Inserção síncrona nos vetores globais
-      #pragma omp critical
+      // Calcula a "vaga" exclusiva deste elemento na memória global
+      int offset = i * n_dofs;
+      
+      // Salva os dados diretamente. Totalmente thread-safe!
+      for(int k = 0; k < n_dofs; k++)
       {
-        timer.enter("Residual: critical zone");
-        for(int k = 0; k < n_dofs; k++)
-        {
-          if (ldgof[dnums[k]])
-          {
-            r.add(dnums[k], -Re(k)); // add -R
-          }
-          else
-          {
-            react.add(dnums[k], Re(k));
-          }
-        }
-        timer.leave(); 
-      } // Fim do critical
-    } // Fim do for
+        all_Re[offset + k] = Re(k);
+        all_dnums[offset + k] = dnums[k];
+      }
+    }
 
     // Limpa a memória das instâncias da thread
     delete local_qd;
     delete local_fe;
-  } // Fim da região paralela
+  } // Barreira implícita: todas as threads terminam os cálculos aqui.
+
+  // 3. Inserção no PETSc: Sequencial, em um único bloco rápido
+  timer.enter("Residual: Assembly");
+  for(int i = 0; i < n_elem; i++)
+  {
+    int offset = i * n_dofs;
+    for(int k = 0; k < n_dofs; k++)
+    {
+      int dof = all_dnums[offset + k];
+      double val = all_Re[offset + k];
+      
+      if (ldgof[dof])
+      {
+        r.add(dof, -val); // add -R
+      }
+      else
+      {
+        react.add(dof, val);
+      }
+    }
+  }
+  timer.leave(); 
 
   //
   // pressure forces contribution
@@ -1933,8 +1946,6 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
     int nu  = bfe->get_ndofs_u();
     int nb = msh.get_n_boundary_elements();
     
-    // Novamente, se 'nb' for pequeno, serial é suficiente. 
-    // Se for grande, a mesma lógica do loop acima pode ser aplicada aqui.
     arma::vec belvec(nu);
     std::vector<int> bdof;
 
@@ -1960,7 +1971,7 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   }
   timer.leave(); 
   
-  if (bfe != NULL) delete bfe; // Correção de vazamento de memória
+  if (bfe != NULL) delete bfe; 
 
   timer.enter("Residual: r assemble and copy");
   r.assemble();
@@ -1981,6 +1992,12 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
 
   Kstiff = 0.0;
 
+  // 1. Pré-alocamos a memória para TODOS os elementos de uma vez
+  int mat_size = n_dofs * n_dofs;
+  std::vector<double> all_Ke(n_elem * mat_size);
+  std::vector<int> all_dnums(n_elem * n_dofs);
+
+  // 2. Cálculo numérico pesado: Totalmente paralelo, 100% livre de travas (critical)
   #pragma omp parallel 
   {
     MxFE * local_fe = fespace.createFE();
@@ -1996,40 +2013,35 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
       fespace.get_element_dofs_u(i, dnums);
 
 #ifndef USE_BFGS
-      // Fast assembling
-      int * pidx = &dnums[0];
       Ke = Ke.t();
+#endif
+
+      // Calcula a "vaga" exclusiva desse elemento na memória global
+      int offset_mat = i * mat_size;
+      int offset_dof = i * n_dofs;
       
-      #pragma omp critical
-      {
-        timer.enter("Stiffness: critical");
-        Kstiff.add(n_dofs, n_dofs, pidx, pidx, Ke.memptr());
-        timer.leave(); 
-      }
-#endif
-
-#ifdef USE_BFGS
-      #pragma omp critical
-      {
-        timer.enter("Stiffness: critical");
-
-        for(int j=0; j<n_dofs; j++)
-        {
-          for(int k=0; k<n_dofs; k++)
-          {
-            int I = dnums[j];
-            int J = dnums[k];
-            if(J >= I) Kstiff.add(I, J, Ke(j,k));
-          }
-        }
-        timer.leave(); 
-      }
-#endif
+      // Copia direto para a posição exata. Thread-safe por isolamento matemático!
+      // (Usar Ke.memptr()[k] é a forma mais rápida de extrair os dados do Armadillo)
+      for(int k=0; k<mat_size; k++) all_Ke[offset_mat + k] = Ke.memptr()[k]; 
+      for(int k=0; k<n_dofs; k++)   all_dnums[offset_dof + k] = dnums[k];
     }
 
     delete local_qd;
     delete local_fe;
-  } 
+  } // Barreira implícita do OpenMP: todas as threads terminam aqui.
+
+  // 3. Montagem (Assembly) no PETSc: Sequencial, mas de uma única vez e sem concorrência!
+  timer.enter("Stiffness: Assembly");
+  for(int i=0; i<n_elem; i++)
+  {
+    int offset_mat = i * mat_size;
+    int offset_dof = i * n_dofs;
+    
+    // Passa os ponteiros brutos diretamente para o Kstiff.add
+    int * pidx = &all_dnums[offset_dof];
+    Kstiff.add(n_dofs, n_dofs, pidx, pidx, &all_Ke[offset_mat]);
+  }
+  timer.leave();
 
   //
   // *** PRESSURE COMPONENT DA MATRIZ DE RIGIDEZ ***

@@ -59,10 +59,15 @@ public:
   //! Solve the problem with meshfile given
   void solve(const string &mshfile);
 
-  //!Dijkstra
+  //! Dijkstra
   void solve_dijkstra(const std::vector<int>& root_nodes, 
                               const std::vector<double>& root_times,
                               const std::vector<std::vector<std::pair<int, double>>>& adj_cost);
+
+
+   //! Setup
+   void setup(std::string & b, std::string & c, std::string & m,
+             double dt, double T, double pr, double pa);
 
 protected:
   

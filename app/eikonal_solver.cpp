@@ -3,8 +3,6 @@
 #include "util/util.hpp"
 #include "util/command_line_args.h"
 #include "cardiac/eikonal.hpp"
-#include "cardiac/monodomain_purkinje.hpp"
-#include "cardiac/monodomain.hpp"
 #include "cardiac/coupled_purkinje.hpp"
 #include<filesystem>
 

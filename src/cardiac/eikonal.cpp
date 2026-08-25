@@ -17,7 +17,6 @@ Eikonal::Eikonal()
   cout << "Eikonal" << endl; 
   mesh = new Mesh();
 
-  //? Precisa disso? 
   parameters.rename("Eikonal_parameters");
   parameters.add("vel_f", 0.006);
   parameters.add("vel_s", 0.0002);
@@ -40,6 +39,22 @@ void Eikonal::advance()
     solve_odes();
     timer.leave();
   }
+}
+
+
+void Eikonal::setup(std::string & b, std::string & c, std::string & m,
+                           double dt, double T, double pr, double pa)
+{
+  timestep  = dt;
+  totaltime = T;
+  printrate = pr;
+  printrate_apd = pa;
+  
+  mesh_filename = b;
+  stimuli_filename = b;
+
+  cell_name = c;
+  odesolver = m;
 }
 
 void Eikonal::init()

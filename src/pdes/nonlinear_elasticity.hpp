@@ -63,6 +63,8 @@ public:
   //! Initialize problem (init_mesh, init_coords, etc...)
   void init();
 
+  void setup_csr_map(petsc::Matrix & Kstiff);
+
   //! Getters
   int get_num_nz_prescribed();
   int get_num_integration_points();
@@ -144,6 +146,11 @@ public:
   }
 
 protected:
+  // Variáveis para guardar o mapa e as cores globalmente
+  std::vector<std::vector<int>> color_groups;
+  std::vector<std::vector<int>> elem_csr_indices;
+  bool is_csr_setup = false; 
+
   
   int num_dofs;                   //!< Number of dofs (per node?)
   int nvoig;                      //!< Size of vector/matrix in Voigt notation

@@ -51,6 +51,9 @@ void Matrix::create(int rows, int cols, int nz)
 
   ierr =MatSetOption(_mat, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
+  
+  ierr = MatSetOption(_mat, MAT_IGNORE_ZERO_ENTRIES, PETSC_FALSE);
+  CHKERRABORT(PETSC_COMM_WORLD,ierr);
 
   ierr = MatSetFromOptions(_mat);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
@@ -254,6 +257,63 @@ void Matrix::setNullSpace(petsc::Vector *coord)
   //std::cout<<"\n\nEntrou\n\n"<<std::endl;
 }
 
+void Matrix::get_raw_array(double ** v)
+{
+    // Obtém o ponteiro bruto dos valores da matriz seqüencial AIJ
+    ierr = MatSeqAIJGetArray(_mat, v);
+    CHKERRABORT(PETSC_COMM_WORLD, ierr);
+}
+
+void Matrix::restore_raw_array(double ** v)
+{
+    // Devolve o controle do ponteiro ao PETSc
+    ierr = MatSeqAIJRestoreArray(_mat, v);
+    CHKERRABORT(PETSC_COMM_WORLD, ierr);
+}
+
+int Matrix::get_csr_index(int global_row, int global_col)
+{
+    int ln;
+    PetscBool done;
+    const int *pia, *pja;
+    
+    // ATENÇÃO: Estou usando '0' aqui para pedir arrays 0-based index.
+    // O seu código em get_CSR usava '1' (1-based para o PARDISO). 
+    // Como vamos usar isso internamente no C++, queremos 0-based!
+    ierr = MatGetRowIJ(_mat, 0, PETSC_FALSE, PETSC_FALSE, &ln, &pia, &pja, &done);
+    CHKERRABORT(PETSC_COMM_WORLD, ierr);
+    
+    if (!done) {
+        throw std::runtime_error("error in get_csr_index: MatGetRowIJ failed");
+    }
+
+    int start_idx = pia[global_row];
+    int end_idx   = pia[global_row + 1];
+    int found_idx = -1;
+
+    // Busca linear pela coluna dentro da linha.
+    // Como as linhas de matrizes de elementos finitos são muito curtas
+    // (ex: 20-60 elementos por linha), uma busca linear é brutalmente rápida.
+    for (int k = start_idx; k < end_idx; ++k)
+    {
+        if (pja[k] == global_col)
+        {
+            found_idx = k;
+            break;
+        }
+    }
+
+    // Libera as estruturas do PETSc
+    ierr = MatRestoreRowIJ(_mat, 0, PETSC_FALSE, PETSC_FALSE, &ln, &pia, &pja, &done);
+    CHKERRABORT(PETSC_COMM_WORLD, ierr);
+
+    if (found_idx == -1) {
+        // Se cair aqui, a matriz não foi pré-alocada corretamente com os zeros dummy
+        throw std::runtime_error("error in get_csr_index: entry not allocated in sparse pattern");
+    }
+
+    return found_idx;
+}
 }
 
 

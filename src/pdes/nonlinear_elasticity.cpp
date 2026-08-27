@@ -1,5 +1,6 @@
 #include "nonlinear_elasticity.hpp"
 #include "util/pugixml.hpp"
+#include "mesh/graph_coloring.hpp"
 
 //#define DEBUG_PRESSURE
 #define INCs_TA 0
@@ -1983,99 +1984,6 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   timer.leave();
 }
 
-void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
-{
-  timer.enter("Stiffness");
-
-  int n_dofs = msh.get_n_dim() * msh.get_nen();
-  int n_elem = msh.get_n_elements();
-
-  Kstiff = 0.0;
-
-  // 1. Pré-alocamos a memória para TODOS os elementos de uma vez
-  int mat_size = n_dofs * n_dofs;
-  std::vector<double> all_Ke(n_elem * mat_size);
-  std::vector<int> all_dnums(n_elem * n_dofs);
-
-  // 2. Cálculo numérico pesado: Totalmente paralelo, 100% livre de travas (critical)
-  #pragma omp parallel 
-  {
-    MxFE * local_fe = fespace.createFE();
-    Quadrature * local_qd = Quadrature::create(0, local_fe->get_type());
-    
-    arma::mat Ke(n_dofs, n_dofs);
-    std::vector<int> dnums;
-
-    #pragma omp for schedule(static)
-    for(int i=0; i<n_elem; i++)
-    {
-      elem_stiff(i, local_fe, local_qd, Ke);
-      fespace.get_element_dofs_u(i, dnums);
-
-#ifndef USE_BFGS
-      Ke = Ke.t();
-#endif
-
-      // Calcula a "vaga" exclusiva desse elemento na memória global
-      int offset_mat = i * mat_size;
-      int offset_dof = i * n_dofs;
-      
-      // Copia direto para a posição exata. Thread-safe por isolamento matemático!
-      // (Usar Ke.memptr()[k] é a forma mais rápida de extrair os dados do Armadillo)
-      for(int k=0; k<mat_size; k++) all_Ke[offset_mat + k] = Ke.memptr()[k]; 
-      for(int k=0; k<n_dofs; k++)   all_dnums[offset_dof + k] = dnums[k];
-    }
-
-    delete local_qd;
-    delete local_fe;
-  } // Barreira implícita do OpenMP: todas as threads terminam aqui.
-
-  // 3. Montagem (Assembly) no PETSc: Sequencial, mas de uma única vez e sem concorrência!
-  timer.enter("Stiffness: Assembly");
-  for(int i=0; i<n_elem; i++)
-  {
-    int offset_mat = i * mat_size;
-    int offset_dof = i * n_dofs;
-    
-    // Passa os ponteiros brutos diretamente para o Kstiff.add
-    int * pidx = &all_dnums[offset_dof];
-    Kstiff.add(n_dofs, n_dofs, pidx, pidx, &all_Ke[offset_mat]);
-  }
-  timer.leave();
-
-  //
-  // *** PRESSURE COMPONENT DA MATRIZ DE RIGIDEZ ***
-  //
-  timer.enter("Stiffness: Pressure component");
-  MxFE * bfe = fespace.create_boundary_FE();
-  if (bfe != NULL && (pressure_map.size() > 0 || spring_map.size()>0))
-  {
-    int nu = bfe->get_ndofs_u();
-    int nb = msh.get_n_boundary_elements();
-
-    arma::mat belmat(nu, nu);
-    std::vector<int> bdof;
-
-    for (int i = 0; i < nb; i++)
-    {
-      fespace.get_boundary_element_dofs_u(i, bdof);
-      elem_kpress(i, bfe, bdof, belmat);
-      
-      for (int j = 0; j < nu; j++)
-        for (int k = 0; k < nu; k++)
-          Kstiff.add(bdof[j], bdof[k], belmat(j, k));
-    }
-  }
-
-  delete bfe;
-
-  Kstiff.assemble();
-  apply_boundary(Kstiff);
-  timer.leave(); 
-
-  timer.leave();
-}
-
 
 void NonlinearElasticity::update(petsc::Vector & uu, double s)
 {
@@ -2115,4 +2023,147 @@ void NonlinearElasticity::update(petsc::Vector & uu, double s)
       if( ldgof[idx] )
         x[i][d] = x[i][d] + s * umat(i,d);
     }
+}
+
+
+void NonlinearElasticity::setup_csr_map(petsc::Matrix & Kstiff)
+{
+  cout << "Configurando Mapeamento CSR e Coloração de Grafos..." << endl;
+  
+  color_groups = compute_element_colors(msh);
+
+  int n_elem = msh.get_n_elements();
+  int n_dofs = msh.get_n_dim() * msh.get_nen();
+  int mat_size = n_dofs * n_dofs;
+
+  elem_csr_indices.resize(n_elem, std::vector<int>(mat_size, -1));
+
+  Kstiff = 0.0; 
+  std::vector<int> dnums;
+  std::vector<double> dummy_ones(mat_size, 1.0);
+
+  // 1. Força a alocação do padrão esparso
+  for(int i = 0; i < n_elem; i++) {
+    fespace.get_element_dofs_u(i, dnums);
+    int * pidx = &dnums[0];
+    Kstiff.add(n_dofs, n_dofs, pidx, pidx, dummy_ones.data());
+  }
+  // 2. Força a alocação da diagonal principal 
+  for(int i = 0; i < fespace.get_ndofs(); i++) {
+    Kstiff.add(i, i, 1.0);
+  }
+  Kstiff.assemble(); 
+
+  // 3. Mapeamento Row-Major (pois o Armadillo faz Ke = Ke.t())
+  for(int i = 0; i < n_elem; i++) {
+    fespace.get_element_dofs_u(i, dnums);
+    int local_idx = 0;
+    
+    for(int j = 0; j < n_dofs; j++) {      // Linha
+      for(int k = 0; k < n_dofs; k++) {    // Coluna
+        int I = dnums[j]; 
+        int J = dnums[k]; 
+        elem_csr_indices[i][local_idx] = Kstiff.get_csr_index(I, J); 
+        local_idx++;
+      }
+    }
+  }
+  Kstiff = 0.0; 
+}
+
+
+void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
+{
+  if (!is_csr_setup) {
+    setup_csr_map(Kstiff);
+    is_csr_setup = true;
+  }
+
+  timer.enter("Stiffness");
+
+  int n_dofs = msh.get_n_dim() * msh.get_nen();
+  int mat_size = n_dofs * n_dofs;
+
+  // 1. Zera a matriz DIRETAMENTE NA MEMÓRIA!
+  // Isso impede que funções do PETSc reiniciem o estado da nossa matriz
+  double * raw_values;
+  Kstiff.get_raw_array(&raw_values);
+  
+  uint nnz = Kstiff.get_nnz();
+  for(uint idx = 0; idx < nnz; idx++) {
+      raw_values[idx] = 0.0;
+  }
+
+  // 2. Laço EXTERNO sobre as cores do grafo
+  for (size_t c = 0; c < color_groups.size(); c++)
+  {
+    const auto& elements = color_groups[c];
+
+    #pragma omp parallel 
+    {
+      MxFE * local_fe = fespace.createFE();
+      Quadrature * local_qd = Quadrature::create(0, local_fe->get_type());
+      arma::mat Ke(n_dofs, n_dofs);
+      
+      #pragma omp for schedule(dynamic)
+      for(size_t i = 0; i < elements.size(); i++)
+      {
+        int e_idx = elements[i];
+        
+        elem_stiff(e_idx, local_fe, local_qd, Ke);
+        
+#ifndef USE_BFGS
+        Ke = Ke.t(); // Transpõe a matriz, tornando-a ROW-MAJOR na memória RAM
+#endif
+
+        double* Ke_ptr = Ke.memptr();
+        for(int k = 0; k < mat_size; k++) 
+        {
+          int csr_idx = elem_csr_indices[e_idx][k]; 
+          if (csr_idx >= 0) 
+          {
+            // Soma atômica não é necessária! Cores protegem os dados
+            raw_values[csr_idx] += Ke_ptr[k];
+          }
+        }
+      } 
+      
+      delete local_qd;
+      delete local_fe;
+    } 
+  } 
+
+  // 3. Devolve as chaves pro PETSc
+  Kstiff.restore_raw_array(&raw_values);
+
+  //
+  // *** PRESSURE COMPONENT DA MATRIZ DE RIGIDEZ ***
+  //
+  timer.enter("Stiffness: Pressure component");
+  MxFE * bfe = fespace.create_boundary_FE();
+  if (bfe != NULL && (pressure_map.size() > 0 || spring_map.size()>0))
+  {
+    int nu = bfe->get_ndofs_u();
+    int nb = msh.get_n_boundary_elements();
+    arma::mat belmat(nu, nu);
+    std::vector<int> bdof;
+
+    for (int i = 0; i < nb; i++)
+    {
+      fespace.get_boundary_element_dofs_u(i, bdof);
+      elem_kpress(i, bfe, bdof, belmat);
+      
+      for (int j = 0; j < nu; j++)
+        for (int k = 0; k < nu; k++)
+          Kstiff.add(bdof[j], bdof[k], belmat(j, k));
+    }
+  }
+  if (bfe != NULL) delete bfe;
+
+  // A montagem agora é segura pois o MAT_IGNORE_ZERO_ENTRIES está desligado
+  Kstiff.assemble();
+  apply_boundary(Kstiff);
+  timer.leave(); 
+
+  timer.leave();
 }

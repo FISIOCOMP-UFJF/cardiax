@@ -40,7 +40,11 @@ public:
   void view();
   void setNullSpace(petsc::Vector *coord);
   
-
+  // Funções para acesso direto ao vetor CSR
+  void get_raw_array(double ** v);
+  void restore_raw_array(double ** v);
+  int get_csr_index(int global_row, int global_col);
+  
   /*!zero_rows_cols(int num_rows, int * rows, double diag)
    * Wrapper for PETSc MatZeroRowsColumns
    * Requires PETSc Version >= 3.2

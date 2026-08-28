@@ -187,7 +187,7 @@ target_link_directories(ext_libs INTERFACE
 
 target_link_libraries(ext_libs INTERFACE
     ${PETSC_LIBRARIES}
-    ${MPI_C_LIBRARIES}
+    MPI::MPI_CXX
     ${HDF5_LIBRARIES}
     ${ARMADILLO_LIBRARY}
     ${BLAS_LIBRARIES}

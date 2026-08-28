@@ -7,49 +7,28 @@ namespace petsc
 
 void Matrix::create(int rows, int cols, int nz)
 {
-  //
-  // Only *Sequential* for now
-  //
-  //ierr = MatCreateSeqAIJ(PETSC_COMM_WORLD, rows, cols, nz, NULL, &_mat);
-  //CHKERRABORT(PETSC_COMM_WORLD,ierr);
-
-  //
-  // MatAIJ For parallel with SuperLU or MUMPs
-  // 
-  //ierr = MatCreate(PETSC_COMM_WORLD, &_mat);
-  //CHKERRABORT(PETSC_COMM_WORLD,ierr);
-
-  //ierr = MatSetSizes(_mat, PETSC_DECIDE, PETSC_DECIDE, rows, cols);
-  //CHKERRABORT(PETSC_COMM_WORLD,ierr);
-
-  //ierr = MatSetType(_mat, MATMPIAIJ);
-  //CHKERRABORT(PETSC_COMM_WORLD,ierr);
-
   ierr = MatCreate(PETSC_COMM_WORLD, &_mat);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
 
-  ierr = MatSetSizes(_mat, rows, cols, PETSC_DECIDE, PETSC_DECIDE);
+  ierr = MatSetSizes(_mat, PETSC_DECIDE, PETSC_DECIDE, rows, cols);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
 
-  ierr = MatSetType(_mat, MATSEQAIJ);
+  ierr = MatSetType(_mat, MATAIJ);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
-//nodal block size
-  if(rows%3==0)
+
+  if(rows % 3 == 0)
   {
-    ierr = MatSetBlockSize(_mat,3);
+    ierr = MatSetBlockSize(_mat, 3);
     CHKERRABORT(PETSC_COMM_WORLD,ierr);    
   }
   
   ierr = MatSetUp(_mat);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
   
-  //ierr = MatMPIAIJSetPreallocation(_mat, nz, NULL, nz, NULL);
-  //CHKERRABORT(PETSC_COMM_WORLD,ierr);
-
   ierr = MatSeqAIJSetPreallocation(_mat, nz, NULL);
-  CHKERRABORT(PETSC_COMM_WORLD,ierr);
+  ierr = MatMPIAIJSetPreallocation(_mat, nz, NULL, nz/2, NULL);
 
-  ierr =MatSetOption(_mat, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE);
+  ierr = MatSetOption(_mat, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
 
   ierr = MatSetFromOptions(_mat);

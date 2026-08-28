@@ -42,7 +42,7 @@ int Newton::solve()
   std::pair<int,double> itres; 
 
   nits = 0;
-
+  
   nlp->jacobian(*K);
   nlp->evaluate(*r); 
   

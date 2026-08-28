@@ -19,6 +19,8 @@ python3 ./configure \
   --download-mpich \
   --download-fblaslapack \
   --download-hypre \
+  --download-metis \
+  --download-parmetis \
   --download-suitesparse \
   --download-mumps \
   --download-cmake \

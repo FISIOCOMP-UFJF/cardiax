@@ -839,7 +839,7 @@ void UpdatedLagrangian::solve()
       
       if (num_nz_prescribed > 0)
       {
-        cout << "Prescribing non-zero displacements" << endl;
+        if(my_mpi_rank == 0) cout << "Prescribing non-zero displacements" << endl;
         prescribe_displacements();
         react = 0.0;
       }

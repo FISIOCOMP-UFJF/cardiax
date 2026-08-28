@@ -7,6 +7,7 @@
 #include "petscksp.h"
 #include "petscmat.h"
 #include "petscvec.h"
+#include <armadillo>
 
 namespace petsc
 {
@@ -46,6 +47,7 @@ public:
   void set_data(const double *u);
   Vec vec() const { return _vec; }
   void view();
+  void gather_to_all(arma::vec & global_vec);
 
 private:
 

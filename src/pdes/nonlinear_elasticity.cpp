@@ -1,5 +1,6 @@
 #include "nonlinear_elasticity.hpp"
 #include "util/pugixml.hpp"
+#include <set>
 
 //#define DEBUG_PRESSURE
 #define INCs_TA 0
@@ -215,18 +216,31 @@ void NonlinearElasticity::body_forces()
 
 double NonlinearElasticity::calc_energy()
 {
-  const int ndofs = fespace.get_ndofs();
-  double energy_norm = 0.0;
-  arma::vec resid(ndofs);
-  arma::vec displ(ndofs);
-  r.get_data(resid.memptr());
-  u.get_data(displ.memptr());
+  double local_energy = 0.0;
+  double global_energy = 0.0;
 
-  for(int i=0; i<ndofs; i++)
+  int low, high;
+  VecGetOwnershipRange(r.vec(), &low, &high);
+
+  const double *r_ptr, *u_ptr;
+  VecGetArrayRead(r.vec(), &r_ptr);
+  VecGetArrayRead(u.vec(), &u_ptr);
+
+  for(int i = low; i < high; i++)
+  {
     if(ldgof[i])
-      energy_norm += resid(i) * displ(i);
+    {
+      // r_ptr e u_ptr são indexados localmente de 0 a (high - low - 1)
+      local_energy += r_ptr[i - low] * u_ptr[i - low];
+    }
+  }
 
-  return abs(energy_norm);
+  VecRestoreArrayRead(r.vec(), &r_ptr);
+  VecRestoreArrayRead(u.vec(), &u_ptr);
+
+  MPI_Allreduce(&local_energy, &global_energy, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+
+  return std::abs(global_energy);
 }
 
 double NonlinearElasticity::calc_volume(bool update)
@@ -1340,6 +1354,9 @@ void NonlinearElasticity::init_matvecs()
     eps.fill(penalt);
     eps0.fill(penalt);
   }
+
+  setup_mpi_partition(); 
+
 }
 
 void NonlinearElasticity::init_resid_stiff()
@@ -1347,9 +1364,14 @@ void NonlinearElasticity::init_resid_stiff()
   K = 0.0;
   react = 0.0;
   double xlamb = lc.load();
-  for(int i=0; i<fespace.get_ndofs(); i++)
+
+  int low, high;
+  VecGetOwnershipRange(r.vec(), &low, &high);
+
+  // Adiciona a força externa APENAS nos nós que pertencem a este processo
+  for(int i = low; i < high; i++)
   {
-    r.set(i, fext0(i) + xlamb * fext(i) );
+    r.add(i, fext0(i) + xlamb * fext(i));
   }
 }
 
@@ -1384,6 +1406,8 @@ void NonlinearElasticity::line_search(double & eta0, double & eta,
 
 void NonlinearElasticity::output_vtk(const int cont, const int step)
 {
+  if(my_mpi_rank != 0) return; 
+
   int np = msh.get_n_points();
   //int ne = msh.get_n_elements();
   std::stringstream ss;
@@ -1463,6 +1487,8 @@ void NonlinearElasticity::output_vtk(const int cont, const int step)
 void NonlinearElasticity::output_vtk(const int step, const arma::vec & v, const arma::vec & displ)
 {
   // LUCAS: talvez a fonte de ter dois arquivos de saida
+  if(my_mpi_rank != 0) return; 
+
   cout << "Writing Data\n";
   writer.write_vm_step(step, v.memptr());
   writer.write_displ_step(step, displ.memptr());
@@ -1474,6 +1500,8 @@ void NonlinearElasticity::output_vtk(const int cont,
                                      const arma::vec & v,
                                      const ArrayMat33 & matfib)
 {
+  if(my_mpi_rank != 0) return; 
+
   int np = msh.get_n_points();
 
   // First fiber directions
@@ -1627,11 +1655,14 @@ void NonlinearElasticity::storeStress(int step)
   //sfile.close();
   //strainfile.close();
 
-  writer.write_cell_field_step(step, fiber_stress.memptr(), string("stress"));
-  writer.write_cell_field_step(step, fiber_strain.memptr(), string("strain"));
-  writer.write_cell_field_step(step, long_strain.memptr(), string("long_strain"));
-  writer.write_cell_field_step(step, circ_strain.memptr(), string("circ_strain"));
-  writer.write_cell_field_step(step, rad_strain.memptr(), string("rad_strain"));
+  if(my_mpi_rank == 0)
+  {
+    writer.write_cell_field_step(step, fiber_stress.memptr(), string("stress"));
+    writer.write_cell_field_step(step, fiber_strain.memptr(), string("strain"));
+    writer.write_cell_field_step(step, long_strain.memptr(), string("long_strain"));
+    writer.write_cell_field_step(step, circ_strain.memptr(), string("circ_strain"));
+    writer.write_cell_field_step(step, rad_strain.memptr(), string("rad_strain"));
+  }
 }
 
 
@@ -1717,7 +1748,7 @@ void NonlinearElasticity::run(const string & mshfile, const string & parfile)
   
   //cout << "Final cavity volume: " << total_volume_cavity() << "\n";
   
-  timer.summary();
+  if(my_mpi_rank == 0) timer.summary();
 }
 
 void NonlinearElasticity::update_geometry(double eta)
@@ -1727,7 +1758,7 @@ void NonlinearElasticity::update_geometry(double eta)
   arma::mat umat;
 
   // get data from PETSc vector and copy to udisp
-  u.get_data( udisp.memptr() );
+  u.gather_to_all(udisp);
   umat = arma::reshape(udisp, np, nd);
   U = U + udisp;
 
@@ -1822,12 +1853,17 @@ bool NonlinearElasticity::converged(petsc::Vector & du)
   double rtol   = parameters["tol_residual"];
   double dtol   = parameters["tol_displacement"];
 
+  double local_tload_sq = arma::dot(tload, tload);
+  double global_tload_sq = 0.0;
+  MPI_Allreduce(&local_tload_sq, &global_tload_sq, 1, MPI_DOUBLE, MPI_SUM, PETSC_COMM_WORLD);
+  double global_tload_norm = std::sqrt(global_tload_sq);
+
   // tload - external load including pressure
   // fext - external load
 
   if(first_step)
   {
-    double f0 = react.l2norm() + arma::norm(lc.load()*tload,2);
+    double f0 = react.l2norm() + lc.load() * global_tload_norm;
     u.copy_values(du.size(), du);
     parameters["energy_norm0"]   = fabs(calc_energy());
     parameters["residual_norm0"] = f0;
@@ -1841,15 +1877,17 @@ bool NonlinearElasticity::converged(petsc::Vector & du)
   }
   else
   {
-    rnorm = r.l2norm() / ( react.l2norm() + arma::norm(tload,2) ); // R/F (F=force+react)
+    rnorm = r.l2norm() / ( react.l2norm() + global_tload_norm );
     enorm = fabs(calc_energy());
     dnorm = du.l2norm();
 
-    cout << scientific << setprecision(3);
-    cout << " rnorm " << rnorm;
-    cout << " enorm " << enorm;
-    cout << " dunorm " << dnorm;
-    cout << endl;
+    if(my_mpi_rank == 0){
+      cout << scientific << setprecision(3);
+      cout << " rnorm " << rnorm;
+      cout << " enorm " << enorm;
+      cout << " dunorm " << dnorm;
+      cout << endl;
+    }
  }
 
   // convergence criterion
@@ -1867,10 +1905,21 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   int n_dofs = msh.get_n_dim() * msh.get_nen();
   int n_elem = msh.get_n_elements();
 
-  // init resid
+  int comm_size;
+  MPI_Comm_size(PETSC_COMM_WORLD, &comm_size);
+
+  r = 0.0;
+  react = 0.0;
+
+  int low, high;
+  VecGetOwnershipRange(r.vec(), &low, &high);
+
+  // Adiciona a força externa APENAS nos nós que pertencem a este processo
   double xlamb = lc.load();
-  for(int i=0; i<fespace.get_ndofs(); i++)
-    r.set(i, fext0(i) + xlamb * fext(i));
+  for(int i = low; i < high; i++)
+  {
+    r.add(i, fext0(i) + xlamb * fext(i));
+  }
 
   // set tload (external loads incl. pressure) to current fext (external loads)
   tload = fext;
@@ -1883,20 +1932,23 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   MxFE * fe = fespace.createFE();
   Quadrature * qd = Quadrature::create(0, fe->get_type());
 
-  for(int i=0; i<n_elem; i++)
+  for(int i = 0; i < n_elem; i++)
   {
+    if (elem_owner[i] != my_mpi_rank) continue;
+
     elem_resid (i, fe, qd, Re);
     fespace.get_element_dofs_u (i, dnums);
 
-    for(int k=0; k<n_dofs; k++)
+    for(int k = 0; k < n_dofs; k++)
     {
       if (ldgof[dnums[k]])
       {
         r.add(dnums[k], -Re(k)); // add -R
       }
       else
+      {
         react.add(dnums[k], Re(k));
-
+      }
     }
   }
   delete qd;
@@ -1910,17 +1962,18 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   {
     int nu  = bfe->get_ndofs_u();
     int nb = msh.get_n_boundary_elements();
-    double xlamb = lc.load();
     arma::vec belvec(nu);
-    vector<int> bdof;
+    std::vector<int> bdof;
 
-    for(int i=0; i<nb; i++)
+    for(int i = 0; i < nb; i++)
     {
-      fespace.get_boundary_element_dofs_u(i,bdof);
-      elem_pforce(i,bfe,bdof,belvec);
+      if (i % comm_size != my_mpi_rank) continue;
+
+      fespace.get_boundary_element_dofs_u(i, bdof);
+      elem_pforce(i, bfe, bdof, belvec);
 
       // assembles the nodal forces due to normal pressure
-      for(int k=0; k<nu; k++)
+      for(int k = 0; k < nu; k++)
       {
         if(ldgof[bdof[k]])
         {
@@ -1928,28 +1981,32 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
           tload(bdof[k]) += belvec(k);
         }
         else
+        {
           react.add(bdof[k], -xlamb * belvec(k));
+        }
       }
     }
   }
+  if (bfe != NULL) delete bfe; // Limpeza de memória garantida
 
   r.assemble();
+  react.assemble();
 
-  // copy from r to resid
   resid.copy_values(r.size(), r);
-  resid.assemble();
 
   timer.leave();
 }
 
 void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
 {
-
   timer.enter("Stiffness");
+
+  int comm_size;
+  MPI_Comm_size(PETSC_COMM_WORLD, &comm_size);
 
   int n_dofs = msh.get_n_dim() * msh.get_nen();
   int n_elem = msh.get_n_elements();
-  arma::mat Ke(n_dofs,n_dofs);
+  arma::mat Ke(n_dofs, n_dofs);
   std::vector<int> dnums;
 
   Kstiff = 0.0;
@@ -1957,23 +2014,22 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
   MxFE * fe = fespace.createFE();
   Quadrature * qd = Quadrature::create(0, fe->get_type());
 
-  for(int i=0; i<n_elem; i++)
+  for(int i = 0; i < n_elem; i++)
   {
-
+    if (elem_owner[i] != my_mpi_rank) continue;
+  
     elem_stiff (i, fe, qd, Ke);
     fespace.get_element_dofs_u (i, dnums);
+    
 #ifndef USE_BFGS
     // Fast assembling
-    int * pidx;
-    pidx = &dnums[0];
+    int * pidx = &dnums[0];
     Ke = Ke.t();
     Kstiff.add(n_dofs, n_dofs, pidx, pidx, Ke.memptr());
-#endif
-
-#ifdef USE_BFGS
-    for(int j=0; j<n_dofs; j++)
+#else
+    for(int j = 0; j < n_dofs; j++)
     {
-      for(int k=0; k<n_dofs; k++)
+      for(int k = 0; k < n_dofs; k++)
       {
         int I = dnums[j];
         int J = dnums[k];
@@ -1987,25 +2043,28 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
   // *** PRESSURE COMPONENT OF THE STIFFNESS MATRIX ***
   //
   MxFE * bfe = fespace.create_boundary_FE();
-  if (bfe != NULL && (pressure_map.size() > 0 || spring_map.size()>0))
+  if (bfe != NULL && (pressure_map.size() > 0 || spring_map.size() > 0))
   {
-    //cout << " Assembling pressure component of stiffness matrix" << endl;
     int nu = bfe->get_ndofs_u();
     int nb = msh.get_n_boundary_elements();
     arma::mat belmat(nu, nu);
-    vector<int> bdof;
+    std::vector<int> bdof;
 
     for (int i = 0; i < nb; i++)
     {
+
+      if (i % comm_size != my_mpi_rank) continue;
+
       fespace.get_boundary_element_dofs_u(i, bdof);
       elem_kpress(i, bfe, bdof, belmat);
-      // assembles the pressure component of the stiffness matrix
+      
       for (int j = 0; j < nu; j++)
         for (int k = 0; k < nu; k++)
           Kstiff.add(bdof[j], bdof[k], belmat(j, k));
     }
   }
 
+  if (bfe != NULL) delete bfe;
   delete qd;
   delete fe;
 
@@ -2020,23 +2079,23 @@ void NonlinearElasticity::update(petsc::Vector & uu, double s)
   const int n_dim   = msh.get_n_dim();
   const int n_nodes = msh.get_n_points();
   arma::mat umat;
+  arma::vec udispB;
 
-    arma::vec udispB;
+  uu.gather_to_all(udisp);
 
-    // get data from PETSc vector and copy to udisp
-    uu.get_data( udisp.memptr() );
-    udispB.resize(fespace.get_ndofs());
-    udispB.zeros();
-    for(int i=0; i<n_nodes; i++)
-    {
-        udispB(i) = udisp(n_dim*i);
-        udispB(i + n_nodes) = udisp(n_dim*i + 1);
-        udispB(i + 2*n_nodes) = udisp(n_dim*i + 2);
-    }
-    umat = arma::reshape(udispB, n_nodes, n_dim);
+  udispB.resize(fespace.get_ndofs());
+  udispB.zeros();
+  
+  for(int i = 0; i < n_nodes; i++)
+  {
+      udispB(i) = udisp(n_dim*i);
+      udispB(i + n_nodes) = udisp(n_dim*i + 1);
+      udispB(i + 2*n_nodes) = udisp(n_dim*i + 2);
+  }
+  umat = arma::reshape(udispB, n_nodes, n_dim);
 
-    // update total displacement vector
-    U = U + udisp;
+  // update total displacement vector
+  U = U + udisp;
 
   // copy uu to internal u
   u.copy_values(uu.size(), uu);
@@ -2045,12 +2104,104 @@ void NonlinearElasticity::update(petsc::Vector & uu, double s)
   for(int d=0; d<n_dim; d++)
     for(int i=0; i<n_nodes; i++)
     {
-      //int idx = i + (d * n_nodes);
       int idx = (i*n_dim) + d;
 
-      // if degree of freedom is free (not fixed/prescribed)
-      // then update x = x + u
+      // se o grau de liberdade é livre, atualiza a posição x = x + s*u
       if( ldgof[idx] )
         x[i][d] = x[i][d] + s * umat(i,d);
     }
+}
+
+
+void NonlinearElasticity::setup_mpi_partition()
+{
+  int size;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &my_mpi_rank);
+  MPI_Comm_size(PETSC_COMM_WORLD, &size);
+
+  int n_elem = msh.get_n_elements();
+  int n_dofs = fespace.get_ndofs();
+  
+  elem_owner.resize(n_elem, 0);
+
+  // Apenas o Rank 0 chama o METIS
+  if (my_mpi_rank == 0) 
+  {
+    std::cout << ">>> Rank 0: Gerando grafo de adjacencia para o METIS..." << std::endl;
+    
+    // 1. Mapeia quais elementos tocam em cada Grau de Liberdade
+    std::vector<std::vector<int>> dof_to_elems(n_dofs);
+    std::vector<int> dnums;
+    
+    for(int e = 0; e < n_elem; e++) {
+      fespace.get_element_dofs_u(e, dnums);
+      for(int dof : dnums) {
+        dof_to_elems[dof].push_back(e);
+      }
+    }
+
+    // 2. Constrói a lista de vizinhos para cada elemento (Dual Graph)
+    std::vector<std::set<int>> elem_adj(n_elem);
+    int total_adj = 0;
+    
+    for(int e = 0; e < n_elem; e++) {
+      fespace.get_element_dofs_u(e, dnums);
+      for(int dof : dnums) {
+        for(int neighbor : dof_to_elems[dof]) {
+          if (neighbor != e) elem_adj[e].insert(neighbor);
+        }
+      }
+      total_adj += elem_adj[e].size();
+    }
+
+    // 3. Converte para o formato CSR estrito do PETSc.
+    // ATENÇÃO: É OBRIGATÓRIO usar PetscMalloc1 aqui, pois o PETSc destrói
+    // essa memória internamente depois. Usar 'new' causaria Segfault!
+    PetscInt *ia, *ja;
+    PetscMalloc1(n_elem + 1, &ia);
+    PetscMalloc1(total_adj, &ja);
+    
+    ia[0] = 0;
+    for (int e = 0; e < n_elem; e++) {
+      ia[e + 1] = ia[e] + elem_adj[e].size();
+    }
+    
+    int idx = 0;
+    for (int e = 0; e < n_elem; e++) {
+      for (int neighbor : elem_adj[e]) {
+        ja[idx++] = neighbor;
+      }
+    }
+
+    // 4. Chama o METIS no contexto puramente local (PETSC_COMM_SELF)
+    Mat Adj;
+    MatCreateMPIAdj(PETSC_COMM_SELF, n_elem, n_elem, ia, ja, NULL, &Adj);
+
+    MatPartitioning part;
+    MatPartitioningCreate(PETSC_COMM_SELF, &part);
+    MatPartitioningSetAdjacency(part, Adj);
+    MatPartitioningSetType(part, MATPARTITIONINGPARMETIS);
+    MatPartitioningSetNParts(part, size);
+
+    IS is;
+    MatPartitioningApply(part, &is);
+
+    // 5. Extrai o array com o número do processo responsável por cada elemento
+    const PetscInt *assignments;
+    ISGetIndices(is, &assignments);
+    for(int i = 0; i < n_elem; i++) {
+      elem_owner[i] = assignments[i];
+    }
+    
+    // Limpeza de memória do grafo
+    ISRestoreIndices(is, &assignments);
+    ISDestroy(&is);
+    MatPartitioningDestroy(&part);
+    MatDestroy(&Adj); // Isso já dá "free" no ia e no ja automaticamente
+    
+    std::cout << ">>> METIS: Particionamento concluído!" << std::endl;
+  }
+
+  // 6. O Rank 0 faz o Broadcast do mapa de elementos para todos os outros Ranks
+  MPI_Bcast(elem_owner.data(), n_elem, MPI_INT, 0, PETSC_COMM_WORLD);
 }

@@ -689,6 +689,16 @@ std::pair<PetscInt, PetscReal> LinearSolver::solve (petsc::Matrix & A,
   PetscReal rnorm;
   KSPConvergedReason reason;
 
+
+  ierr = MatAssemblyBegin(A.mat(), MAT_FINAL_ASSEMBLY);
+  ierr = MatAssemblyEnd(A.mat(), MAT_FINAL_ASSEMBLY);
+
+  ierr = VecAssemblyBegin(b.vec());
+  ierr = VecAssemblyEnd(b.vec());
+  
+  ierr = VecAssemblyBegin(x.vec());
+  ierr = VecAssemblyEnd(x.vec());
+  
   // old code
   //ierr = KSPSetOperators(_ksp, A.mat(), A.mat(), SAME_NONZERO_PATTERN);
 

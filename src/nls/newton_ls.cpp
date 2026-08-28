@@ -48,6 +48,9 @@ int NewtonLineSearch::solve()
   bool done = false;
   std::pair<int,double> itres;
 
+  int rank;
+  MPI_Comm_rank(PETSC_COMM_WORLD, &rank);
+
   nits = 0;
   num_search = 0;
 
@@ -58,7 +61,10 @@ int NewtonLineSearch::solve()
   {
     step = step + 1;
     nits = nits + 1;
-    cout << " " << nits << " Newton-LS step";
+
+    if (rank == 0) {
+        cout << " " << nits << " Newton-LS step";
+    }
 
     // solve linear system Ku = -r
     timer.enter("Linear Solver");
@@ -66,7 +72,9 @@ int NewtonLineSearch::solve()
     timer.leave();
     //itres = ls->solve_3_FieldSplit(*K, *u, *r);
 
-    cout << " KSP its " << itres.first;
+    if (rank == 0) {
+        cout << " KSP its " << itres.first;
+    }
 
     // compute initial residual (u != 0)
     if(nits==1) done = nlp->converged(*u);

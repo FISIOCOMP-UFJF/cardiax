@@ -143,7 +143,10 @@ public:
   }
 
 protected:
-  
+  int my_mpi_rank;
+  std::vector<int> elem_owner;
+
+
   int num_dofs;                   //!< Number of dofs (per node?)
   int nvoig;                      //!< Size of vector/matrix in Voigt notation
   bool output_step;               //!< Output at each increment
@@ -284,6 +287,8 @@ protected:
 
   //! Update the current coordinates: (x = x + u)
   void update_geometry(double eta);
+
+  void setup_mpi_partition();
 
 };
 

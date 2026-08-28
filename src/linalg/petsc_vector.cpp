@@ -76,59 +76,43 @@ void Vector::assemble()
 
 void Vector::copy_values(const int n, Vector & x)
 {
-  // Copy the contents of x, of size ni into the
-  // first ni positions of *this
-
-  if(x.size() < n)
+  if(x.size() < n || size() < n)
   {
-    std::cerr << "PETSc::Vector.copy_vec(): source vector is smaller than n.";
+    std::cerr << "PETSc::Vector.copy_vec(): vector sizes are incompatible for copy.";
     exit(1);
   }
 
-  int N = size();
-
-  if (N < n)
-  {
-    std::cerr << "PETSc::Vector.copy_vec(): destination vector is smaller.";
-    exit(1);
-  }
-
-  int *ix = new int[n];
-  double *y;
-
-  ierr = VecGetArray(x.vec(), &y);
-  CHKERRABORT(PETSC_COMM_WORLD,ierr);
-
-  for (int i=0; i<n; i++) ix[i] = i;
-
-  ierr = VecSetValues(_vec, n, ix, y, INSERT_VALUES);
-  CHKERRABORT(PETSC_COMM_WORLD,ierr);
-
-  ierr = VecRestoreArray(x.vec(), &y);
-  CHKERRABORT(PETSC_COMM_WORLD,ierr);
-
-  delete [] ix;
+  ierr = VecCopy(x.vec(), _vec);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
 }
 
 void Vector::create(int size)
 {
-  //
-  // Only *Sequential* for now
-  //
-  ierr = VecCreate(PETSC_COMM_WORLD,&_vec);
-  CHKERRABORT(PETSC_COMM_WORLD,ierr);
+  ierr = VecCreate(PETSC_COMM_WORLD, &_vec);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
 
-  ierr = VecSetSizes(_vec,PETSC_DECIDE,size);
-  CHKERRABORT(PETSC_COMM_WORLD,ierr);
+  ierr = VecSetSizes(_vec, PETSC_DECIDE, size);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+
+  if (size % 3 == 0) {
+    ierr = VecSetBlockSize(_vec, 3);
+    CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  }
 
   ierr = VecSetFromOptions(_vec);
-  CHKERRABORT(PETSC_COMM_WORLD,ierr);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
 
   ierr = VecSetOption(_vec, VEC_IGNORE_NEGATIVE_INDICES, PETSC_TRUE);
-  CHKERRABORT(PETSC_COMM_WORLD,ierr);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
 
-  ierr = VecSet(_vec,0);
-  CHKERRABORT(PETSC_COMM_WORLD,ierr);
+  // Zera o vetor inicial
+  ierr = VecSet(_vec, 0.0);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+
+  ierr = VecAssemblyBegin(_vec);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  ierr = VecAssemblyEnd(_vec);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
 }
 
 // TODO: need to implement a create function that gets a pointer to some region of memory
@@ -304,6 +288,38 @@ void Vector::view()
 {
   std::cout << std::scientific;
   VecView(_vec, PETSC_VIEWER_STDOUT_WORLD);
+}
+
+void Vector::gather_to_all(arma::vec & global_vec)
+{
+  VecScatter ctx;
+  Vec v_seq;
+  
+  ierr = VecCreateSeq(PETSC_COMM_SELF, size(), &v_seq);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  
+  ierr = VecScatterCreateToAll(_vec, &ctx, &v_seq);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  
+  ierr = VecScatterBegin(ctx, _vec, v_seq, INSERT_VALUES, SCATTER_FORWARD);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  ierr = VecScatterEnd(ctx, _vec, v_seq, INSERT_VALUES, SCATTER_FORWARD);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  
+  const double* ptr;
+  ierr = VecGetArrayRead(v_seq, &ptr);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  
+  global_vec.set_size(size());
+  for(int i = 0; i < size(); i++) {
+      global_vec[i] = ptr[i];
+  }
+  
+  ierr = VecRestoreArrayRead(v_seq, &ptr);
+  CHKERRABORT(PETSC_COMM_WORLD, ierr);
+  
+  VecScatterDestroy(&ctx);
+  VecDestroy(&v_seq);
 }
 
 }

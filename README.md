@@ -22,6 +22,15 @@ Dependencies:
 
 ## 2. Installation 
 
+You can install Cardiax by three methods, depending on the desired level of automation and the target environment:
+
+ - **Automatic installation with Conda**: The recommended method for most users. The provided install_deps.sh and build.sh scripts automatically create and configure the required environment, install the dependencies, and compile Cardiax.
+
+ - **Manual installation with Conda**: Provides more control over the dependency installation while still using Conda to manage the environment. This approach is useful when specific dependencies need to be selected, skipped, or customized.
+
+ - **Manual compilation of libraries**: Intended for users who prefer not to use Conda, or for deployment on HPC clusters and other controlled environments. All dependencies are compiled and installed manually from source into a user-defined installation directory before building Cardiax.
+
+
 ### 2.1 Automatic Installation With Conda
 Cardiax uses a set of automated scripts to handle complex dependencies (HDF5, PETSc, AMGX and Armadillo) and the compilation process within an isolated Conda environment.
 

@@ -93,25 +93,30 @@ This installation method allows you to manually create the Conda environment and
 
 First, create and activate a dedicated Conda environment:
 
+```bash
 conda create -c conda-forge -n cardiax-env
 conda activate cardiax-env
+```
 
-Install the required dependencies from conda-forge:
+Install the required dependencies from `conda-forge`:
 
+```bash
 conda install conda-forge::petsc
 conda install conda-forge::armadillo
 conda install conda-forge::hdf5
-
+```
 
 Create the build directory and configure the project using CMake:
 
+```bash
 mkdir build
 cd build
 cmake ..
-
+```
 
 During the CMake configuration step, verify that the libraries are detected from the active Conda environment. A successful configuration should produce output similar to:
 
+```text
 -- Checking for module 'PETSc'
 --   Found PETSc, version 3.25.4
 -- PETSc found via pkg-config:
@@ -126,14 +131,15 @@ During the CMake configuration step, verify that the libraries are detected from
 -- LAPACK (conda): /home/rocha/miniconda3/envs/cardiax-env/lib/liblapack.so
 -- Armadillo: /home/rocha/miniconda3/envs/cardiax-env/lib/libarmadillo.so
 -- AmgX not found. Falling back to PETSC_SOLVER.
+```
 
-
-Note: The paths shown above are examples and will depend on where your Conda or Miniconda installation is located.
+> **Note:** The paths shown above are examples and will depend on where your Conda or Miniconda installation is located.
 
 If all dependencies are detected successfully, compile Cardiax with:
 
+```bash
 make
-
+```
 
 AMGX is optional. If it is not installed or cannot be found, Cardiax automatically falls back to the PETSc CPU solver.
 

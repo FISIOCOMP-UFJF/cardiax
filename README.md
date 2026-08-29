@@ -12,6 +12,12 @@ Before starting, make sure the following dependencies are installed on your syst
 * **Nvidia Drivers** compatible with CUDA 12
 * **Git**
 
+Dependencies:
+*  **PETSc**
+*  **Armadillo**
+*  **HDF5**
+*  **AMGx (optional, for GPU solvers)**
+
 --- 
 
 ## 2. Installation 

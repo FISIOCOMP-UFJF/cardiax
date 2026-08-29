@@ -141,6 +141,12 @@ If all dependencies are detected successfully, compile Cardiax with:
 make
 ```
 
+or 
+
+```bash
+make -j8
+```
+
 AMGX is optional. If it is not installed or cannot be found, Cardiax automatically falls back to the PETSc CPU solver.
 
 

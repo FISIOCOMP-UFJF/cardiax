@@ -26,6 +26,7 @@ Dependencies:
 - [2.2 Manual Installation With Conda](#22-manual-installation-with-conda)
 - [2.3 Manual Compilation of Libraries](#23-manual-compilation-of-libraries)
 
+---
 
 ### [2.1 Automatic Installation With Conda](#21-automatic-installation-with-conda)
 

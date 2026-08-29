@@ -289,6 +289,6 @@ Code documentation and examples will be provided soon.
 Reference list:
 
 - Campos, Joventino Oliveira, et al. "Preconditioned augmented Lagrangian formulation for nearly incompressible cardiac mechanics." *International Journal for Numerical Methods in Biomedical Engineering* 34.4 (2018): e2948. [Link](https://onlinelibrary.wiley.com/doi/abs/10.1002/cnm.2948)
-- Campos, Joventino Oliveira, et al. "Uncertainty quantification and sensitivity analysis of left ventricular function during the full cardiac cycle." *Philosophical Transactions of the Royal Society A: Mathematical, Physical and Engineering Sciences* (2020). [Link](https://royalsocietypublishing.org/doi/abs/10.1098/rsta.2019.0381) PPubMed Central (PMC)
+- Campos, Joventino Oliveira, et al. "Uncertainty quantification and sensitivity analysis of left ventricular function during the full cardiac cycle." *Philosophical Transactions of the Royal Society A: Mathematical, Physical and Engineering Sciences* (2020). [Link](https://royalsocietypublishing.org/doi/abs/10.1098/rsta.2019.0381) 
 - Campos, Joventino Oliveira, et al. "Effects of left ventricle wall thickness uncertainties on cardiac mechanics." *Biomechanics and Modeling in Mechanobiology* 18.5 (2019): 1415–1427. [Link](https://link.springer.com/article/10.1007/s10237-019-01153-1) 
 

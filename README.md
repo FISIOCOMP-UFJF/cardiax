@@ -2,9 +2,19 @@
 
 This document provides installation instructions and guidance for configuring the environment required to build and run Cardiax.
 
+## Contents
+
+1. [Prerequisites](#1-prerequisites)
+2. [Installation](#2-installation)
+   - [2.1 Automatic Installation With Conda](#21-automatic-installation-with-conda)
+   - [2.2 Manual Installation With Conda](#22-manual-installation-with-conda)
+   - [2.3 Manual Compilation of Libraries](#23-manual-compilation-of-libraries)
+3. [Documentation](#3-documentation)
+4. [References](#4-references)
+
 ---
 
-## 1. Prerequisites
+## 1. [Prerequisites](#1-prerequisites)
 
 Before starting, make sure the following dependencies are installed on your system:
 
@@ -20,7 +30,7 @@ Dependencies:
 
 --- 
 
-## 2. Installation 
+## 2. [Installation](#2-installation)
 
 - [2.1 Automatic Installation With Conda](#21-automatic-installation-with-conda)
 - [2.2 Manual Installation With Conda](#22-manual-installation-with-conda)
@@ -87,6 +97,20 @@ If you just want to get things started, you can run:
 ```
 ./build/app/electromech -f examples/pvloop.xml -amgx configs/CG_DILU.json
 ```
+
+#### Dependency Management & Troubleshooting
+1. The install_deps.sh script performs checks to determine whether each dependency has already been compiled, avoiding unnecessary rebuilds. However, if you need to update or force the recompilation of specific dependencies, several force flags are available.
+
+```
+./install_deps.sh --help
+```
+
+2. By default, install_deps.sh and the corresponding conda recipes install AMGX targeting a specific set of GPU architectures (70, 75, 80, 86, 89).
+If your GPU architecture is not included in the conda recipe, the compilation will succeed, but you may encounter runtime issues when executing Cardiax.
+To fix this, locate the CUDA_ARCH variable in recipe/amgx_custom/build.sh and add the required architecture.
+
+---
+
 ### [2.2 Manual Installation With Conda](#22-manual-installation-with-conda)
 
 This installation method allows you to manually create the Conda environment and install the required libraries, while leaving the compilation of Cardiax to CMake.
@@ -149,6 +173,7 @@ make -j8
 
 AMGX is optional. If it is not installed or cannot be found, Cardiax automatically falls back to the PETSc CPU solver.
 
+---
 
 ### [2.3 Manual Compilation of Libraries](#23-manual-compilation-of-libraries)
 
@@ -251,13 +276,20 @@ cmake .. \
 make 
 ```
 
-## 3. Dependency Management & Troubleshooting
-1. The install_deps.sh script performs checks to determine whether each dependency has already been compiled, avoiding unnecessary rebuilds. However, if you need to update or force the recompilation of specific dependencies, several force flags are available.
+---
 
-```
-./install_deps.sh --help
-```
+## 3. [Documentation](#3-documentation)
 
-2. By default, install_deps.sh and the corresponding conda recipes install AMGX targeting a specific set of GPU architectures (70, 75, 80, 86, 89).
-If your GPU architecture is not included in the conda recipe, the compilation will succeed, but you may encounter runtime issues when executing Cardiax.
-To fix this, locate the CUDA_ARCH variable in recipe/amgx_custom/build.sh and add the required architecture.
+Code documentation and examples will be provided soon.
+
+---
+
+## 4. [References](#4-references)
+
+Reference list:
+
+- Campos, Joventino Oliveira, et al. "Preconditioned augmented Lagrangian formulation for nearly incompressible cardiac mechanics." *International Journal for Numerical Methods in Biomedical Engineering* 34.4 (2018): e2948. [Link](https://onlinelibrary.wiley.com/doi/abs/10.1002/cnm.2948)
+- Uncertainty quantification and sensitivity analysis of left ventricular function during the full cardiac cycle. [Link](https://royalsocietypublishing.org/doi/abs/10.1098/rsta.2019.0381)
+- Effects of left ventricle wall thickness uncertainties on cardiac mechanics.* [Link](https://link.springer.com/article/10.1007/s10237-019-01153-1)
+- Polynomial chaos expansion surrogate modeling of passive cardiac mechanics using the Holzapfel–Ogden constitutive model. [Link](https://www.sciencedirect.com/science/article/abs/pii/S1877750323000996)
+

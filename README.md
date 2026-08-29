@@ -89,6 +89,54 @@ If you just want to get things started, you can run:
 ```
 ### [2.2 Manual Installation With Conda](#22-manual-installation-with-conda)
 
+This installation method allows you to manually create the Conda environment and install the required libraries, while leaving the compilation of Cardiax to CMake.
+
+First, create and activate a dedicated Conda environment:
+
+conda create -c conda-forge -n cardiax-env
+conda activate cardiax-env
+
+Install the required dependencies from conda-forge:
+
+conda install conda-forge::petsc
+conda install conda-forge::armadillo
+conda install conda-forge::hdf5
+
+
+Create the build directory and configure the project using CMake:
+
+mkdir build
+cd build
+cmake ..
+
+
+During the CMake configuration step, verify that the libraries are detected from the active Conda environment. A successful configuration should produce output similar to:
+
+-- Checking for module 'PETSc'
+--   Found PETSc, version 3.25.4
+-- PETSc found via pkg-config:
+--   Version  : 3.25.4
+--   Includes : /home/rocha/miniconda3/envs/cardiax-env/include
+--   Libraries: /home/rocha/miniconda3/envs/cardiax-env/lib/libpetsc.so
+-- Found MPI_C: /home/rocha/miniconda3/envs/cardiax-env/lib/libmpi.so (found version "5.0")
+-- Found MPI_CXX: /home/rocha/miniconda3/envs/cardiax-env/lib/libmpicxx.so (found version "5.0")
+-- Found MPI: TRUE (found version "5.0")
+-- Found HDF5: hdf5-shared (found version "2.2.0")
+-- BLAS   (conda): /home/rocha/miniconda3/envs/cardiax-env/lib/libblas.so
+-- LAPACK (conda): /home/rocha/miniconda3/envs/cardiax-env/lib/liblapack.so
+-- Armadillo: /home/rocha/miniconda3/envs/cardiax-env/lib/libarmadillo.so
+-- AmgX not found. Falling back to PETSC_SOLVER.
+
+
+Note: The paths shown above are examples and will depend on where your Conda or Miniconda installation is located.
+
+If all dependencies are detected successfully, compile Cardiax with:
+
+make
+
+
+AMGX is optional. If it is not installed or cannot be found, Cardiax automatically falls back to the PETSc CPU solver.
+
 
 ### [2.3 Manual Compilation of Libraries](#23-manual-compilation-of-libraries)
 

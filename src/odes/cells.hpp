@@ -21,6 +21,21 @@ class Cells
 {
  public:
  
+  //! Milliseconds represented by one time unit of the SOLVER.
+  //! 1000 when the solver runs in seconds, 1 when it runs in milliseconds.
+  //! Time and time step are converted from the solver unit into each
+  //! model's own unit before integration, so a model written in ms and one
+  //! written in seconds can both be driven by the same solver.
+  void set_solver_time_unit_ms(double ms) { solver_time_unit_ms = ms; }
+  double get_solver_time_unit_ms() const { return solver_time_unit_ms; }
+
+  //! The underlying cell model
+  const CellModel & get_model() const { return *ode; }
+
+  //! Factor converting solver time into the cell model's own time
+  double time_factor() const
+  { return solver_time_unit_ms / ode->native_time_unit_ms(); }
+
   //! Default constructor
   Cells (uint n, CellModel * c); 
   
@@ -81,8 +96,40 @@ class Cells
   //! Set state variable vindex with contents of v
   void set_var(int vindex, arma::vec & v) const;
 
+  //! Sobrescreve TODO o vetor de estado do sistema s. y precisa ter
+  //! get_ode_size() valores. Usado pelo pre-condicionamento (CellWarmup),
+  //! que substitui as condicoes iniciais publicadas do modelo pelo estado
+  //! do ciclo limite no BCL da simulacao.
+  void set_system_state(uint s, const double * y);
+
+  //! Copia o vetor de estado completo do sistema s para y.
+  void get_system_state(uint s, double * y) const;
+
   //! Config types
   void set_cell_types(int num, int * vtypes);
+
+  //! Coordenada apicobasal (Cobiveco ab) de cada celula, 0 apice -> 1 base.
+  //! Vetor vazio (o default) desliga o gradiente: o modelo celular fica no
+  //! valor neutro e o resultado e identico ao de antes.
+  void set_apicobasal(const arma::vec & v) { apicobasal = v; }
+
+  //! Coordenada apicobasal de cada celula
+  const arma::vec & get_apicobasal() const { return apicobasal; }
+
+  //! Estiramento de fibra lambda_f = sqrt(I4f) de cada celula, vindo da
+  //! mecanica. Vetor vazio (o default) desliga o acoplamento: o modelo
+  //! celular fica em lambda = 1 e o resultado e identico ao de antes.
+  void set_stretch(const arma::vec & v) { stretch = v; }
+
+  //! Estiramento de fibra de cada celula
+  const arma::vec & get_stretch() const { return stretch; }
+
+  //! Taxa d(lambda_f)/dt de cada celula, na unidade de tempo NATIVA do
+  //! modelo celular. Vetor vazio = 0 (contracao isometrica).
+  void set_stretch_rate(const arma::vec & v) { stretch_rate = v; }
+
+  //! Taxa de estiramento de cada celula
+  const arma::vec & get_stretch_rate() const { return stretch_rate; }
 
   //! Return the number of cells (systems of ODEs)
   int size() { return num_systems; }
@@ -104,9 +151,22 @@ class Cells
   //! Types for each cell
   arma::ivec types;
 
+  //! Coordenada apicobasal de cada celula (vazio = gradiente desligado)
+  arma::vec apicobasal;
+
+  //! Estiramento de fibra de cada celula (vazio = acoplamento desligado)
+  arma::vec stretch;
+
+  //! Taxa de estiramento de cada celula (vazio = 0)
+  arma::vec stretch_rate;
+
   //! Monitored values array
   arma::vec monitored_values;
 
+
+ private:
+
+  double solver_time_unit_ms = 1000.0;  //!< solver runs in seconds by default
 };
 
 #endif

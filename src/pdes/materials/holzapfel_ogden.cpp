@@ -380,4 +380,3 @@ void HolzapfelOgden::piola2_stress(MaterialData * md, arma::mat & pk2) const {
 
 
 }
-

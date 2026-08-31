@@ -38,10 +38,32 @@ public:
   void solve();
 
   void pre_solve();
-
   void solve_old();
 
 protected:
+
+  //! Hand the material the coefficients of the Regazzoni-Quarteroni
+  //! stabilisation term at one integration point (CMAME 373 (2021) 113506).
+  //!
+  //! The plain segregated scheme feeds the mechanics a constant Ta computed
+  //! from the PREVIOUS stretch. That hides an implicit-explicit treatment of
+  //! lambda and, whenever the active stiffness exceeds the passive one, puts
+  //! an eigenvalue of the coupled iteration below -1: a period-2 oscillation
+  //! that refining the time step makes worse, not better. Treating the active
+  //! tension as an elastic force of stiffness Ka, rather than a constant one,
+  //! brings that eigenvalue back inside the unit circle. The added term is
+  //! O(dt), so the converged solution is unchanged.
+  //!
+  //! The term itself lives in IncompressibleMaterial::active_strain_energy,
+  //! which is where the finite-difference stress and elasticity tensor are
+  //! built -- that is how the stabilisation reaches the tangent and not only
+  //! the residual. Ka_e and lamprev_e are the nodal values on the current
+  //! element; scale is the same factor applied to Ta. No-op when the
+  //! stabilisation fields were not provided.
+  void apply_active_stabilization(MaterialData * md, const arma::vec & Ka_e,
+                                  const arma::vec & lamprev_e,
+                                  const arma::vec & shape,
+                                  double scale, int nubf) const;
 
 
   //! Define if we use Augmented Lagrangian

@@ -24,6 +24,20 @@ class CellModel
 {
  public:
 
+  //! Milliseconds represented by one time unit of THIS model's equations.
+  //! Ionic models (ToRORd, TenTusscher, ...) are written in ms and keep the
+  //! default of 1. Phenomenological models written in seconds, such as
+  //! Kerckhoffs, override this with 1000. It lets the solver run in whatever
+  //! time unit it likes while each model still receives time in its own.
+  virtual double native_time_unit_ms() const { return 1.0; }
+
+  //! Index of the state variable that stores the local activation time, for
+  //! phenomenological models driven directly by it (Kerckhoffs). Ionic
+  //! models return -1: they are driven by a stimulus current, and their
+  //! state variables are concentrations and gates that must not be
+  //! overwritten with an activation time.
+  virtual int lat_var_index() const { return -1; }
+
   //! Default constructor
   CellModel (int num_states);
 
@@ -50,6 +64,31 @@ class CellModel
 
   //! Return the cell type
   int get_celltype() const { return type; }
+
+  //! Coordenada apicobasal da celula (Cobiveco ab): 0 no apice, 1 na base.
+  //! O valor default 0.5 e NEUTRO -- os modelos que usam esse gradiente
+  //! devem reduzir-se ao comportamento original em 0.5, para que malhas sem
+  //! o bloco <ab> continuem dando exatamente o mesmo resultado de antes.
+  void set_apicobasal(double a) { apicobasal = a; }
+
+  //! Coordenada apicobasal da celula
+  double get_apicobasal() const { return apicobasal; }
+
+  //! Estiramento na direcao da fibra, lambda_f = sqrt(I4f), vindo da
+  //! mecanica. O valor default 1.0 e NEUTRO: sem acoplamento mecanico o
+  //! modelo celular se comporta exatamente como antes.
+  void set_stretch(double l) { stretch = l; }
+
+  //! Estiramento na direcao da fibra
+  double get_stretch() const { return stretch; }
+
+  //! Taxa de estiramento d(lambda_f)/dt, na unidade de tempo NATIVA do
+  //! modelo. Default 0.0 = neutro (contracao isometrica do ponto de vista
+  //! do modelo celular).
+  void set_stretch_rate(double dl) { stretch_rate = dl; }
+
+  //! Taxa de estiramento na direcao da fibra
+  double get_stretch_rate() const { return stretch_rate; }
 
   inline double get_monitored_value(const int index) const { return *(monitored[index]); }
 
@@ -102,6 +141,8 @@ class CellModel
   //! RL variables
   std::set<int> rlvars;
 
+  double dt_solver = 0.0;
+
  protected:
 
   //! Number of state variables (equations)
@@ -109,6 +150,15 @@ class CellModel
 
   //! Select cell type
   CellType type;
+
+  //! Coordenada apicobasal da celula (0 apice -> 1 base); 0.5 = neutro
+  double apicobasal = 0.5;
+
+  //! Estiramento na direcao da fibra; 1.0 = neutro (sem deformacao)
+  double stretch = 1.0;
+
+  //! Taxa de estiramento na direcao da fibra; 0.0 = neutro
+  double stretch_rate = 0.0;
 
   //! Solver
   ODESolver * ode_solver;

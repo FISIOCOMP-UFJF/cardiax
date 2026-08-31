@@ -16,6 +16,9 @@ void ExplicitEuler::advance(double * y, double & t, double & dt)
   //teste minimal model
   //y[0] = (y[0] + 88.54) / 115.50;
   
+  // Disponibiliza o passo de tempo para os modelos que usam Rush-Larsen
+  ode->dt_solver = dt;
+
   // Evaluate ODE rhs equations
   ode->equation(t, y, dydt.memptr());
   

@@ -1,5 +1,8 @@
 #include "nonlinear_elasticity.hpp"
 #include "util/pugixml.hpp"
+#include <map>
+#include <algorithm>
+#include <cstddef>
 
 //#define DEBUG_PRESSURE
 #define INCs_TA 0
@@ -133,12 +136,87 @@ void NonlinearElasticity::assemble_pressure()
   delete bfe;
 }
 
+void NonlinearElasticity::set_mesh_units(const std::string & units)
+{
+  if (units == "m" || units == "meter" || units == "meters")
+  {
+    vol_to_mL = 1.0e6;   // 1 m^3   = 1e6 mL
+    unit_name = "m";
+  }
+  else if (units == "cm" || units == "centimeter" || units == "centimeters")
+  {
+    vol_to_mL = 1.0;     // 1 cm^3  = 1 mL
+    unit_name = "cm";
+  }
+  else if (units == "mm" || units == "millimeter" || units == "millimeters")
+  {
+    vol_to_mL = 1.0e-3;  // 1 mm^3  = 1e-3 mL
+    unit_name = "mm";
+  }
+  else
+  {
+    cout << " Warning: unknown mesh unit '" << units
+         << "'; expected m, cm or mm. Keeping " << unit_name << "." << endl;
+    return;
+  }
+  units_detected = true;
+  cout << " Mesh length unit set to " << unit_name
+       << " (volume scale to mL: " << vol_to_mL << ")" << endl;
+}
+
+void NonlinearElasticity::detect_mesh_units()
+{
+  // Infer the length unit from the size of the reference geometry. A human
+  // heart spans roughly 10 cm, so the bounding-box diagonal is about
+  //   0.1  in m,  10  in cm,  100  in mm
+  // These ranges are far enough apart to separate reliably for any
+  // physiological heart size (roughly 5 to 25 cm).
+  if (x0.empty())
+  {
+    cout << " Warning: cannot detect mesh units, reference coordinates empty."
+         << endl;
+    return;
+  }
+
+  arma::vec3 lo = x0[0], hi = x0[0];
+  for (size_t i = 1; i < x0.size(); i++)
+    for (int d = 0; d < 3; d++)
+    {
+      lo(d) = std::min(lo(d), x0[i](d));
+      hi(d) = std::max(hi(d), x0[i](d));
+    }
+
+  double diag = arma::norm(hi - lo, 2);
+
+  const char * guess;
+  if      (diag <  1.0)  guess = "m";
+  else if (diag < 30.0)  guess = "cm";
+  else                   guess = "mm";
+
+  cout << " Mesh bounding-box diagonal = " << diag
+       << " -> assuming length unit '" << guess << "'" << endl;
+
+  set_mesh_units(guess);
+
+  // Sanity check: report the implied heart size in cm.
+  double diag_cm = diag * (vol_to_mL == 1.0e6 ? 100.0
+                          : vol_to_mL == 1.0  ?   1.0 : 0.1);
+  cout << "   implied geometry size: " << diag_cm << " cm";
+  if (diag_cm < 3.0 || diag_cm > 40.0)
+    cout << "  <-- WARNING: outside the expected range for a heart,"
+         << " unit detection may be wrong; use set_mesh_units() to override";
+  cout << endl;
+}
+
+double NonlinearElasticity::volume_scale_to_mL()
+{
+  if (!units_detected)
+    detect_mesh_units();
+  return vol_to_mL;
+}
+
 double NonlinearElasticity::total_volume_cavity(const int cavity_marker)
 {
-  // The endocardial surfaces are open at the base, so a lid plane is needed.
-  if (!lid_plane_set)
-    detect_cavity_lid_plane(MARKER_BASE);
-
   MixedFiniteElement * bfe = fespace.create_boundary_FE();
   double total_endo_volume=0;
 
@@ -154,7 +232,104 @@ double NonlinearElasticity::total_volume_cavity(const int cavity_marker)
   }
   delete bfe;
 
-  return total_endo_volume*1e6;
+  // convert from the mesh length unit cubed to mL
+  return total_endo_volume * volume_scale_to_mL();
+}
+
+double NonlinearElasticity::volume_myocardium_mL()
+{
+  return calc_volume() * volume_scale_to_mL();
+}
+
+void NonlinearElasticity::fiber_stretch_elements(arma::vec & lam_e)
+{
+  const int nelem = msh.get_n_elements();
+  const int nint  = get_num_integration_points();
+
+  lam_e.set_size(nelem);
+
+  // vecF is sized nelem*nint in init(). If it is empty the problem has not
+  // been initialised yet; report the undeformed state rather than reading
+  // past the end.
+  if (vecF.size() < static_cast<size_t>(nelem * nint) || nint < 1)
+  {
+    lam_e.ones();
+    return;
+  }
+
+  for (int e = 0; e < nelem; e++)
+  {
+    // f0 is the fibre direction in the REFERENCE configuration, which is
+    // what I4f = f0.C.f0 is defined with. Do not push it forward here.
+    const arma::vec3 & f0 = msh.get_element(e).get_fiber();
+
+    double lam = 0.0;
+    for (int q = 0; q < nint; q++)
+    {
+      // lambda_f = sqrt(f0.F^T.F.f0) = ||F f0||
+      const arma::vec3 Ff0 = (*vecF[e * nint + q]) * f0;
+      lam += arma::norm(Ff0, 2);
+    }
+    lam_e(e) = lam / static_cast<double>(nint);
+  }
+}
+
+void NonlinearElasticity::fiber_stretch_nodes(arma::vec & lam_n)
+{
+  arma::vec lam_e;
+  fiber_stretch_elements(lam_e);
+
+  const int nelem   = msh.get_n_elements();
+  const int npoints = msh.get_n_points();
+  const int nen     = msh.get_nen();
+
+  lam_n.zeros(npoints);
+  arma::vec wsum(npoints, arma::fill::zeros);
+
+  // Weight each element by its REFERENCE volume rather than counting it once.
+  //
+  // lambda_f = ||F f0|| is defined on the reference configuration, so the
+  // consistent projection onto the nodes is the L2 projection, whose lumped
+  // (row-summed) form is exactly the vol0-weighted average below. Unweighted
+  // averaging is only equivalent on a uniform mesh: on an unstructured
+  // tetrahedral mesh with elements spanning an order of magnitude in size, a
+  // node surrounded by one large and several small elements gets a value
+  // dominated by the small ones, which is inconsistent under refinement and
+  // adds a spatial error that does not shrink with h.
+  //
+  // That error matters here far more than it would for plain visualisation:
+  // lambda_n is differenced in TIME to build lambda_rate, and the mesh-induced
+  // scatter does not cancel in the difference. It shows up as a per-node
+  // offset that the backward difference turns into rate noise.
+  //
+  // vol0 is filled by calc_volume(true), called from pre_solve(). If that has
+  // not run the entries are zero, so fall back to unweighted averaging rather
+  // than dividing by zero.
+  const bool use_vol =
+      (vol0.n_elem == static_cast<arma::uword>(nelem)) && (arma::accu(vol0) > 0.0);
+
+  std::vector<int> pnums(nen);
+  for (int e = 0; e < nelem; e++)
+  {
+    // A degenerate or inverted element can carry a non-positive vol0; giving
+    // it zero weight is better than letting it flip the sign of the local
+    // average.
+    const double w = use_vol ? std::max(vol0(e), 0.0) : 1.0;
+    if (w <= 0.0) continue;
+
+    msh.get_element_pt_nums(e, pnums);
+    for (int i = 0; i < nen; i++)
+    {
+      lam_n(pnums[i]) += w * lam_e(e);
+      wsum(pnums[i])  += w;
+    }
+  }
+
+  // A node with no incident element cannot be assigned a stretch; leaving it
+  // at 1 keeps the cell model at its neutral, undeformed behaviour instead of
+  // feeding it a division by zero.
+  for (int i = 0; i < npoints; i++)
+    lam_n(i) = (wsum(i) > 0.0) ? lam_n(i) / wsum(i) : 1.0;
 }
 
 double NonlinearElasticity::volume_LV()
@@ -868,23 +1043,16 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
   if(index != cavity_marker)
 	  return 0;
 
+  // Divergence theorem, V = (1/3) int x.n dA, evaluated on the current
+  // configuration. This requires the marker to bound a CLOSED surface on
+  // its own -- run report_boundary_closure() to verify: ||int n dA||/area
+  // must be ~0. If a cavity marker is open at the base, this result becomes
+  // dependent on the position of the origin and a lid formula is needed
+  // instead.
   double endo_volume = 0;
-
-  // The endocardial surfaces are OPEN at the base, so the closed-surface
-  // identity V = (1/3) int x.n dA does not apply: its result would depend on
-  // the position of the origin. Instead we close the cavity with a flat lid
-  // on the valve plane and use the field F = ((x - x0).e) e, which has
-  // div F = 1 and vanishes on the lid, giving
-  //
-  //    V = int_endo ((x - x0).e) (e.n) dA
-  //
-  // with e the unit normal of the lid plane and x0 any point on it.
-  const arma::vec3 & e = lid_normal;
-  const double d = lid_offset;          // d = e.x0
 
     // create quadrature rule (need to check if order is ok)
     Quadrature * qd;
-    //qd = Quadrature::create(fe->get_order_u(), fe->get_type());
     qd = Quadrature::create(2, fe->get_type());
 
     // quadrature loop
@@ -898,7 +1066,7 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
       //
       // evaluates dx/dxi, dx/deta
       //
-      dxis.zeros(); 
+      dxis.zeros();
 
       // for 2D set dx/deta = (0,0,-1)
       if(ndim==2) dxis(2,1) = -1.0;
@@ -920,12 +1088,72 @@ double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * f
       for(int in=0; in<neln; in++)
         xq += shape(in) * xe[in];
 
-      endo_volume += (arma::dot(xq, e) - d) * arma::dot(e, xnorm) * detJxW;
+      endo_volume += arma::dot(xq, xnorm) * detJxW / 3.0;
     }
     // end of integration loop
     delete qd;
 
   return endo_volume;
+}
+
+void NonlinearElasticity::report_active_regions()
+{
+  const int nelem = msh.get_n_elements();
+  if (material == NULL || nelem == 0)
+    return;
+
+  // Count elements per region marker.
+  std::map<int, int> count;
+  int max_mesh_marker = -1;
+  for (int i = 0; i < nelem; i++)
+  {
+    const int mk = msh.get_element_index(i);
+    count[mk]++;
+    max_mesh_marker = std::max(max_mesh_marker, mk);
+  }
+
+  // Every element marker must have an entry in the region map, otherwise the
+  // material classes read map_mat[marker] past the end of the vector.
+  if (!region_material_map.empty() &&
+      max_mesh_marker >= (int)region_material_map.size())
+  {
+    std::ostringstream oss;
+    oss << "Mesh has element region marker " << max_mesh_marker
+        << " but <regions> only declares markers up to "
+        << (int)region_material_map.size() - 1
+        << ". Add the missing <marker> entries.";
+    throw runtime_error(oss.str());
+  }
+
+  cout << "\n Active tension per element region:" << endl;
+  cout << "   source: "
+       << (material->has_active_scale()
+             ? "ta_scale declared per material"
+             : "legacy rule (only marker 0 contracts)")
+       << endl;
+
+  int n_active = 0;
+  for (std::map<int, int>::const_iterator it = count.begin();
+       it != count.end(); ++it)
+  {
+    const double s = material->active_scale(it->first);
+    cout << "   marker " << it->first << ": " << it->second
+         << " elements, Ta x " << s;
+    if (s == 0.0)
+      cout << "   (passive)";
+    cout << endl;
+    if (s != 0.0)
+      n_active += it->second;
+  }
+
+  if (n_active == 0)
+    cout << " *** WARNING: no element receives active tension. Check the "
+         << "region markers of the mesh against <regions>/<material>."
+         << endl;
+  else
+    cout << "   " << n_active << " of " << nelem
+         << " elements are contractile." << endl;
+  cout << endl;
 }
 
 void NonlinearElasticity::report_boundary_closure()
@@ -1201,50 +1429,138 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
 
     if (params.attribute("num_materials"))
     {
+      int num_materials = params.attribute("num_materials").as_int();
+      if (num_materials <= 0)
+        throw runtime_error("num_materials must be positive.");
+
+      // ---- regions: marker id -> material id ---------------------------
+      // The map is indexed by the marker id itself. The previous version
+      // pushed the material ids in document order and silently relied on the
+      // markers being listed as 0,1,2,...; a gap or a reordering shifted
+      // every region onto the wrong material without any warning.
+      int max_marker_id = -1;
+      for (pugi::xml_node m = reg.child("marker"); m;
+           m = m.next_sibling("marker"))
+      {
+        int id = m.attribute("id").as_int(-1);
+        if (id < 0)
+          throw runtime_error("<marker> without a valid non-negative id.");
+        max_marker_id = std::max(max_marker_id, id);
+      }
+
       std::vector<int> map_matAHA;
-      //std::cout << "Regions: " << std::endl;
+      std::vector<bool> marker_given;
+      if (max_marker_id >= 0)
+      {
+        map_matAHA.assign(max_marker_id + 1, 0);
+        marker_given.assign(max_marker_id + 1, false);
+      }
+
       for (pugi::xml_node m = reg.child("marker"); m;
            m = m.next_sibling("marker"))
       {
         int id = m.attribute("id").as_int();
         int mt = m.attribute("material").as_int();
-        map_matAHA.push_back(mt);
-        //std::cout << "reg: " << id << " mat: " << mt << std::endl;
+
+        if (mt < 0 || mt >= num_materials)
+          throw runtime_error("<marker> refers to a material id outside "
+                              "[0, num_materials).");
+
+        if (marker_given[id])
+          cout << " *** WARNING: marker id " << id << " listed more than "
+               << "once in <regions>; the last entry wins." << endl;
+
+        map_matAHA[id] = mt;
+        marker_given[id] = true;
       }
+
+      for (std::size_t i = 0; i < marker_given.size(); i++)
+        if (!marker_given[i])
+          cout << " *** WARNING: marker id " << i << " is not listed in "
+               << "<regions>; it falls back to material 0." << endl;
 
         // load control
         int num_increments = params.child("ninc").text().as_int();
         lc.set_nincs(num_increments);
 
-        int num_materials = params.attribute("num_materials").as_int();
-        std::vector<std::vector<double>> vec_matprop;
+        // ---- materials ------------------------------------------------
+        // Indexed by the material id, for the same reason as the markers
+        // above. ta_scale is the multiplier applied to the active tension of
+        // the regions made of this material: 1.0 fully contractile, 0.0
+        // purely passive (valve plugs, scar), anything in between for
+        // hypocontractile tissue. Absent means 1.0.
+        std::vector<std::vector<double>> vec_matprop(num_materials);
+        std::vector<double> mat_ta_scale(num_materials, 1.0);
+        std::vector<bool> material_given(num_materials, false);
+        bool any_ta_scale = false;
 
         for (pugi::xml_node m = params.child("material"); m;
              m = m.next_sibling("material"))
         {
-          int id = m.attribute("id").as_int();
+          int id = m.attribute("id").as_int(-1);
+          if (id < 0 || id >= num_materials)
+            throw runtime_error("<material> id outside [0, num_materials).");
+
+          if (material_given[id])
+            cout << " *** WARNING: material id " << id << " defined more "
+                 << "than once; the last definition wins." << endl;
+
           mtype = m.attribute("type").as_string();
-          
+
           std::string strprop = m.child("coefficients").text().as_string();
           matprop.clear();
           parse_to_vector(strprop, matprop);
-          std::cout << "Material " << id << std::endl;
+
+          double ta_scale = 1.0;
+          if (m.attribute("ta_scale"))
+          {
+            ta_scale = m.attribute("ta_scale").as_double();
+            any_ta_scale = true;
+          }
+
+          std::cout << "Material " << id;
+          if (m.attribute("ta_scale"))
+            std::cout << " (ta_scale = " << ta_scale << ")";
+          std::cout << std::endl;
 
           std::vector<double>::iterator it;
           for (it = matprop.begin(); it != matprop.end(); ++it)
             cout << *it << " ";
           cout << endl;
 
-          vec_matprop.push_back(matprop);
+          vec_matprop[id] = matprop;
+          mat_ta_scale[id] = ta_scale;
+          material_given[id] = true;
         }
+
+        for (int i = 0; i < num_materials; i++)
+          if (!material_given[i])
+            throw runtime_error("num_materials declares a material that has "
+                                "no <material> block.");
 
       // setup material
       std::cout << mtype << std::endl;
+
+      // Kept for the bounds check in report_active_regions(): the material
+      // classes index map_mat[md->get_marker()] with no bounds check, so a
+      // marker beyond the last <marker> id would read past the end of the
+      // vector and silently pick up garbage material parameters. The mesh is
+      // not loaded yet at this point, so the check cannot happen here.
+      region_material_map = map_matAHA;
+
       material = HyperelasticMaterial::create(mtype, elastype,  vec_matprop, num_materials, map_matAHA);
       cout << " Hyperelastic material: " << mtype << endl;
       cout << " Material properties: ";
       cout << " Multiple materials were defined. ";
+      cout << endl;
 
+      // ---- active tension per region ----------------------------------
+      // Only take over the active tension when the input actually asked for
+      // it. Without any ta_scale attribute the material keeps the legacy
+      // rule (region 0 contracts, everything else is passive), so existing
+      // input files reproduce exactly.
+      if (any_ta_scale)
+        material->set_active_scale(map_matAHA, mat_ta_scale);
     }
     else
     {
@@ -1654,6 +1970,11 @@ void NonlinearElasticity::init_matvecs()
     eps.fill(penalt);
     eps0.fill(penalt);
   }
+
+  // Reported here and not in config(): the electromechanics path calls
+  // config() before init(), so the mesh is still empty at parsing time.
+  // init_matvecs() runs after the mesh is loaded in both entry points.
+  report_active_regions();
 }
 
 void NonlinearElasticity::init_resid_stiff()
@@ -1700,18 +2021,18 @@ void NonlinearElasticity::output_vtk(const int cont, const int step)
 {
   int np = msh.get_n_points();
   //int ne = msh.get_n_elements();
-  // std::stringstream ss;
-  // std::string name;
-  // std::string vtuname;
+  std::stringstream ss;
+  std::string name;
+  std::string vtuname;
 
-  // //arma::vec t11(ne), t22(ne), t33(ne);
-  // //arma::vec t12(ne), t13(ne), t23(ne);
-  // //t11.zeros(); t22.zeros(); t33.zeros();
-  // //t12.zeros(); t13.zeros(); t23.zeros();
+  //arma::vec t11(ne), t22(ne), t33(ne);
+  //arma::vec t12(ne), t13(ne), t23(ne);
+  //t11.zeros(); t22.zeros(); t33.zeros();
+  //t12.zeros(); t13.zeros(); t23.zeros();
 
-  // ss << cont << "_" << step;
-  // name = this->basename + "_" + ss.str();
-  // vtuname = name + ".vtu";
+  ss << cont << "_" << step;
+  name = this->basename + "_" + ss.str();
+  vtuname = name + ".vtu";
 
   // Displacements
   //cout << "Aloca vetor" << endl;
@@ -1841,6 +2162,9 @@ void NonlinearElasticity::storeLVvolumes(string basename)
 
 void NonlinearElasticity::storeStress(int step)
 {
+  //ofstream sfile, strainfile;
+  //string aux = basename + string("_stress.dat");
+  //sfile.open(aux.c_str());
   //aux = basename + string("_strain.dat");
   //strainfile.open(aux.c_str());
   arma::mat33 sig, E;
@@ -1872,6 +2196,8 @@ void NonlinearElasticity::storeStress(int step)
         mediaE += straindb(id_el, ii, kk);
       }
       mediastress = mediastress / (double) nint;
+      //sfile.setf(ios::scientific);
+      //sfile << mediastress << "\t";
       sig[kk] = mediastress;
 
       mediaE = mediaE / (double) nint;
@@ -1911,6 +2237,8 @@ void NonlinearElasticity::storeStress(int step)
     fiber_stress(id_el) = fib(0) * (fib(0)*sig(0,0) + fib(1)*sig(0,1) + fib(2)*sig(0,2)) +
                           fib(1) * (fib(0)*sig(0,1) + fib(1)*sig(1,1) + fib(2)*sig(1,2)) +
                           fib(2) * (fib(0)*sig(0,2) + fib(1)*sig(1,2) + fib(2)*sig(2,2));
+    //sfile << fiber_stress(id_el) << "\t";
+    //sfile << endl;
 
     fiber_strain(id_el) = fib0(0) * (fib0(0)*E(0,0) + fib0(1)*E(0,1) + fib0(2)*E(0,2)) +
                           fib0(1) * (fib0(0)*E(0,1) + fib0(1)*E(1,1) + fib0(2)*E(1,2)) +
@@ -1933,6 +2261,7 @@ void NonlinearElasticity::storeStress(int step)
     //strainfile << fiber_strain(id_el) << "\t";
     //strainfile << endl;
   }
+  //sfile.close();
   //strainfile.close();
 
   writer.write_cell_field_step(step, fiber_stress.memptr(), string("stress"));
@@ -1940,6 +2269,82 @@ void NonlinearElasticity::storeStress(int step)
   writer.write_cell_field_step(step, long_strain.memptr(), string("long_strain"));
   writer.write_cell_field_step(step, circ_strain.memptr(), string("circ_strain"));
   writer.write_cell_field_step(step, rad_strain.memptr(), string("rad_strain"));
+}
+
+void NonlinearElasticity::effective_active_tension(const arma::vec & ta_nodal,
+                                                   arma::vec & ta_elem) const
+{
+  const int ne = msh.get_n_elements();
+  ta_elem.zeros(ne);
+
+  if (material == nullptr || ta_nodal.n_elem == 0) return;
+
+  std::vector<int> pnums;
+  for (int iel = 0; iel < ne; iel++)
+  {
+    msh.get_element_pt_nums(iel, pnums);
+    if (pnums.empty()) continue;
+
+    // Mesmo lookup usado na montagem: marcador do elemento -> material ->
+    // ta_scale. Constante sobre o elemento.
+    const double s = material->active_scale(msh.get_element_index(iel));
+
+    double acc = 0.0;
+    int    cnt = 0;
+    for (std::size_t j = 0; j < pnums.size(); j++)
+    {
+      const int p = pnums[j];
+      if (p >= 0 && (arma::uword) p < ta_nodal.n_elem) { acc += ta_nodal(p); cnt++; }
+    }
+    if (cnt > 0) ta_elem(iel) = (acc / cnt) * s;
+  }
+}
+
+
+void NonlinearElasticity::active_scale_field(arma::vec & scale_elem) const
+{
+  const int ne = msh.get_n_elements();
+  scale_elem.zeros(ne);
+  if (material == nullptr) return;
+
+  for (int iel = 0; iel < ne; iel++)
+    scale_elem(iel) = material->active_scale(msh.get_element_index(iel));
+}
+
+
+void NonlinearElasticity::store_cell_field(int step, const arma::vec & v,
+                                           const std::string & name)
+{
+  // O writer copia exatamente n_elements valores; um vetor maior e inofensivo,
+  // um menor leria alem do fim.
+  const arma::uword ne = msh.get_n_elements();
+  if (v.n_elem < ne)
+  {
+    cout << " Warning: cell field '" << name << "' has " << v.n_elem
+         << " entries but the mesh has " << ne
+         << " elements; not written." << endl;
+    return;
+  }
+
+  writer.write_cell_field_step(step, v.memptr(), name);
+}
+
+
+void NonlinearElasticity::store_point_field(int step, const arma::vec & v,
+                                            const std::string & name)
+{
+  // The writer copies exactly n_points values out of the buffer, so a longer
+  // vector is harmless but a shorter one would read past the end.
+  const arma::uword np = msh.get_n_points();
+  if(v.n_elem < np)
+  {
+    cout << " Warning: nodal field '" << name << "' has " << v.n_elem
+         << " entries but the mesh has " << np
+         << " nodes; not written." << endl;
+    return;
+  }
+
+  writer.write_point_field_step(step, v.memptr(), name);
 }
 
 
@@ -1983,6 +2388,12 @@ void NonlinearElasticity::set_pressure_Ta(int mlv, double plv, int mrv, double p
 void NonlinearElasticity::set_active_stress(arma::vec ta)
 {
   material->set_Ta(ta); 
+}
+
+void NonlinearElasticity::set_active_stabilization(const arma::vec & ka,
+                                                   const arma::vec & lam_prev)
+{
+  material->set_active_stabilization(ka, lam_prev);
 }
 
 void NonlinearElasticity::run(const string & mshfile, const string & parfile)

@@ -1,5 +1,14 @@
 #include "torord_land.hpp"
 
+// ---------------------------------------------------------------------------
+//  1 -> resolve tambem nca, nca_i e a cadeia de Markov do IKr (c0,c1,c2,o,i)
+//       com Rush-Larsen generalizado (dy/dt = a*y + b, com 'b' congelado).
+//       Necessario para dt > ~0.03 ms: essas equacoes sao o gargalo de
+//       estabilidade depois que as portas HH passam para Rush-Larsen.
+//  0 -> mantem essas variaveis no Euler explicito (igual ao MonoAlg3D).
+// ---------------------------------------------------------------------------
+#define TORORD_RL_MARKOV 1
+
 TorordLand::TorordLand() : CellModel(50) {
   var_names.insert( std::pair<int, std::string>(0, "v") );
   var_names.insert( std::pair<int, std::string>(1, "nai") );
@@ -53,166 +62,205 @@ TorordLand::TorordLand() : CellModel(50) {
   var_names.insert( std::pair<int, std::string>(49, "Ta") );
 
   //monitored.push_back( &active );
-  rlvars.insert(49);
+
+  // ---------------------------------------------------------------------
+  // Variaveis resolvidas com Rush-Larsen (portas de Hodgkin-Huxley).
+  // Para os indices abaixo, equation() escreve em rDY[i] o VALOR JA
+  // ATUALIZADO da variavel; o laco do Euler em ExplicitEuler::advance()
+  // faz y[i] = rDY[i] em vez de y[i] += dt*rDY[i].
+  // ---------------------------------------------------------------------
+  for (int i = 9; i <= 28; i++) rlvars.insert(i);  // m..jca  (INa, INaL, Ito, ICaL)
+  rlvars.insert(31);                               // ffp
+  rlvars.insert(32);                               // fcafp
+  rlvars.insert(33);                               // xs1
+  rlvars.insert(34);                               // xs2
+  rlvars.insert(35);                               // Jrelnp
+  rlvars.insert(42);                               // Jrelp
+
+#if TORORD_RL_MARKOV
+  rlvars.insert(29);                               // nca
+  rlvars.insert(30);                               // nca_i
+  for (int i = 37; i <= 41; i++) rlvars.insert(i); // IKr Markov: c0,c1,c2,o,i
+#endif
+
+  // Variaveis algebricas (nao sao EDOs): tambem entram como "valor direto"
+  rlvars.insert(49);                               // Ta (tensao ativa)
 
 }
 
 void TorordLand::init(double * values) const
 {
   assert(values != nullptr);
-            // Default initial conditions for ENDO cell (from original Matlab script)
-            values[0] = -8.863699e+01;
-            values[1] = 1.189734e+01;
-            values[2] = 1.189766e+01;
-            values[3] = 1.412345e+02;
-            values[4] = 1.412344e+02;
-            values[5] = 7.267473e-05;
-            values[6] = 6.337870e-05;
-            values[7] = 1.532653e+00;
-            values[8] = 1.533946e+00;
-            values[9] = 8.280078e-04;
-            values[10] = 6.665272e-01;
-            values[11] = 8.260208e-01;
-            values[12] = 8.260560e-01;
-            values[13] = 8.258509e-01;
-            values[14] = 1.668686e-04;
-            values[15] = 5.228306e-01;
-            values[16] = 2.859696e-01;
-            values[17] = 9.591370e-04;
-            values[18] = 9.996012e-01;
-            values[19] = 5.934016e-01;
-            values[20] = 4.886961e-04;
-            values[21] = 9.996011e-01;
-            values[22] = 6.546687e-01;
-            values[23] = 9.500075e-32;
-            values[24] = 1.000000e+00;
-            values[25] = 9.392580e-01;
-            values[26] = 1.000000e+00;
-            values[27] = 9.998984e-01;
-            values[28] = 9.999783e-01;
-            values[29] = 4.448162e-04;
-            values[30] = 7.550725e-04;
-            values[31] = 1.000000e+00;
-            values[32] = 1.000000e+00;
-            values[33] = 2.424047e-01;
-            values[34] = 1.795377e-04;
-            values[35] = -6.883086e-25;
-            values[36] = 1.117498e-02;
-            values[37] = 9.980366e-01;
-            values[38] = 8.588018e-04;
-            values[39] = 7.097447e-04;
-            values[40] = 3.812617e-04;
-            values[41] = 1.357116e-05;
-            values[42] = 2.302525e-23;
-            values[43] = 1.561941e-04;
-            values[44] = 2.351289e-04;
-            values[45] = 8.077631e-03;
-            values[46] = 9.993734e-01;
-            values[47] = 0.000000e+00;
-            values[48] = 0.000000e+00;
-	          values[49] = 0.000000e+00;
 
-            // Default initial conditions for MID cell (from original Matlab script)
-            //values[0] = -8.953800e+01;
-            //values[1] = 1.492920e+01;
-            //values[2] = 1.492967e+01;
-            //values[3] = 1.448447e+02;
-            //values[4] = 1.448447e+02;
-            //values[5] = 7.502288e-05;
-            //values[6] = 6.107636e-05;
-            //values[7] = 1.790435e+00;
-            //values[8] = 1.794842e+00;
-            //values[9] = 6.819365e-04;
-            //values[10] = 6.953807e-01;
-            //values[11] = 8.434888e-01;
-            //values[12] = 8.435208e-01;
-            //values[13] = 8.432262e-01;
-            //values[14] = 1.406211e-04;
-            //values[15] = 5.453149e-01;
-            //values[16] = 2.924967e-01;
-            //values[17] = 9.026127e-04;
-            //values[18] = 9.996593e-01;
-            //values[19] = 5.631197e-01;
-            //values[20] = 4.598833e-04;
-            //values[21] = 9.996593e-01;
-            //values[22] = 6.236964e-01;
-            //values[23] = -1.314189e-33;
-            //values[24] = 1.000000e+00;
-            //values[25] = 9.204086e-01;
-            //values[26] = 1.000000e+00;
-            //values[27] = 9.997620e-01;
-            //values[28] = 9.999625e-01;
-            //values[29] = 3.853595e-04;
-            //values[30] = 8.535292e-04;
-            //values[31] = 1.000000e+00;
-            //values[32] = 1.000000e+00;
-            //values[33] = 2.664151e-01;
-            //values[34] = 1.623107e-04;
-            //values[35] = 1.209762e-24;
-            //values[36] = 1.782437e-02;
-            //values[37] = 9.979720e-01;
-            //values[38] = 8.053991e-04;
-            //values[39] = 6.781800e-04;
-            //values[40] = 5.265363e-04;
-            //values[41] = 1.789565e-05;
-            //values[42] = 7.059162e-23;
-            //values[43] = 1.670654e-04;
-            //values[44] = 2.506794e-04;
-            //values[45] = 8.602625e-03;
-            //values[46] = 9.993314e-01;
-            //values[47] = 0.000000e+00;
-            //values[48] = 0.000000e+00;
+  // Condicoes iniciais do script MATLAB original (jtmff/torord), uma por
+  // tipo celular. Antes, os blocos MID e EPI estavam comentados e TODA
+  // celula partia do estado ENDO, independentemente do tipo usado depois em
+  // equation(). Isso deixa as celulas mid/epi longe do proprio regime
+  // periodico -- ja o potencial de repouso difere: -88.64 mV (endo),
+  // -89.54 mV (mid), -89.05 mV (epi), e o Na+ intracelular difere bem mais.
+  // APEX e BASE nao tem parametrizacao propria no ToRORd e caem em ENDO.
+  switch (type)
+  {
+  case MCELL:
+    values[0] = -8.953800e+01;
+    values[1] = 1.492920e+01;
+    values[2] = 1.492967e+01;
+    values[3] = 1.448447e+02;
+    values[4] = 1.448447e+02;
+    values[5] = 7.502288e-05;
+    values[6] = 6.107636e-05;
+    values[7] = 1.790435e+00;
+    values[8] = 1.794842e+00;
+    values[9] = 6.819365e-04;
+    values[10] = 6.953807e-01;
+    values[11] = 8.434888e-01;
+    values[12] = 8.435208e-01;
+    values[13] = 8.432262e-01;
+    values[14] = 1.406211e-04;
+    values[15] = 5.453149e-01;
+    values[16] = 2.924967e-01;
+    values[17] = 9.026127e-04;
+    values[18] = 9.996593e-01;
+    values[19] = 5.631197e-01;
+    values[20] = 4.598833e-04;
+    values[21] = 9.996593e-01;
+    values[22] = 6.236964e-01;
+    values[23] = -1.314189e-33;
+    values[24] = 1.000000e+00;
+    values[25] = 9.204086e-01;
+    values[26] = 1.000000e+00;
+    values[27] = 9.997620e-01;
+    values[28] = 9.999625e-01;
+    values[29] = 3.853595e-04;
+    values[30] = 8.535292e-04;
+    values[31] = 1.000000e+00;
+    values[32] = 1.000000e+00;
+    values[33] = 2.664151e-01;
+    values[34] = 1.623107e-04;
+    values[35] = 1.209762e-24;
+    values[36] = 1.782437e-02;
+    values[37] = 9.979720e-01;
+    values[38] = 8.053991e-04;
+    values[39] = 6.781800e-04;
+    values[40] = 5.265363e-04;
+    values[41] = 1.789565e-05;
+    values[42] = 7.059162e-23;
+    values[43] = 1.670654e-04;
+    values[44] = 2.506794e-04;
+    values[45] = 8.602625e-03;
+    values[46] = 9.993314e-01;
+    values[47] = 0.000000e+00;
+    values[48] = 0.000000e+00;
+    break;
 
-            // Default initial conditions for EPI cell (from original Matlab script)
-            //values[0] = -8.904628e+01;
-            //values[1] = 1.272190e+01;
-            //values[2] = 1.272220e+01;
-            //values[3] = 1.422490e+02;
-            //values[4] = 1.422489e+02;
-            //values[5] = 6.541058e-05;
-            //values[6] = 5.684431e-05;
-            //values[7] = 1.809117e+00;
-            //values[8] = 1.809702e+00;
-            //values[9] = 7.581821e-04;
-            //values[10] = 6.798398e-01;
-            //values[11] = 8.341502e-01;
-            //values[12] = 8.341883e-01;
-            //values[13] = 8.340817e-01;
-            //values[14] = 1.543877e-04;
-            //values[15] = 5.382951e-01;
-            //values[16] = 3.027694e-01;
-            //values[17] = 9.330351e-04;
-            //values[18] = 9.996287e-01;
-            //values[19] = 9.996262e-01;
-            //values[20] = 4.753907e-04;
-            //values[21] = 9.996287e-01;
-            //values[22] = 9.996285e-01;
-            //values[23] = 1.742134e-37;
-            //values[24] = 1.000000e+00;
-            //values[25] = 9.479522e-01;
-            //values[26] = 1.000000e+00;
-            //values[27] = 9.999327e-01;
-            //values[28] = 9.999829e-01;
-            //values[29] = 2.915447e-04;
-            //values[30] = 5.026045e-04;
-            //values[31] = 1.000000e+00;
-            //values[32] = 1.000000e+00;
-            //values[33] = 2.288155e-01;
-            //values[34] = 1.714978e-04;
-            //values[35] = -1.131190e-26;
-            //values[36] = 1.295052e-02;
-            //values[37] = 9.981944e-01;
-            //values[38] = 8.342321e-04;
-            //values[39] = 6.838658e-04;
-            //values[40] = 2.778785e-04;
-            //values[41] = 9.667759e-06;
-            //values[42] = 8.169304e-24;
-            //values[43] = 1.259996e-04;
-            //values[44] = 1.899522e-04;
-            //values[45] = 6.551494e-03;
-            //values[46] = 9.994940e-01;
-            //values[47] = 0.000000e+00;
-            //values[48] = 0.000000e+00;
+  case EPI:
+    values[0] = -8.904628e+01;
+    values[1] = 1.272190e+01;
+    values[2] = 1.272220e+01;
+    values[3] = 1.422490e+02;
+    values[4] = 1.422489e+02;
+    values[5] = 6.541058e-05;
+    values[6] = 5.684431e-05;
+    values[7] = 1.809117e+00;
+    values[8] = 1.809702e+00;
+    values[9] = 7.581821e-04;
+    values[10] = 6.798398e-01;
+    values[11] = 8.341502e-01;
+    values[12] = 8.341883e-01;
+    values[13] = 8.340817e-01;
+    values[14] = 1.543877e-04;
+    values[15] = 5.382951e-01;
+    values[16] = 3.027694e-01;
+    values[17] = 9.330351e-04;
+    values[18] = 9.996287e-01;
+    values[19] = 9.996262e-01;
+    values[20] = 4.753907e-04;
+    values[21] = 9.996287e-01;
+    values[22] = 9.996285e-01;
+    values[23] = 1.742134e-37;
+    values[24] = 1.000000e+00;
+    values[25] = 9.479522e-01;
+    values[26] = 1.000000e+00;
+    values[27] = 9.999327e-01;
+    values[28] = 9.999829e-01;
+    values[29] = 2.915447e-04;
+    values[30] = 5.026045e-04;
+    values[31] = 1.000000e+00;
+    values[32] = 1.000000e+00;
+    values[33] = 2.288155e-01;
+    values[34] = 1.714978e-04;
+    values[35] = -1.131190e-26;
+    values[36] = 1.295052e-02;
+    values[37] = 9.981944e-01;
+    values[38] = 8.342321e-04;
+    values[39] = 6.838658e-04;
+    values[40] = 2.778785e-04;
+    values[41] = 9.667759e-06;
+    values[42] = 8.169304e-24;
+    values[43] = 1.259996e-04;
+    values[44] = 1.899522e-04;
+    values[45] = 6.551494e-03;
+    values[46] = 9.994940e-01;
+    values[47] = 0.000000e+00;
+    values[48] = 0.000000e+00;
+    break;
+
+  case ENDO:
+  default:
+    values[0] = -8.863699e+01;
+    values[1] = 1.189734e+01;
+    values[2] = 1.189766e+01;
+    values[3] = 1.412345e+02;
+    values[4] = 1.412344e+02;
+    values[5] = 7.267473e-05;
+    values[6] = 6.337870e-05;
+    values[7] = 1.532653e+00;
+    values[8] = 1.533946e+00;
+    values[9] = 8.280078e-04;
+    values[10] = 6.665272e-01;
+    values[11] = 8.260208e-01;
+    values[12] = 8.260560e-01;
+    values[13] = 8.258509e-01;
+    values[14] = 1.668686e-04;
+    values[15] = 5.228306e-01;
+    values[16] = 2.859696e-01;
+    values[17] = 9.591370e-04;
+    values[18] = 9.996012e-01;
+    values[19] = 5.934016e-01;
+    values[20] = 4.886961e-04;
+    values[21] = 9.996011e-01;
+    values[22] = 6.546687e-01;
+    values[23] = 9.500075e-32;
+    values[24] = 1.000000e+00;
+    values[25] = 9.392580e-01;
+    values[26] = 1.000000e+00;
+    values[27] = 9.998984e-01;
+    values[28] = 9.999783e-01;
+    values[29] = 4.448162e-04;
+    values[30] = 7.550725e-04;
+    values[31] = 1.000000e+00;
+    values[32] = 1.000000e+00;
+    values[33] = 2.424047e-01;
+    values[34] = 1.795377e-04;
+    values[35] = -6.883086e-25;
+    values[36] = 1.117498e-02;
+    values[37] = 9.980366e-01;
+    values[38] = 8.588018e-04;
+    values[39] = 7.097447e-04;
+    values[40] = 3.812617e-04;
+    values[41] = 1.357116e-05;
+    values[42] = 2.302525e-23;
+    values[43] = 1.561941e-04;
+    values[44] = 2.351289e-04;
+    values[45] = 8.077631e-03;
+    values[46] = 9.993734e-01;
+    values[47] = 0.000000e+00;
+    values[48] = 0.000000e+00;
+    break;
+  }
+
+  // Tensao ativa do modelo de Land: parte do zero em qualquer tipo celular.
+  values[49] = 0.000000e+00;
 }
 
 void TorordLand::equation(const double time, const double *rY, double *rDY)
@@ -326,8 +374,12 @@ double trpnmax = 0.07;
 
 // INPUT CODE:
 int mode = 0;           // 0 = "intact", 1 = "skinned"
-double lambda = 1.0;
-double lambda_rate = 0.0;
+// Estiramento de fibra entregue pela mecanica (Cells::set_stretch). Sem
+// acoplamento os defaults de CellModel valem 1.0 e 0.0, que sao exatamente
+// os valores que estavam fixos aqui antes.
+// lambda_rate esta em 1/ms, a unidade de tempo nativa deste modelo.
+double lambda = get_stretch();
+double lambda_rate = get_stretch_rate();
 
 // EC parameters
 double perm50 = 0.35;
@@ -337,8 +389,8 @@ double dr = 0.25;
 double wfrac = 0.5;
 double TOT_A = 25;
 double ktm_unblock = 0.021; 
-double beta_1 = -2.4;
-double beta_0 = 2.3;
+double beta_1 =  /*-0.1585;*/ -2.4;
+double beta_0 =  /*0.6;*/  2.3;
 double gamma = 0.0085;
 double gamma_wu = 0.615;
 double phi = 2.23;
@@ -754,6 +806,12 @@ double KsCa=1.0+0.6/(1.0+pow((3.8e-5/cai),1.4));
 double GKs= 0.0011*IKs_Multiplier;
 if (celltype==EPI)
     GKs=GKs*1.4;
+// Gradiente apicobasal de IKs. 'apicobasal' e a coordenada ab do Cobiveco
+// (0 = apice, 1 = base) e vale 0.5 quando a malha nao traz o campo <ab>,
+// caso em que o fator abaixo e exatamente 1 e nada muda. Fator 5x no apice
+// e 0.2x na base: mais IKs no apice, logo APD mais curto ali.
+GKs = GKs * pow(0.2, 2.0*apicobasal - 1.0);
+//cout << GKs << endl;
 double IKs = GKs*KsCa*xs1*xs2*(v-EKs);
 
 // IK1
@@ -980,7 +1038,7 @@ double jsrMidpoint = 1.7;
 
 double bt=4.75;
 double a_rel=0.5*bt;
-double Jrel_inf=a_rel*(-ICaL)/(1.0+pow((jsrMidpoint/cajsr),8.0));
+double Jrel_inf  = a_rel *(-ICaL_ss)/(1.0+pow((jsrMidpoint/cajsr),8.0));   // era -ICaL
 if (celltype==MCELL)
     Jrel_inf=Jrel_inf*1.7;
 double tau_rel=bt/(1.0+0.0123/cajsr);
@@ -992,7 +1050,7 @@ double dJrelnp=(Jrel_inf-Jrel_np)/tau_rel;                     // Rush-Larsen
 
 double btp=1.25*bt;
 double a_relp=0.5*btp;
-double Jrel_infp=a_relp*(-ICaL)/(1.0+pow((jsrMidpoint/cajsr),8.0));
+double Jrel_infp = a_relp*(-ICaL_ss)/(1.0+pow((jsrMidpoint/cajsr),8.0));   // era -ICaL
 if (celltype==MCELL)
     Jrel_infp=Jrel_infp*1.7;
 double tau_relp=btp/(1.0+0.0123/cajsr);
@@ -1141,6 +1199,81 @@ rDY[46] = dTmBlocked;
 rDY[47] = dZETAS;
 rDY[48] = dZETAW;
 rDY[49] = Ta;
+
+// =====================================================================
+//  RUSH-LARSEN
+// ---------------------------------------------------------------------
+//  Para toda porta de Hodgkin-Huxley  dy/dt = (y_inf - y)/tau  a solucao
+//  exata mantendo y_inf e tau congelados no passo e:
+//
+//        y(t+dt) = y_inf - (y_inf - y(t)) * exp(-dt/tau)
+//
+//  Isso e A-estavel para qualquer dt (o Euler explicito exige dt < 2*tau,
+//  e o menor tau do ToRORd - taum, tauh - fica na casa de 1e-2 ms).
+//
+//  ATENCAO: para os indices em 'rlvars', ExplicitEuler::advance() faz
+//           y[i] = rDY[i]. Logo aqui sobrescrevemos rDY com o VALOR NOVO,
+//           e nao com a derivada.
+// =====================================================================
+const double dt_rl = dt_solver;   // passo de tempo fornecido pelo ExplicitEuler
+
+// INa
+rDY[ 9] = rush_larsen(m,     mss,   taum,   dt_rl);
+rDY[10] = rush_larsen(hp,    hssp,  tauh,   dt_rl);
+rDY[11] = rush_larsen(h,     hss,   tauh,   dt_rl);
+rDY[12] = rush_larsen(j,     jss,   tauj,   dt_rl);
+rDY[13] = rush_larsen(jp,    jss,   taujp,  dt_rl);
+
+// INaL
+rDY[14] = rush_larsen(mL,    mLss,  tmL,    dt_rl);
+rDY[15] = rush_larsen(hL,    hLss,  thL,    dt_rl);
+rDY[16] = rush_larsen(hLp,   hLssp, thLp,   dt_rl);
+
+// Ito
+rDY[17] = rush_larsen(a,     ass,   ta,     dt_rl);
+rDY[18] = rush_larsen(iF,    iss,   tiF,    dt_rl);
+rDY[19] = rush_larsen(iS,    iss,   tiS,    dt_rl);
+rDY[20] = rush_larsen(ap,    assp,  ta,     dt_rl);
+rDY[21] = rush_larsen(iFp,   iss,   tiFp,   dt_rl);
+rDY[22] = rush_larsen(iSp,   iss,   tiSp,   dt_rl);
+
+// ICaL
+rDY[23] = rush_larsen(d,     dss,   td,     dt_rl);
+rDY[24] = rush_larsen(ff,    fss,   tff,    dt_rl);
+rDY[25] = rush_larsen(fs,    fss,   tfs,    dt_rl);
+rDY[26] = rush_larsen(fcaf,  fcass, tfcaf,  dt_rl);
+rDY[27] = rush_larsen(fcas,  fcass, tfcas,  dt_rl);
+rDY[28] = rush_larsen(jca,   jcass, tjca,   dt_rl);
+rDY[31] = rush_larsen(ffp,   fss,   tffp,   dt_rl);
+rDY[32] = rush_larsen(fcafp, fcass, tfcafp, dt_rl);
+
+// IKs
+rDY[33] = rush_larsen(xs1,   xs1ss, txs1,   dt_rl);
+rDY[34] = rush_larsen(xs2,   xs2ss, txs2,   dt_rl);
+
+// Jrel (RyR)
+rDY[35] = rush_larsen(Jrel_np, Jrel_inf,  tau_rel,  dt_rl);
+rDY[42] = rush_larsen(Jrel_p,  Jrel_infp, tau_relp, dt_rl);
+
+#if TORORD_RL_MARKOV
+// ---------------------------------------------------------------------
+// Rush-Larsen generalizado:  dy/dt = a*y + b, com 'b' congelado no passo.
+//   nca / nca_i : dnca = anca*k2n - nca*km2n  ->  a = -km2n, b = anca*k2n
+//   IKr (Markov): para cada estado, 'a' = -(soma das taxas de saida) e
+//                 'b' = soma dos fluxos de entrada vindos dos outros estados.
+// Obs.: a soma c0+c1+c2+o+i deixa de ser conservada exatamente (erro O(dt^2)),
+//       como acontece em qualquer integrador exponencial desacoplado.
+// ---------------------------------------------------------------------
+rDY[29] = rush_larsen_ab(nca,   -km2n,   anca*k2n,   dt_rl);
+rDY[30] = rush_larsen_ab(nca_i, -km2n,   anca_i*k2n, dt_rl);
+
+rDY[37] = rush_larsen_ab(c0, -alpha,                     c1*beta,                           dt_rl);
+rDY[38] = rush_larsen_ab(c1, -(beta + alpha1),           c0*alpha + c2*beta1,               dt_rl);
+rDY[39] = rush_larsen_ab(c2, -(beta1 + alpha2 + alphac2ToI),
+                                                        c1*alpha1 + o*beta2 + I*betaItoC2, dt_rl);
+rDY[40] = rush_larsen_ab(o,  -(beta2 + alphai),          c2*alpha2 + I*betai,               dt_rl);
+rDY[41] = rush_larsen_ab(I,  -(betaItoC2 + betai),       c2*alphac2ToI + o*alphai,          dt_rl);
+#endif
 
 }
 

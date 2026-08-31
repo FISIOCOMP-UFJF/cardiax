@@ -29,12 +29,15 @@ public:
   void close();
 
   //! Open file for writing HDF5 data
-  void open(const std::string & file, int nsteps, double step, bool bido=false,bool is_restart=false);
+  void open(const std::string & file, int nsteps, double step, bool bido=false);
 
   //! Write one time step of vm scalar field
   void write_vm_step(int step, const double *data);
 
   void write_cell_field_step(int step, const double *data, string fieldname);
+
+  //! Write one time step of a node-centred scalar field (vm, active_stress)
+  void write_point_field_step(int step, const double *data, string fieldname);
 
   //! Write one time step of displacement field
   void write_displ_step(int step, const double *data);
@@ -63,7 +66,7 @@ private:
   std::string h5name;
     
   //! Write the raw data to HDF5 file
-  void write_hdf5(const std::string & file, int nsteps, double step); 
+  void write_hdf5(const std::string & file, int nsteps, double step);
     
 };
 

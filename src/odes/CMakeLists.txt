@@ -5,6 +5,7 @@ add_library(ODE
   timestepper.cpp 
   cellmodel.cpp 
   cells.cpp
+  cell_warmup.cpp
   ode_solver.cpp
   explicit_euler.cpp 
   runge_kutta4.cpp

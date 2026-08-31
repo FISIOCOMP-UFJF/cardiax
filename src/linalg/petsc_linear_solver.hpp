@@ -36,15 +36,29 @@ public:
   }
 
   #ifdef AMGX_SOLVER
-    AMGX_SAFE_CALL(AMGX_solver_destroy(_amgx_solver));
-    AMGX_SAFE_CALL(AMGX_vector_destroy(_amgx_x));
-    AMGX_SAFE_CALL(AMGX_vector_destroy(_amgx_b));
-    AMGX_SAFE_CALL(AMGX_matrix_destroy(_amgx_A));
-    
-    AMGX_SAFE_CALL(AMGX_resources_destroy(_amgx_rsrc));
-    AMGX_SAFE_CALL(AMGX_config_destroy(_amgx_config));
+    // Only tear down what this instance actually built. Destroying a null or
+    // never-created handle is not a no-op in AMGX: it reads the mode out of
+    // the handle and aborts with "Incorrect C API mode".
+    if (_amgx_ready)
+    {
+      if (_amgx_solver) AMGX_SAFE_CALL(AMGX_solver_destroy(_amgx_solver));
+      if (_amgx_x)      AMGX_SAFE_CALL(AMGX_vector_destroy(_amgx_x));
+      if (_amgx_b)      AMGX_SAFE_CALL(AMGX_vector_destroy(_amgx_b));
+      if (_amgx_A)      AMGX_SAFE_CALL(AMGX_matrix_destroy(_amgx_A));
+      if (_amgx_rsrc)   AMGX_SAFE_CALL(AMGX_resources_destroy(_amgx_rsrc));
+      if (_amgx_config) AMGX_SAFE_CALL(AMGX_config_destroy(_amgx_config));
 
-    AMGX_SAFE_CALL(AMGX_finalize());
+      _amgx_solver = nullptr; _amgx_x = nullptr; _amgx_b = nullptr;
+      _amgx_A = nullptr; _amgx_rsrc = nullptr; _amgx_config = nullptr;
+      _amgx_ready = false;
+
+      // AMGX_finalize() is global. Calling it from every destructor meant the
+      // first LinearSolver to die shut the library down for all the others,
+      // which then operated on a finalised AMGX. Finalise only when the last
+      // holder goes away.
+      if (--_amgx_live == 0)
+        AMGX_SAFE_CALL(AMGX_finalize());
+    }
   #endif
 }
 
@@ -113,17 +127,35 @@ public:
 
 private:
 
-  //! The KSP context object
-  KSP _ksp;
+  //! The KSP context object.
+  //! Initialised here, not only in init(): the destructor tests it against
+  //! NULL, and several LinearSolver instances in the code base are
+  //! constructed but never init()'d (Monodomain::solver and
+  //! MonodomainDeformation::solver only call init() under `if(test)`).
+  //! Without this initialiser those instances reach the destructor holding
+  //! whatever was on the stack.
+  KSP _ksp = NULL;
 
   #ifdef AMGX_SOLVER
-      // AMGx vars
-      AMGX_config_handle    _amgx_config;
-      AMGX_resources_handle _amgx_rsrc;
-      AMGX_matrix_handle    _amgx_A;
-      AMGX_vector_handle    _amgx_b;
-      AMGX_vector_handle    _amgx_x;
-      AMGX_solver_handle    _amgx_solver;
+      // AMGX handles. Same reasoning as _ksp, and the consequence is worse
+      // here: AMGX decodes the mode (precision, host/device) from the handle
+      // itself, so destroying an uninitialised one makes the library look up
+      // a garbage mode and report "Mode not found" / "Incorrect C API mode".
+      // That error surfaces at teardown, far from the code that caused it.
+      AMGX_config_handle    _amgx_config  = nullptr;
+      AMGX_resources_handle _amgx_rsrc    = nullptr;
+      AMGX_matrix_handle    _amgx_A       = nullptr;
+      AMGX_vector_handle    _amgx_b       = nullptr;
+      AMGX_vector_handle    _amgx_x       = nullptr;
+      AMGX_solver_handle    _amgx_solver  = nullptr;
+
+      //! True once init() has built the AMGX objects of THIS instance.
+      bool _amgx_ready = false;
+
+      //! Number of instances currently holding AMGX objects. AMGX_initialize
+      //! and AMGX_finalize are global, so they must be paired once for the
+      //! whole process, not once per LinearSolver.
+      static int _amgx_live;
   #endif
 
   //! The preconditioner object to be used for the solution

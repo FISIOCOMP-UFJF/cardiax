@@ -11,6 +11,7 @@
 // Models
 #include "cellmodel.hpp"
 #include "cells.hpp"
+#include "cell_warmup.hpp"
 #include "simple_ode.hpp"
 #include "luo_rudy.hpp"
 #include "ten_tusscher2006.hpp"

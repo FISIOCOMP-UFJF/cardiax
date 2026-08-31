@@ -33,12 +33,25 @@ public:
 
   ~TimeParameters(){}
 
-  inline int it()          { return iteration;  }
-  inline int pr()          { return print_rate; }
-  inline int get_size()    { return size;       }
-  inline int get_nsteps()  { return nsteps;     }
-  inline double get_dt()   { return time_step;  }
-  inline double get_stop() { return stop;       }
+  inline int it() const          { return iteration;  }
+  inline int pr() const          { return print_rate; }
+  inline int get_size() const    { return size;       }
+  inline int get_nsteps() const  { return nsteps;     }
+  inline double get_dt() const   { return time_step;  }
+  inline double get_stop() const { return stop;       }
+
+  //! Redefine o instante final e recalcula nsteps/size.
+  //!
+  //! No caminho acoplado quem manda no tempo e o laco da circulacao, nao o
+  //! -t. Sem isto, finished() dispara no meio da rodada e advance() vira um
+  //! no-op SILENCIOSO: as celulas param de integrar, Ta congela e nenhuma
+  //! mensagem e emitida. O sintoma aparece como "a tensao ativa nao sobe".
+  inline void set_stop(double t)
+  {
+    stop   = t;
+    nsteps = (int) ((stop - start) / time_step);
+    if (print_rate > 0) size = (nsteps / print_rate);
+  }
 
   inline bool finished ()
   {
@@ -72,7 +85,7 @@ public:
       cout << "Time  " << scientific << cur_time << " ";
   }
 
-  inline double time()
+  inline double time() const
   {
     return cur_time;
   }
@@ -82,11 +95,6 @@ public:
     return (iteration % print_rate == 0) ? true : false;
   }
 
-  inline void restore_state(int saved_iteration, double saved_time)
-  {
-    iteration = saved_iteration;
-    cur_time = saved_time;
-  }
 private:
 
   //! Number of the current iteration

@@ -3,6 +3,8 @@
 
 #include <string>
 #include <stdexcept>
+#include <vector>
+#include <cstddef>
 #include "util/util.hpp"
 #include "linalg/tensor.hpp"
 #include "pdes/elasticity.hpp"
@@ -40,7 +42,64 @@ public:
 
   void set_dTa(arma::vec val) { delta_active_stress = val; }
 
+  //! Stabilisation of the velocity-dependent active tension (Regazzoni &
+  //! Quarteroni, CMAME 373 (2021) 113506). The mechanics uses
+  //!     Ta_eff = Ta + Ka * (lambda_current - lambda_prev)
+  //! instead of Ta alone, where lambda_prev is the fibre stretch at the last
+  //! converged mechanics solve. Both fields are NODAL, like Ta.
+  //!
+  //! Passing an empty Ka disables the stabilisation and restores the plain
+  //! Ta, which is what every run without -lamrate does.
+  void set_active_stabilization(const arma::vec & Ka, const arma::vec & lam_prev)
+  { active_stiffness = Ka; lambda_prev_mech = lam_prev; }
+
+  const arma::vec & get_Ka() const { return active_stiffness; }
+  const arma::vec & get_lambda_prev() const { return lambda_prev_mech; }
+
+  //! True when set_active_stabilization has been given usable fields.
+  bool has_active_stabilization() const
+  { return active_stiffness.n_elem > 0
+        && active_stiffness.n_elem == lambda_prev_mech.n_elem; }
+
   void allocate_Ta(int n);
+
+  //! Set the region-marker -> material map together with the per-material
+  //! active tension scale factors. Both vectors are indexed directly: the
+  //! first by the element region marker, the second by the material id.
+  //! Calling this enables the region-based active tension; leaving it unset
+  //! keeps the legacy rule (see active_scale below).
+  void set_active_scale(const std::vector<int> & marker_to_mat,
+                        const std::vector<double> & mat_scale)
+  {
+    ta_marker_to_mat = marker_to_mat;
+    ta_mat_scale = mat_scale;
+  }
+
+  //! True once set_active_scale has been given per-material factors.
+  bool has_active_scale() const { return !ta_mat_scale.empty(); }
+
+  //! Multiplier applied to the nodal active tension of an element with the
+  //! given region marker: 1.0 for fully contractile tissue, 0.0 for purely
+  //! passive regions (valve plugs, scar), intermediate values for
+  //! hypocontractile tissue.
+  //!
+  //! When no ta_scale was declared in the input file the legacy behaviour is
+  //! reproduced exactly: only region 0 contracts. Meshes read from .ele/.fib
+  //! and single-material runs therefore keep behaving as before.
+  double active_scale(int marker) const
+  {
+    if (ta_mat_scale.empty())
+      return (marker == 0) ? 1.0 : 0.0;
+
+    if (marker < 0 || (std::size_t)marker >= ta_marker_to_mat.size())
+      return 0.0;
+
+    const int mat = ta_marker_to_mat[marker];
+    if (mat < 0 || (std::size_t)mat >= ta_mat_scale.size())
+      return 0.0;
+
+    return ta_mat_scale[mat];
+  }
 
   //! Computes PK2 stress using finite difference
   void calc_fd_stress(int iel, MaterialData *md, arma::mat &S);
@@ -134,6 +193,19 @@ protected:
   //! Active stress
   arma::vec active_stress;
   arma::vec delta_active_stress;
+
+  //! Nodal active stiffness Ka and fibre stretch at the previous converged
+  //! mechanics solve, used only by the stabilisation term. Empty by default,
+  //! which leaves the active tension untouched.
+  arma::vec active_stiffness;
+  arma::vec lambda_prev_mech;
+
+  //! Region marker -> material id (indexed by marker)
+  std::vector<int> ta_marker_to_mat;
+
+  //! Active tension scale of each material (indexed by material id).
+  //! Empty means "not configured" and selects the legacy marker-0 rule.
+  std::vector<double> ta_mat_scale;
 
 };
 

@@ -8,7 +8,7 @@ InputFile::InputFile(const char * fname)
 
   is.open(temp.c_str());
   if(!is.is_open())
-    std::cerr << "erro " << temp << std::endl;
+    std::cerr << "error " << temp << std::endl;
 }
 
 InputFile::InputFile(const std::string & fname)

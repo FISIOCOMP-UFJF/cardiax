@@ -20,13 +20,21 @@ Cells::~Cells()
 }
 
 void Cells::advance(double t, double dt)
-{       
+{
+  // convert solver time into the model's own time unit
+  const double tf = time_factor();
+  t  *= tf;
+  dt *= tf;
+
   for (uint system=0; system<num_systems; system++)    
   {
     // Compute offset for ODE
     const uint offset = system*ode->get_num_state_vars();
 
     if (types.size() != 0) ode->set_celltype( types(system) );
+    if (apicobasal.n_elem != 0) ode->set_apicobasal( apicobasal(system) );
+    if (stretch.n_elem != 0)      ode->set_stretch( stretch(system) );
+    if (stretch_rate.n_elem != 0) ode->set_stretch_rate( stretch_rate(system) );
 
     // Time-stepping
     ode->advance(states+offset, t, dt);
@@ -50,6 +58,10 @@ void Cells::advance(double t, double dt)
 void Cells::advance(double t, double dt, const double istim,
 		                const std::set<uint> & snodes)
 {
+  const double tf = time_factor();
+  t  *= tf;
+  dt *= tf;
+
   std::set<uint>::iterator it;
     
   for (uint system=0; system<num_systems; system++)
@@ -61,6 +73,9 @@ void Cells::advance(double t, double dt, const double istim,
     it = snodes.find(system);
 
     if (types.size() != 0) ode->set_celltype( types(system) );
+    if (apicobasal.n_elem != 0) ode->set_apicobasal( apicobasal(system) );
+    if (stretch.n_elem != 0)      ode->set_stretch( stretch(system) );
+    if (stretch_rate.n_elem != 0) ode->set_stretch_rate( stretch_rate(system) );
 
     // time-stepping
     if (it != snodes.end())
@@ -83,12 +98,19 @@ void Cells::advance(double t, double dt, const double istim,
 
 void Cells::advance(double t, double dt, const arma::vec & stim_values)
 {
+  const double tf = time_factor();
+  t  *= tf;
+  dt *= tf;
+
   for (uint system=0; system<num_systems; system++)
   {
     // compute offset for ODE
     const uint offset = system * ode->get_num_state_vars();
 
     if (types.size() != 0) ode->set_celltype( types(system) );
+    if (apicobasal.n_elem != 0) ode->set_apicobasal( apicobasal(system) );
+    if (stretch.n_elem != 0)      ode->set_stretch( stretch(system) );
+    if (stretch_rate.n_elem != 0) ode->set_stretch_rate( stretch_rate(system) );
 
     const double istim = stim_values(system);
     ode->advance(states+offset, t, dt, istim);
@@ -154,6 +176,9 @@ void Cells::init()
     
     // change type of cell model (endo, mid, epi)
     if (types.size() != 0) ode->set_celltype( types(system) );
+    if (apicobasal.n_elem != 0) ode->set_apicobasal( apicobasal(system) );
+    if (stretch.n_elem != 0)      ode->set_stretch( stretch(system) );
+    if (stretch_rate.n_elem != 0) ode->set_stretch_rate( stretch_rate(system) );
 
     // set initial conditions of this system
     ode->init(states+offset);
@@ -172,6 +197,28 @@ void Cells::set_var(int vindex, arma::vec &v) const
   uint odesize = ode->get_num_state_vars();
   for(uint i=0; i<num_systems; i++)
     states[vindex+(i*odesize)] = v(i);
+}
+
+void Cells::set_system_state(uint s, const double * y)
+{
+  assert(ode);
+  assert(y);
+  assert(s < num_systems);
+
+  const uint n = ode->get_num_state_vars();
+  double * dst = states + s * n;
+  for (uint i = 0; i < n; i++) dst[i] = y[i];
+}
+
+void Cells::get_system_state(uint s, double * y) const
+{
+  assert(ode);
+  assert(y);
+  assert(s < num_systems);
+
+  const uint n = ode->get_num_state_vars();
+  const double * src = states + s * n;
+  for (uint i = 0; i < n; i++) y[i] = src[i];
 }
 
 void Cells::set_cell_types(int num, int * vec)

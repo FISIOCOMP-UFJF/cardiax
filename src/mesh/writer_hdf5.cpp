@@ -10,18 +10,11 @@ WriterHDF5::~WriterHDF5()
   close();
 }
 
-void WriterHDF5::open(const std::string & file, int nsteps, double step, bool bido, bool is_restart)
-{   
-    std::size_t pos  = file.find_last_of("/");
-    std::string base = file.c_str(); 
-     if (pos != std::string::npos) {
-        base = file.substr(pos+1);
-    }
-    if (is_restart) base = base + "_restarted";
-    h5name = base + ".h5";
+void WriterHDF5::open(const std::string & file, int nsteps, double step, bool bido)
+{
 
-    write_hdf5(file, nsteps, step);
-    write_xdmf(file, nsteps, step, bido);
+  write_hdf5(file, nsteps, step);
+  write_xdmf(file, nsteps, step, bido);
 }
 
 void WriterHDF5::close()
@@ -37,12 +30,12 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     hid_t file_id, group_id, dataset_id, dataspace_id, props;
     herr_t status;
 
-    // std::size_t pos  = file.find_last_of("/");
-    // std::string base = file.c_str();
-    // if (pos != std::string::npos)
-    //   base = file.substr(pos+1);
+    std::size_t pos  = file.find_last_of("/");
+    std::string base = file.c_str();
+    if (pos != std::string::npos)
+      base = file.substr(pos+1);
 
-    // h5name = base + ".h5";
+    h5name = base + ".h5";
 
     double fill_zero = 0.0;
 
@@ -163,7 +156,41 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     status = H5Dclose(dataset_id); 
     status = H5Sclose(dataspace_id);
 
-    //teste cell field
+    // ACTIVE STRESS array (nodal, same layout as vm). The active tension of
+    // the cell model lives on the nodes, exactly like the potential.
+    dims[0] = nsteps;
+    dims[1] = np;
+    dataspace_id = H5Screate_simple(2, dims, NULL);
+    dataset_id = H5Dcreate(file_id, "/vertex_field/active_stress",
+                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
+                           props, H5P_DEFAULT);
+    status = H5Dclose(dataset_id);
+    status = H5Sclose(dataspace_id);
+
+    // FIBRE STRETCH array (nodal, same layout as vm and active_stress).
+    // lambda_f = sqrt(I4f) comes from the mechanics and is handed to the
+    // cell model; 
+    dims[0] = nsteps;
+    dims[1] = np;
+    dataspace_id = H5Screate_simple(2, dims, NULL);
+    dataset_id = H5Dcreate(file_id, "/vertex_field/lambda_f",
+                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
+                           props, H5P_DEFAULT);
+    status = H5Dclose(dataset_id);
+    status = H5Sclose(dataspace_id);
+
+    // FIBRE STRETCH RATE array (nodal, same layout as lambda_f).
+    // d(lambda_f)/dt in the CELL MODEL's own time unit (1/ms for ToRORd)
+    dims[0] = nsteps;
+    dims[1] = np;
+    dataspace_id = H5Screate_simple(2, dims, NULL);
+    dataset_id = H5Dcreate(file_id, "/vertex_field/lambda_rate",
+                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
+                           props, H5P_DEFAULT);
+    status = H5Dclose(dataset_id);
+    status = H5Sclose(dataspace_id);
+
+
     // cria o dataset coordinates0 (inicial)
     dims[0] = nsteps;
     dims[1] = ne;
@@ -182,6 +209,26 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     status = H5Dclose(dataset_id);
     status = H5Sclose(dataspace_id);
     //fim teste
+
+    // TENSAO ATIVA EFETIVAMENTE APLICADA (por elemento).
+    // Media nodal de Ta no elemento vezes o ta_scale do material. E o que a
+    // montagem usa; o campo nodal "active_stress" e o valor BRUTO do modelo
+    // celular, antes da escala por material, e os dois nao coincidem.
+    dataspace_id = H5Screate_simple(2, dims, NULL);
+    dataset_id = H5Dcreate(file_id, "/vertex_field/Ta_applied",
+                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
+                           props, H5P_DEFAULT);
+    status = H5Dclose(dataset_id);
+    status = H5Sclose(dataspace_id);
+
+    // Mapa do multiplicador ta_scale por elemento. Constante no tempo, mas
+    // gravado como campo para poder ser sobreposto aos demais no ParaView.
+    dataspace_id = H5Screate_simple(2, dims, NULL);
+    dataset_id = H5Dcreate(file_id, "/vertex_field/ta_scale",
+                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
+                           props, H5P_DEFAULT);
+    status = H5Dclose(dataset_id);
+    status = H5Sclose(dataspace_id);
 
     dataspace_id = H5Screate_simple(2, dims, NULL);
     dataset_id = H5Dcreate(file_id, "/vertex_field/long_strain", H5T_NATIVE_DOUBLE,
@@ -387,6 +434,63 @@ void WriterHDF5::write_eikonal_lat(const std::string & file, const double *lat_d
         << "</Xdmf>\n";
     xmf.close();
 }
+
+void WriterHDF5::write_point_field_step(int step, const double *data,
+                                        string fieldname)
+{
+  // Same as write_vm_step, but for any node-centred scalar field. The
+  // dataset must already exist in the HDF5 file (see write_hdf5) and the
+  // matching attribute must be declared in the XDMF (see write_xdmf).
+  hid_t file_id, dataset_id, dataspace_id, memspace_id;
+  herr_t status;
+
+  file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
+  string auxstr = string("/vertex_field/") + fieldname.c_str();
+
+  // A field that was never created in write_hdf5() cannot be written into.
+  // Without this check H5Dopen fails and every call afterwards (get_space,
+  // select_hyperslab, write) fails too, burying the real cause under a wall
+  // of HDF5-DIAG output once per output step.
+  if (H5Lexists(file_id, auxstr.c_str(), H5P_DEFAULT) <= 0)
+  {
+    cout << " Warning: nodal field '" << fieldname
+         << "' has no dataset in the HDF5 file; not written."
+         << " Add it to WriterHDF5::write_hdf5() and"
+         << " WriterHDF5::write_xdmf()." << endl;
+    H5Fclose(file_id);
+    return;
+  }
+
+  dataset_id = H5Dopen(file_id, auxstr.c_str(), H5P_DEFAULT);
+
+  hsize_t k = step;
+  hsize_t np = mesh->get_n_points();
+  hsize_t dims[2]   = {1,np};
+  hsize_t start[2]  = {k,0};
+  hsize_t count[2]  = {1,np};
+  hsize_t stride[2] = {1,1};
+  hsize_t block[2]  = {1,1};
+
+  // define memory dataspace
+  memspace_id = H5Screate_simple(2, dims, NULL);
+
+  // select hyperslab
+  dataspace_id = H5Dget_space(dataset_id);
+  status = H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET,
+                               start, stride, count, block);
+
+  // write data
+  status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, memspace_id, dataspace_id,
+                    H5P_DEFAULT, data);
+
+  // close stuff
+  status = H5Sclose(dataspace_id);
+  status = H5Dclose(dataset_id);
+  status = H5Fclose(file_id);
+
+  if(status != 0) H5Eprint2(status,NULL);
+}
+
 
 void WriterHDF5::write_vm_step(int step, const double *data)
 {    
@@ -727,7 +831,106 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "            </DataItem>\n"
             << "            </Attribute>\n";
 
+        //
+        // active tension (nodal)
+        //
+        xmf << "            <Attribute Name=\"active_stress\" \n"
+            << "                AttributeType=\"Scalar\" \n"
+            << "                Center=\"Node\">\n"
+            << "            <DataItem ItemType=\"HyperSlab\" \n"
+            << "                Dimensions=\"1 " << np << "\" \n"
+            << "                Type=\"HyperSlab\">\n"
+            << "                <DataItem Dimensions=\"3 2\" Format=\"XML\">\n"
+            << "                    " << i << " 0 \n"
+            << "                    1 1 \n"
+            << "                    1 " << np <<"\n"
+            << "                </DataItem>\n"
+            << "                <DataItem Name=\"Points\" \n"
+            << "                    Dimensions=\"" << nsteps << " " << np << "\" \n"
+            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/active_stress\n"
+            << "                </DataItem>\n"
+            << "            </DataItem>\n"
+            << "            </Attribute>\n";
+
+        //
+        // fibre stretch lambda_f (nodal)
+        //
+        xmf << "            <Attribute Name=\"lambda_f\" \n"
+            << "                AttributeType=\"Scalar\" \n"
+            << "                Center=\"Node\">\n"
+            << "            <DataItem ItemType=\"HyperSlab\" \n"
+            << "                Dimensions=\"1 " << np << "\" \n"
+            << "                Type=\"HyperSlab\">\n"
+            << "                <DataItem Dimensions=\"3 2\" Format=\"XML\">\n"
+            << "                    " << i << " 0 \n"
+            << "                    1 1 \n"
+            << "                    1 " << np <<"\n"
+            << "                </DataItem>\n"
+            << "                <DataItem Name=\"Points\" \n"
+            << "                    Dimensions=\"" << nsteps << " " << np << "\" \n"
+            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/lambda_f\n"
+            << "                </DataItem>\n"
+            << "            </DataItem>\n"
+            << "            </Attribute>\n";
+
+        //
+        // fibre stretch rate d(lambda_f)/dt (nodal)
+        //
+        xmf << "            <Attribute Name=\"lambda_rate\" \n"
+            << "                AttributeType=\"Scalar\" \n"
+            << "                Center=\"Node\">\n"
+            << "            <DataItem ItemType=\"HyperSlab\" \n"
+            << "                Dimensions=\"1 " << np << "\" \n"
+            << "                Type=\"HyperSlab\">\n"
+            << "                <DataItem Dimensions=\"3 2\" Format=\"XML\">\n"
+            << "                    " << i << " 0 \n"
+            << "                    1 1 \n"
+            << "                    1 " << np <<"\n"
+            << "                </DataItem>\n"
+            << "                <DataItem Name=\"Points\" \n"
+            << "                    Dimensions=\"" << nsteps << " " << np << "\" \n"
+            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/lambda_rate\n"
+            << "                </DataItem>\n"
+            << "            </DataItem>\n"
+            << "            </Attribute>\n";
+
         //teste cell field
+        //Ta_applied -- tensao ativa efetivamente aplicada pela mecanica
+        xmf << "            <Attribute Name=\"Ta_applied\" \n"
+            << "                AttributeType=\"Scalar\" \n"
+            << "                Center=\"Cell\">\n"
+            << "            <DataItem ItemType=\"HyperSlab\" \n"
+            << "                Dimensions=\"1 " << ne << "\" \n"
+            << "                Type=\"HyperSlab\">\n"
+            << "                <DataItem Dimensions=\"3 2\" Format=\"XML\">\n"
+            << "                    " << i << " 0 \n"
+            << "                    1 1 \n"
+            << "                    1 " << ne <<"\n"
+            << "                </DataItem>\n"
+            << "                <DataItem Name=\"Cells\" \n"
+            << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
+            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/Ta_applied\n"
+            << "                </DataItem>\n"
+            << "            </DataItem>\n"
+            << "            </Attribute>\n";
+        //ta_scale -- mapa do multiplicador por elemento
+        xmf << "            <Attribute Name=\"ta_scale\" \n"
+            << "                AttributeType=\"Scalar\" \n"
+            << "                Center=\"Cell\">\n"
+            << "            <DataItem ItemType=\"HyperSlab\" \n"
+            << "                Dimensions=\"1 " << ne << "\" \n"
+            << "                Type=\"HyperSlab\">\n"
+            << "                <DataItem Dimensions=\"3 2\" Format=\"XML\">\n"
+            << "                    " << i << " 0 \n"
+            << "                    1 1 \n"
+            << "                    1 " << ne <<"\n"
+            << "                </DataItem>\n"
+            << "                <DataItem Name=\"Cells\" \n"
+            << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
+            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/ta_scale\n"
+            << "                </DataItem>\n"
+            << "            </DataItem>\n"
+            << "            </Attribute>\n";
         //stress
         xmf << "            <Attribute Name=\"stress\" \n"
             << "                AttributeType=\"Scalar\" \n"
@@ -917,102 +1120,4 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
         << "</Xdmf>\n";
     
     xmf.close();
-}
-
-void WriterHDF5::write_checkpoint(int step, double current_time, const double *vm, const double *state_vars, int num_state_vars)
-{
-    std::string chk_filename = "checkpoint_step_" + std::to_string(step) + ".h5";
-
-    hid_t file_id = H5Fcreate(chk_filename.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-    
-    hid_t space_scalar = H5Screate(H5S_SCALAR);
-    
-    hid_t attr_step = H5Acreate(file_id, "step", H5T_NATIVE_INT, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
-    H5Awrite(attr_step, H5T_NATIVE_INT, &step);
-    H5Aclose(attr_step);
-
-    hid_t attr_time = H5Acreate(file_id, "time", H5T_NATIVE_DOUBLE, space_scalar, H5P_DEFAULT, H5P_DEFAULT);
-    H5Awrite(attr_time, H5T_NATIVE_DOUBLE, &current_time);
-    H5Aclose(attr_time);
-    
-    H5Sclose(space_scalar);
-
-    hid_t group_ep = H5Gcreate2(file_id, "/ep", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    hid_t group_mech = H5Gcreate2(file_id, "/mechanics", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-
-    hsize_t np = mesh->get_n_points();
-
-    // saving vm
-    hsize_t dims_vm[1] = { np };
-    hid_t dataspace_vm = H5Screate_simple(1, dims_vm, NULL);
-    hid_t dataset_vm = H5Dcreate(group_ep, "vm", H5T_NATIVE_DOUBLE, dataspace_vm, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    
-    H5Dwrite(dataset_vm, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, vm);
-    
-    H5Dclose(dataset_vm);
-    H5Sclose(dataspace_vm);
-
-    // saving state_variables
-    hsize_t dims_sv[2] = { np, (hsize_t)num_state_vars };
-    hid_t dataspace_sv = H5Screate_simple(2, dims_sv, NULL);
-    hid_t dataset_sv = H5Dcreate(group_ep, "state_variables", H5T_NATIVE_DOUBLE, dataspace_sv, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    
-    H5Dwrite(dataset_sv, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, state_vars);
-    
-    H5Dclose(dataset_sv);
-    H5Sclose(dataspace_sv);
-
-    H5Gclose(group_ep);
-    H5Gclose(group_mech);
-    H5Fclose(file_id);
-}
-
-void WriterHDF5::read_checkpoint_metadata(const std::string &filename, int &step, double &time, int &num_nodes, int &num_vars)
-{
-    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
-    if (file_id < 0) {
-        throw std::runtime_error("Error: Not possible to open checkpoint file: " + filename);
-    }
-
-    hid_t attr_step = H5Aopen(file_id, "step", H5P_DEFAULT);
-    H5Aread(attr_step, H5T_NATIVE_INT, &step);
-    H5Aclose(attr_step);
-
-    hid_t attr_time = H5Aopen(file_id, "time", H5P_DEFAULT);
-    H5Aread(attr_time, H5T_NATIVE_DOUBLE, &time);
-    H5Aclose(attr_time);
-
-    hid_t dataset_vm = H5Dopen2(file_id, "/ep/vm", H5P_DEFAULT);
-    hid_t space_vm = H5Dget_space(dataset_vm);
-    hsize_t dims_vm[1];
-    H5Sget_simple_extent_dims(space_vm, dims_vm, NULL);
-    num_nodes = (int)dims_vm[0];
-    
-    H5Sclose(space_vm);
-    H5Dclose(dataset_vm);
-
-    hid_t dataset_sv = H5Dopen2(file_id, "/ep/state_variables", H5P_DEFAULT);
-    hid_t space_sv = H5Dget_space(dataset_sv);
-    hsize_t dims_sv[2];
-    H5Sget_simple_extent_dims(space_sv, dims_sv, NULL);
-    num_vars = (int)dims_sv[1];
-    
-    H5Sclose(space_sv);
-    H5Dclose(dataset_sv);
-    H5Fclose(file_id);
-}
-
-void WriterHDF5::read_checkpoint_data(const std::string &filename, double *vm, double *state_vars)
-{
-    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
-
-    hid_t dataset_vm = H5Dopen2(file_id, "/ep/vm", H5P_DEFAULT);
-    H5Dread(dataset_vm, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, vm);
-    H5Dclose(dataset_vm);
-
-    hid_t dataset_sv = H5Dopen2(file_id, "/ep/state_variables", H5P_DEFAULT);
-    H5Dread(dataset_sv, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, state_vars);
-    H5Dclose(dataset_sv);
-
-    H5Fclose(file_id);
 }

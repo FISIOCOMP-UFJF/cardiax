@@ -9,6 +9,20 @@
 #include <utility>
 #include "mesh/writer_hdf5.hpp" 
 
+#include <cmath>
+
+/*!
+ * Conductivities should be given in mS/um
+ * 
+ * My old setting: sigma_l(0.00012),   sigma_t(0.00006226), sigma_n(0.00002556)
+ * Rodrigo's code: sigma_l(0.0001543), sigma_t(0.0000324),  sigma_n(0.0000120)
+ * Benchmark     : sigma_l(0.0001334), sigma_t(0.0000176),  sigma_n(0.0000176)
+ * Rabbit        : sigma_l(0.000204),  sigma_t(0.0000102),  sigma_n(0.000037)
+ * Sundnes       : sigma_l(0.000300), sigma_t(0.000100), sigma_n(0.000031525)
+*/
+
+//#define MONO_ISOTROPIC
+
 Eikonal::Eikonal()
   : CardiacProblem(),
     //sigma_l(0.0001334), sigma_t(0.0000176),  sigma_n(0.0000176),
@@ -16,6 +30,7 @@ Eikonal::Eikonal()
 {
   cout << "Eikonal" << endl; 
   mesh = new Mesh();
+  writer = new WriterHDF5(mesh);
 
   parameters.rename("Eikonal_parameters");
   parameters.add("vel_f", 0.006);
@@ -67,10 +82,17 @@ void Eikonal::init()
   fespace.set_mesh(mesh);
   ndofs = mesh->get_n_points(); //Before: get_n_points() 
 
+  // Per-node stimulus buffer. Monodomain sizes it in its own init(); Eikonal
+  // never did, so it stayed empty and any per-node stimulus indexed out of
+  // bounds. It is needed here for LAT-driven stimulation of ionic models.
+  stim_values.zeros(ndofs);
+
   // setup data writer to write at every 1 ms
   // potential field and displacements
   std::size_t pos  = mesh_filename.find(".xml");
+  std::string output = mesh_filename.substr(0,pos) + "_output";
   int nsteps = tip.get_size(); 
+  writer->open(output, nsteps+1, timestep);
 
   // setup model and cells
   cellmodel = CellModel::create(cell_name);
@@ -102,7 +124,25 @@ void Eikonal::initial_conditions()
   tip.reset();
   
   cells->init();
-  cells->set_var(1, lat); //TODO: Será que eu devo fazer isso?
+
+  // Pre-condicionamento do modelo celular 0D: substitui as condicoes
+  // iniciais publicadas pelo estado do ciclo limite no BCL da simulacao.
+  // Desligado por default (-warmup 1 liga), e portanto sem efeito nenhum
+  // sobre as rodadas existentes.
+  //
+  // Tem de vir DEPOIS de cells->init() -- que reescreve todo o vetor de
+  // estado -- e ANTES da escrita do LAT abaixo, para nao apagar o tempo de
+  // ativacao dos modelos fenomenologicos.
+  warmup_cells(lat);
+
+  // Only phenomenological models store the activation time as a state
+  // variable. Writing the LAT into variable 1 unconditionally destroyed the
+  // initial conditions of ionic models -- in ToRORd variable 1 is the
+  // intracellular sodium (11.9 mM), so it was being zeroed and the cell
+  // could never produce an action potential.
+  int lat_idx = cells->get_model().lat_var_index();
+  if (lat_idx >= 0)
+    cells->set_var(lat_idx, lat);
 
   // loop in time
   int step=0;
@@ -117,18 +157,69 @@ void Eikonal::set_stimulus_value(int index, double val)
   stim_values(index) = val;
 }
 
+void Eikonal::apply_lat_stimulus(double amplitude, double duration,
+                                 double period)
+{
+  // Stimulate every node whose local activation time has been reached, for
+  // `duration` after it. This is what drives ionic cell models such as
+  // ToRORdLand, which need an actual depolarising current: unlike the
+  // phenomenological Kerckhoffs model, they do not read the activation time
+  // directly.
+  //
+  // lat and duration are in the solver time unit (seconds here, so a 2 ms
+  // stimulus is duration = 0.002).
+  if (stim_values.n_elem != lat.n_elem)
+  {
+    std::cout << " Warning: stimulus buffer (" << stim_values.n_elem
+              << ") and LAT vector (" << lat.n_elem
+              << ") have different sizes; resizing." << std::endl;
+    stim_values.zeros(lat.n_elem);
+  }
+
+  double t = tip.time();
+
+  // lat is fixed and t grows monotonically, so without folding the time back
+  // into a single beat the activation window [lat, lat+duration) is crossed
+  // only during the first beat and every later beat runs unstimulated.
+  if (period > 0.0) t = std::fmod(t, period);
+
+  bool any = false;
+
+  for (arma::uword i = 0; i < lat.n_elem; i++)
+  {
+    if (t >= lat(i) && t < lat(i) + duration)
+    {
+      stim_values(i) = amplitude;
+      any = true;
+    }
+  }
+
+  if (any)
+    stim_apply_nodes = true;
+}
+
 void Eikonal::solve(const string &mshfile)
 {
   std::cout << " -- Initializing local activation time --" << std::endl; 
   pugi::xml_document doc;
   pugi::xml_parse_result result = doc.load_file(mshfile.c_str());
-  
-  lat.set_size(ndofs);
-  
+
+  // zeros(), not set_size(): nodes missing from <eikonal> would otherwise
+  // keep uninitialised memory.
+  lat.zeros(ndofs);
+
+  pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
+  double begin_active_stress = 0.0;
+  // passive_time is given in MILLISECONDS in the mesh file, while the solver
+  // may work in seconds; ms_to_solver_time() does the conversion.
+  if(pvloop_data)
+    begin_active_stress = pvloop_data.attribute("passive_time").as_double() * ms_to_solver_time();
+
   pugi::xml_node eikonal_data = doc.child("mesh").child("eikonal");
-  
+
   bool loaded_lat = false;
   bool has_root_nodes = false;
+  int n_read = 0;
   
   std::vector<int> root_nodes;
   std::vector<double> root_times;
@@ -138,22 +229,29 @@ void Eikonal::solve(const string &mshfile)
     // Verify if there is already lat for all nodes in the mesh
     if (eikonal_data.child("node")) 
     {
-      int lat_node_values = 0; 
       loaded_lat = true;
       for(pugi::xml_node node = eikonal_data.child("node"); node; node = node.next_sibling("node"))
       {
         int index = node.attribute("id").as_int(); 
-        lat(index) = std::stod(node.attribute("lat").as_string()); 
-        lat_node_values++;
+        if(index < 0 || index >= (int) ndofs)
+        {
+          std::cout << " *** WARNING: <eikonal> node id " << index
+                    << " is outside [0," << ndofs << "); ignored." << std::endl;
+          continue;
+        }
+        // The per-node LAT is given in MILLISECONDS.
+        lat(index) = node.attribute("lat").as_double(); 
+        n_read++;
       }
-      if(lat_node_values != ndofs)
+      if(n_read != (int) ndofs)
       {
-        cout<<"Warning: precribed LAT incomplete (falling back to eikonal solving)" <<endl; 
+        std::cout << " *** WARNING: prescribed LAT incomplete (" << n_read << " of " << ndofs << " nodes)." << std::endl;
+        std::cout << "     Falling back to Eikonal solving or uniform activation." << std::endl;
         loaded_lat = false; 
       }
     }
-    // Verify if there is root nodes for solving eikonal
-    if (eikonal_data.child("root_node")  && !loaded_lat) 
+    // Verify if there are root nodes for solving eikonal
+    if (eikonal_data.child("root_node") && !loaded_lat) 
     {
       has_root_nodes = true;
       for(pugi::xml_node node = eikonal_data.child("root_node"); node; node = node.next_sibling("root_node"))
@@ -167,24 +265,19 @@ void Eikonal::solve(const string &mshfile)
   //If the lat is already precribed, don't solve eikonal just load the local activation time
   if(loaded_lat)
   {
-    double min_val = lat.min(); 
-    double max_val = lat.max(); 
+    // The per-node LAT from the mesh is used AS IT IS: the only operation is
+    // the conversion from ms to the solver time unit. There is no shift and
+    // no rescaling -- the activation sequence stored in the mesh is the
+    // activation sequence the cells see. passive_time is only a fallback for
+    // meshes without an <eikonal> section.
+    lat *= ms_to_solver_time();
 
-    std::cout << " -- Reading local activation time from mesh file --" << std::endl;
-
-    pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
-    double begin_active_stress = 0.0; 
-    
-    if(pvloop_data) begin_active_stress = std::stod(pvloop_data.attribute("passive_time").as_string()) / 1000.0; 
-    double latest_lat = begin_active_stress + 0.146; 
-
-    if(max_val - min_val == 0.0) 
-      lat.fill(0.0);
-    else 
-      lat = begin_active_stress + (lat - min_val) * (latest_lat - begin_active_stress) / (max_val - min_val);
-      
-    std::cout << " Earliest activation: " << lat.min() << "  Latest activation: " << lat.max()  << std::endl; 
-    std::cout << " Loaded LATs: " << lat.n_elem << " values.\n";
+    std::cout << " Local activation time (per node, from the mesh)" << std::endl;
+    std::cout << " Loaded LATs: " << n_read << " of " << ndofs << " nodes" << std::endl;
+    std::cout << " Earliest activation: " << lat.min()
+              << "  Latest activation: " << lat.max()
+              << "  (spread " << (lat.max() - lat.min())
+              << ", solver time units)" << std::endl;
   }
   else if (has_root_nodes)
   {
@@ -285,16 +378,14 @@ void Eikonal::solve(const string &mshfile)
   }
   else
   {
-    std::cout << " -- No LAT or root nodes found. Using passive_time for all nodes --" << std::endl;
-    
-    pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
-    double begin_active_stress = 0.0; 
-    
-    if(pvloop_data) begin_active_stress = std::stod(pvloop_data.attribute("passive_time").as_string()); 
-    else std::cout<<" -- No passive_time, using lat = 0.0 for all nodes -- " <<endl; 
-    lat.fill(begin_active_stress); 
+    lat.fill(begin_active_stress); // if there isn't lat in the mesh file, we use the passive_time for all elements. 
+    std::cout << " No valid/complete per-node LAT or root nodes found in the mesh." << std::endl;
+    std::cout << " Uniform activation at "
+              << begin_active_stress << " (solver time units, from passive_time)"
+              << std::endl;
   }
 }
+
 
 void Eikonal::solve()
 {
@@ -322,8 +413,6 @@ void Eikonal::solve_odes()
   {
     cells->advance(tip.time(), timestep);
   }
-
-  cells->advance(tip.time(), timestep);
 }
 
 void Eikonal::solve_dijkstra(const std::vector<int>& root_nodes, 

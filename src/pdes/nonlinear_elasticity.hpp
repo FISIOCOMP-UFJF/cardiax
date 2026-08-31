@@ -76,6 +76,20 @@ public:
   int get_num_integration_points();
   Mesh & get_mesh() { return msh; }
   const std::vector<arma::mat33*> & get_vec_F() { return vecF; };
+
+  //! Fibre stretch lambda_f = sqrt(I4f) = sqrt(f0.C.f0) = ||F f0||, one
+  //! value per ELEMENT (averaged over its integration points). Uses the
+  //! deformation gradient left in vecF by the last solve, so it is only
+  //! meaningful after solve() has run. Resizes lam_e to n_elements.
+  void fiber_stretch_elements(arma::vec & lam_e);
+
+  //! Same quantity projected onto the NODES by averaging over the elements
+  //! sharing each node, WEIGHTED by the reference element volume vol0 (the
+  //! lumped L2 projection). The cell models live on the nodes (one ODE
+  //! system per mesh point), so this is the form the electrophysiology needs.
+  //! Falls back to unweighted averaging if vol0 has not been filled yet
+  //! (calc_volume(true), called from pre_solve()). Resizes lam_n to n_points.
+  void fiber_stretch_nodes(arma::vec & lam_n);
   petsc::Matrix & get_K() { return K; }
   void get_displacements(arma::mat & umat);
   void get_displacements(arma::vec & u);
@@ -92,6 +106,31 @@ public:
                   const std::string & name, const arma::vec & v,
                   const std::vector<arma::mat33*> & vecfsn);
   void storeStress(int step);
+
+  //! Write a node-centred scalar field (e.g. "vm", "active_stress") into the
+  //! HDF5/XDMF output for the given output step.
+  //! Tensao ativa EFETIVA por elemento: a media nodal de Ta sobre os nos do
+  //! elemento, vezes o ta_scale do material daquele elemento.
+  //!
+  //! E a grandeza que a montagem realmente usa
+  //! (updated_lagrangian.cpp: md->set_active_stress(Ta_ip * lc.load() *
+  //! ta_scale_el)), e NAO a que ta.max() imprime -- aquela e o valor bruto do
+  //! modelo celular, antes da escala por material. Sao por elemento porque
+  //! ta_scale e constante por elemento: um no na fronteira entre marcadores
+  //! nao tem um valor efetivo unico, e forcar um campo nodal ali inventaria
+  //! um numero que a mecanica nunca viu.
+  void effective_active_tension(const arma::vec & ta_nodal,
+                                arma::vec & ta_elem) const;
+
+  //! Escala de tensao ativa de cada elemento, para inspecao/saida.
+  void active_scale_field(arma::vec & scale_elem) const;
+
+  //! Grava um campo por ELEMENTO (cell-centred) no HDF5/XDMF.
+  void store_cell_field(int step, const arma::vec & v,
+                        const std::string & name);
+
+  void store_point_field(int step, const arma::vec & v,
+                         const std::string & name);
   void storeLVvolumes(string basename);
 
 
@@ -103,15 +142,38 @@ public:
 
   void set_pressure_Ta(int mlv, double plv, int mrv, double prv, arma::vec ta);
 
+  //! Hand the mechanics the fields needed to stabilise a velocity-dependent
+  //! active tension: the nodal active stiffness Ka and the nodal fibre
+  //! stretch at the previous converged solve. Passing empty vectors (the
+  //! default state) disables the stabilisation entirely.
+  void set_active_stabilization(const arma::vec & ka,
+                                const arma::vec & lam_prev);
+
   void set_active_stress(arma::vec ta); 
 
   //! Compute total cavity volume for a given boundary marker.
   //! Boundary elements with other markers contribute zero.
   double total_volume_cavity(const int cavity_marker = MARKER_LV);
 
-  //! Convenience wrappers for left/right ventricular cavity volumes
+  //! Convenience wrappers for left/right ventricular cavity volumes, in mL
   double volume_LV();
   double volume_RV();
+
+  //! Myocardial (tissue) volume in mL
+  double volume_myocardium_mL();
+
+  //! Force the mesh length unit: "m", "cm" or "mm".
+  void set_mesh_units(const std::string & units);
+
+  //! Infer the mesh length unit from the size of the reference geometry.
+  //! Called automatically on the first volume evaluation.
+  void detect_mesh_units();
+
+  //! Factor converting (mesh length unit)^3 to mL
+  double volume_scale_to_mL();
+
+  //! Name of the current mesh length unit
+  const std::string & mesh_units() const { return unit_name; }
 
   //! Set the lid (valve) plane used to close the open endocardial surfaces.
   //! offset is e.x0 for any point x0 on the plane.
@@ -124,6 +186,16 @@ public:
   //! Print, per boundary marker, whether the surface is closed on its own
   //! and what each volume formula yields. Useful to validate cavity setup.
   void report_boundary_closure();
+
+  //! Print, per element region marker, how many elements it holds and which
+  //! active tension scale it receives. A region that silently gets zero
+  //! active tension is very hard to spot in the results, so the mapping is
+  //! reported once, from init_matvecs(), when the mesh is already loaded.
+  void report_active_regions();
+
+  //! Region marker -> material id, as declared in <regions>. Kept only to
+  //! validate the mesh markers once the mesh is available.
+  std::vector<int> region_material_map;
 
   //! Pressure prescribed for a given cavity.
   //! apply_load_factor=true scales by the current load factor (monotonic
@@ -261,6 +333,10 @@ protected:
   arma::vec3 lid_normal = {0.0, 0.0, 1.0}; //!< Unit normal of the valve plane
   double lid_offset = 0.0;                 //!< e.x0 for x0 on the valve plane
   bool lid_plane_set = false;              //!< Whether the plane was set/detected
+
+  double vol_to_mL = 1.0e6;       //!< (mesh unit)^3 -> mL; default assumes m
+  std::string unit_name = "m";    //!< Current mesh length unit
+  bool units_detected = false;    //!< Whether units were set/detected
 
   WriterHDF5 writer;              //! Data writer (VTK,HDF5)
 

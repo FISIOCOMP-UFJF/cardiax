@@ -1,5 +1,30 @@
 #include "updated_lagrangian.hpp"
 
+void UpdatedLagrangian::apply_active_stabilization(MaterialData * md,
+                                                  const arma::vec & Ka_e,
+                                                  const arma::vec & lamprev_e,
+                                                  const arma::vec & shape,
+                                                  double scale, int nubf) const
+{
+  if (Ka_e.n_elem == 0) return;
+
+  double Ka_ip = 0.0, lamprev_ip = 0.0;
+  for (int j = 0; j < nubf; ++j)
+  {
+    Ka_ip      += shape(j) * Ka_e(j);
+    lamprev_ip += shape(j) * lamprev_e(j);
+  }
+
+  // A non-positive lambda_prev means the field was never filled; leaving the
+  // stabilisation off is safer than differencing against zero.
+  if (Ka_ip <= 0.0 || lamprev_ip <= 0.0) return;
+
+  // Ka is scaled exactly like Ta (load factor and region factor), so that the
+  // stabilisation switches off together with the tension it stabilises: in a
+  // passive region (ta_scale = 0) there is no velocity feedback to cure.
+  md->set_active_stabilization(Ka_ip * scale, lamprev_ip);
+}
+
 double UpdatedLagrangian::al_augment(double tol)
 {
   int ne = msh.get_n_elements();
@@ -239,6 +264,29 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
   arma::vec Ta_e(nubf);
   msh.get_element_pt_nums(iel, pnums);
   const arma::vec &Ta = material->get_Ta(); 
+
+  // Active tension multiplier of this element's region: 1.0 for contractile
+  // myocardium, 0.0 for purely passive regions (valve plugs, scar). Constant
+  // over the element, so it is looked up once instead of per quadrature point.
+  const double ta_scale_el = material->active_scale(msh.get_element_index(iel));
+
+  // Stabilisation fields (see apply_active_stabilization). Left empty if the caller did
+  // not provide them, which keeps the plain segregated behaviour.
+  const bool stab_on = material->has_active_stabilization();
+  arma::vec Ka_e, lamprev_e;
+  if (stab_on)
+  {
+    const arma::vec &Ka  = material->get_Ka();
+    const arma::vec &Lam = material->get_lambda_prev();
+    Ka_e.set_size(nubf);
+    lamprev_e.set_size(nubf);
+    for(int i=0;i<nubf;i++)
+    {
+      Ka_e(i)      = Ka(pnums[i]);
+      lamprev_e(i) = Lam(pnums[i]);
+    }
+  }
+
   for(int i=0;i<nubf;i++)
     Ta_e(i) = Ta(pnums[i]);
 
@@ -264,18 +312,21 @@ void UpdatedLagrangian::calc_elmatvec(const int iel, const MxFE *fe,
     calc_B_matrix(gradn, B);
     calc_H_matrix(gradn, H);
 
-    double Ta_ip  =0.0; 
-    for (int j = 0; j < nubf; ++j)
-    {
-        Ta_ip += shape(j) * Ta_e(j);
-    }
 
     // compute stress and elasticity tensor
     MaterialData *md = new MaterialData(msh.get_element(iel), *F);
-    if(md->get_marker() == 0)
-      md->set_active_stress(Ta_ip*lc.load());
-    else
-      md->set_active_stress(0.0);
+
+    double Ta_ip = 0.0;
+    for (int j = 0; j < nubf; ++j)
+      Ta_ip += shape(j) * Ta_e(j);
+
+    md->set_active_stress(Ta_ip * lc.load() * ta_scale_el);
+
+    // The stabilisation term is evaluated inside the strain energy, from the
+    // deformation of the CURRENT iterate, so that both the stress and the
+    // tangent see it. Here we only hand over its coefficients.
+    apply_active_stabilization(md, Ka_e, lamprev_e, shape,
+                               lc.load() * ta_scale_el, nubf);
 
     if (material->is_incompressible())
     {
@@ -460,6 +511,29 @@ void UpdatedLagrangian::elem_resid(const int iel, const MxFE *fe,
   arma::vec Ta_e(nubf);
   msh.get_element_pt_nums(iel, pnums);
   const arma::vec &Ta = material->get_Ta(); 
+
+  // Active tension multiplier of this element's region: 1.0 for contractile
+  // myocardium, 0.0 for purely passive regions (valve plugs, scar). Constant
+  // over the element, so it is looked up once instead of per quadrature point.
+  const double ta_scale_el = material->active_scale(msh.get_element_index(iel));
+
+  // Stabilisation fields (see apply_active_stabilization). Left empty if the caller did
+  // not provide them, which keeps the plain segregated behaviour.
+  const bool stab_on = material->has_active_stabilization();
+  arma::vec Ka_e, lamprev_e;
+  if (stab_on)
+  {
+    const arma::vec &Ka  = material->get_Ka();
+    const arma::vec &Lam = material->get_lambda_prev();
+    Ka_e.set_size(nubf);
+    lamprev_e.set_size(nubf);
+    for(int i=0;i<nubf;i++)
+    {
+      Ka_e(i)      = Ka(pnums[i]);
+      lamprev_e(i) = Lam(pnums[i]);
+    }
+  }
+
   for(int i=0;i<nubf;i++)
     Ta_e(i) = Ta(pnums[i]);
 
@@ -485,19 +559,22 @@ void UpdatedLagrangian::elem_resid(const int iel, const MxFE *fe,
     calc_B_matrix(gradn, B);
 
     
-    double Ta_ip  =0.0; 
-    for (int j = 0; j < nubf; ++j)
-    {
-        Ta_ip += shape(j) * Ta_e(j);
-    }
 
 
     // Compute stress and elasticity tensor
     MaterialData *md = new MaterialData(msh.get_element(iel), *F);
-    if(md->get_marker() == 0)
-      md->set_active_stress(Ta_ip*lc.load());
-    else
-      md->set_active_stress(0.0);
+
+    double Ta_ip = 0.0;
+    for (int j = 0; j < nubf; ++j)
+      Ta_ip += shape(j) * Ta_e(j);
+
+    md->set_active_stress(Ta_ip * lc.load() * ta_scale_el);
+
+    // The stabilisation term is evaluated inside the strain energy, from the
+    // deformation of the CURRENT iterate, so that both the stress and the
+    // tangent see it. Here we only hand over its coefficients.
+    apply_active_stabilization(md, Ka_e, lamprev_e, shape,
+                               lc.load() * ta_scale_el, nubf);
 
     if (material->is_incompressible())
     {
@@ -567,6 +644,29 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
   arma::vec Ta_e(nubf);
   msh.get_element_pt_nums(iel, pnums);
   const arma::vec &Ta = material->get_Ta(); 
+
+  // Active tension multiplier of this element's region: 1.0 for contractile
+  // myocardium, 0.0 for purely passive regions (valve plugs, scar). Constant
+  // over the element, so it is looked up once instead of per quadrature point.
+  const double ta_scale_el = material->active_scale(msh.get_element_index(iel));
+
+  // Stabilisation fields (see apply_active_stabilization). Left empty if the caller did
+  // not provide them, which keeps the plain segregated behaviour.
+  const bool stab_on = material->has_active_stabilization();
+  arma::vec Ka_e, lamprev_e;
+  if (stab_on)
+  {
+    const arma::vec &Ka  = material->get_Ka();
+    const arma::vec &Lam = material->get_lambda_prev();
+    Ka_e.set_size(nubf);
+    lamprev_e.set_size(nubf);
+    for(int i=0;i<nubf;i++)
+    {
+      Ka_e(i)      = Ka(pnums[i]);
+      lamprev_e(i) = Lam(pnums[i]);
+    }
+  }
+
   for(int i=0;i<nubf;i++){
     Ta_e(i) = Ta(pnums[i]);
   }
@@ -601,18 +701,21 @@ void UpdatedLagrangian::elem_stiff(const int iel, const MxFE *fe,
     calc_B_matrix(gradn, B);
     calc_H_matrix(gradn, H);
    
-    double Ta_ip  =0.0; 
-    for (int j = 0; j < nubf; ++j)
-    {
-        Ta_ip += shape(j) * Ta_e(j);
-    }
 
     // Compute stress and elasticity tensor
     MaterialData *md = new MaterialData(msh.get_element(iel), *F);
-    if(md->get_marker() == 0)
-      md->set_active_stress(Ta_ip*lc.load());
-    else
-      md->set_active_stress(0.0);
+
+    double Ta_ip = 0.0;
+    for (int j = 0; j < nubf; ++j)
+      Ta_ip += shape(j) * Ta_e(j);
+
+    md->set_active_stress(Ta_ip * lc.load() * ta_scale_el);
+
+    // The stabilisation term is evaluated inside the strain energy, from the
+    // deformation of the CURRENT iterate, so that both the stress and the
+    // tangent see it. Here we only hand over its coefficients.
+    apply_active_stabilization(md, Ka_e, lamprev_e, shape,
+                               lc.load() * ta_scale_el, nubf);
     
     if (material->is_incompressible())
     {
@@ -896,7 +999,7 @@ void UpdatedLagrangian::solve()
   cout << "End inner volume: " << calc_volume() << endl;
   cout << "End LV cavity volume: " << volume_LV() << endl;
   cout << "End RV cavity volume: " << volume_RV() << endl;
-  nls->timer.summary();
+  //nls->timer.summary();
 
   cout << " Done" << endl;
 }

@@ -53,6 +53,30 @@ public:
   //! Set cell state variable value
   void set_stimulus_value(int index, double val);
 
+  //! Stimulate every node whose local activation time has been reached,
+  //! for `duration` after it. Needed by ionic cell models (ToRORdLand),
+  //! which require a depolarising current rather than reading the LAT.
+  //! Both lat and duration are in the solver time unit.
+  //!
+  //! `period` > 0 makes the stimulus repeat once per beat: the activation
+  //! window is then tested against t modulo period, so a multi-beat run
+  //! re-excites the tissue instead of stimulating only the first beat.
+  //! It must be given in the SOLVER time unit, like lat and duration.
+  void apply_lat_stimulus(double amplitude, double duration,
+                          double period = 0.0);
+
+  //! Milliseconds per solver time unit: 1000 when the solver runs in
+  //! seconds, 1 when it runs in milliseconds. Quantities stated in ms in the
+  //! input files (passive_time, activation window) are converted with it.
+  void set_solver_time_unit_ms(double ms)
+  { solver_time_unit_ms = ms; if (cells) cells->set_solver_time_unit_ms(ms); }
+
+  //! Factor converting a value given in ms into the solver time unit
+  double ms_to_solver_time() const { return 1.0 / solver_time_unit_ms; }
+
+  //! Local activation times (solver time unit)
+  const arma::vec & get_lat() const { return lat; }
+
   //! Solve the problem
   void solve();
 
@@ -104,6 +128,8 @@ protected:
   //! Advance systems of ODEs in time
   void solve_odes();
 
+
+  double solver_time_unit_ms = 1000.0;  //!< solver in seconds by default
 };
 
 #endif

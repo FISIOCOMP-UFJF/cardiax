@@ -1,5 +1,7 @@
 // TO-DO: corrigir lance do ODE_solver
 
+
+
 #include "eikonal.hpp"
 #include "monodomain.hpp"
 #include <queue>
@@ -7,24 +9,38 @@
 #include <utility>
 #include "mesh/writer_hdf5.hpp" 
 
-Eikonal::Eikonal() : CardiacProblem()
+Eikonal::Eikonal()
+  : CardiacProblem(),
+    //sigma_l(0.0001334), sigma_t(0.0000176),  sigma_n(0.0000176),
+    stim_apply_nodes(false)
 {
+  cout << "Eikonal" << endl; 
   mesh = new Mesh();
 
   parameters.rename("Eikonal_parameters");
-
-  // parameters.add("vel_f", 0.006);
-  // parameters.add("vel_s", 0.0002);
-  // parameters.add("vel_n", 0.0002);
-
-  parameters.add("vel_f", 1.0);
-  parameters.add("vel_s", 1.0);
-  parameters.add("vel_n", 1.0);
+  parameters.add("vel_f", 0.006);
+  parameters.add("vel_s", 0.0002);
+  parameters.add("vel_n", 0.0002);
 
 }
-void Eikonal::solve(){}
-void Eikonal::advance(){}
-void Eikonal::initial_conditions(){}
+
+Eikonal::~Eikonal()
+{
+  delete cells;
+  delete cellmodel;
+}
+
+void Eikonal::advance()
+{
+  if( !tip.finished() )
+  {
+    tip.increase_time();
+    timer.enter("ODEs");
+    solve_odes();
+    timer.leave();
+  }
+}
+
 
 void Eikonal::setup(std::string & b, std::string & c, std::string & m,
                            double dt, double T, double pr, double pa)
@@ -36,10 +52,15 @@ void Eikonal::setup(std::string & b, std::string & c, std::string & m,
   
   mesh_filename = b;
   stimuli_filename = b;
+
+  cell_name = c;
+  odesolver = m;
 }
 
 void Eikonal::init()
 {
+  tip = TimeParameters(timestep, totaltime, printrate);
+
   mesh->read_xml(mesh_filename);
   stimuli.read_xml(stimuli_filename);
 
@@ -49,6 +70,14 @@ void Eikonal::init()
   // setup data writer to write at every 1 ms
   // potential field and displacements
   std::size_t pos  = mesh_filename.find(".xml");
+  int nsteps = tip.get_size(); 
+
+  // setup model and cells
+  cellmodel = CellModel::create(cell_name);
+  cellmodel->setup(odesolver, timestep, totaltime, 1.0);
+  cells = new Cells(ndofs, cellmodel);
+
+  cells->init();
 }
 
 void Eikonal::set_conductivity(int cond)
@@ -68,9 +97,29 @@ void Eikonal::set_conductivity(int cond)
     }
 }
 
+void Eikonal::initial_conditions()
+{
+  tip.reset();
+  
+  cells->init();
+  cells->set_var(1, lat); //TODO: Será que eu devo fazer isso?
+
+  // loop in time
+  int step=0;
+
+  cells->advance(tip.time(), timestep, stim_val, stim_nodes);
+  
+}
+
+void Eikonal::set_stimulus_value(int index, double val)
+{
+  stim_apply_nodes = true;
+  stim_values(index) = val;
+}
+
 void Eikonal::solve(const string &mshfile)
 {
-  std::cout << "Initializing local activation time" << std::endl; 
+  std::cout << " -- Initializing local activation time --" << std::endl; 
   pugi::xml_document doc;
   pugi::xml_parse_result result = doc.load_file(mshfile.c_str());
   
@@ -83,7 +132,6 @@ void Eikonal::solve(const string &mshfile)
   
   std::vector<int> root_nodes;
   std::vector<double> root_times;
-
 
   if(eikonal_data)
   {
@@ -122,7 +170,7 @@ void Eikonal::solve(const string &mshfile)
     double min_val = lat.min(); 
     double max_val = lat.max(); 
 
-    std::cout << "Reading local activation time from mesh file" << std::endl;
+    std::cout << " -- Reading local activation time from mesh file --" << std::endl;
 
     pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
     double begin_active_stress = 0.0; 
@@ -140,7 +188,7 @@ void Eikonal::solve(const string &mshfile)
   }
   else if (has_root_nodes)
   {
-    std::cout << "Computing local activation time via Eikonal Solver" << std::endl;
+    std::cout << " -- Computing local activation time via Eikonal Solver --" << std::endl;
     
     double vf = parameters["vel_f"]; 
     double vs = parameters["vel_s"];
@@ -223,8 +271,7 @@ void Eikonal::solve(const string &mshfile)
     
     solve_dijkstra(root_nodes, root_times, adj_cost);
     
-    std::cout << "  Computed Earliest activation: " << lat.min() << std::endl;
-    std::cout << "  Latest activation: " << lat.max() << std::endl;
+    std::cout << " Computed Earliest activation: " << lat.min() << "  Latest activation: " << lat.max() << std::endl;
 
     WriterHDF5 writer(mesh);
     writer.write_eikonal_lat(mshfile, lat.memptr());
@@ -234,23 +281,50 @@ void Eikonal::solve(const string &mshfile)
     {
       arquivo << "<node id=\"" <<u<<"\" lat=\"" <<lat[u]<<"\" />" <<endl; 
     }
-    std::cout << "LAT saved successfully to HDF5/XDMF format." << std::endl;
+    std::cout << " -- LAT saved successfully to HDF5/XDMF format. --" << std::endl;
   }
   else
   {
-    std::cout << " No LAT or root nodes found. Using passive_time for all nodes" << std::endl;
+    std::cout << " -- No LAT or root nodes found. Using passive_time for all nodes --" << std::endl;
     
     pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
     double begin_active_stress = 0.0; 
     
     if(pvloop_data) begin_active_stress = std::stod(pvloop_data.attribute("passive_time").as_string()); 
-    else std::cout << " No passive_time, using lat = 0.0 for all nodes" <<endl; 
+    else std::cout<<" -- No passive_time, using lat = 0.0 for all nodes -- " <<endl; 
     lat.fill(begin_active_stress); 
   }
 }
 
+void Eikonal::solve()
+{
 
+}
 
+void Eikonal::solve_odes()
+{
+  // todo:  simplify this function
+  stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
+  
+  if (stim_apply)
+  {
+    cells->advance(tip.time(), timestep, stim_val, stim_nodes);
+    stim_nodes.clear();
+  }
+  else if(stim_apply_nodes)
+  {
+    //cout << "Aplicando estimulos " << tip.time() << endl;
+    cells->advance(tip.time(), timestep, stim_values);
+    stim_values.fill(0);
+    stim_apply_nodes = false;
+  }
+  else
+  {
+    cells->advance(tip.time(), timestep);
+  }
+
+  cells->advance(tip.time(), timestep);
+}
 
 void Eikonal::solve_dijkstra(const std::vector<int>& root_nodes, 
                              const std::vector<double>& root_times,

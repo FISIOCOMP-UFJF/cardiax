@@ -36,7 +36,7 @@ public:
   Eikonal();
 
   //! Destructor
-  virtual ~Eikonal() {};
+  virtual ~Eikonal();
 
   //! Perform one time step
   void advance() override;
@@ -99,7 +99,7 @@ protected:
   arma::vec stim_values;
    
    //! PETSc linear solver handler
-//   petsc::LinearSolver solver;
+  petsc::LinearSolver solver;
 
   //! Advance systems of ODEs in time
   void solve_odes();
@@ -107,5 +107,4 @@ protected:
 };
 
 #endif
-
 

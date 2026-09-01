@@ -19,6 +19,7 @@ public:
   int get_nincs() { return ninc; }
   void update();
 
+  void restart_from_checkpoint(int restored_incs, double restored_xlamb, int new_ninc);
 private:
 
   int step;     // number of steps

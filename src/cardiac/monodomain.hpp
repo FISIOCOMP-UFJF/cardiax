@@ -25,8 +25,9 @@ public:
   void advance();
 
   //! Initialize solver (mats, vecs, ics, etc)
-  void init();
+  void init(bool is_restart);
 
+  void init() { init(false); };
   //! Set initial conditions on cells
   void initial_conditions();
 
@@ -38,6 +39,11 @@ public:
 
   //! Update coordinates (for coupled problem)
   void update_coords(const arma::mat & um);
+
+  //! Restore monodomain from a checkpoint file
+  void restore_checkpoint(string restfilename);
+
+  void set_checkpoint_interval(double interval) {checkpoint_interval = interval;};
 
 protected:
 
@@ -99,8 +105,10 @@ protected:
 
   //! Solve parabolic problem 
   virtual void solve_parabolic();
+    
+  //! Checkpoint interval in milliseconds (ms)
+  double checkpoint_interval;
+
 };
 
 #endif
-
-

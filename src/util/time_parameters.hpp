@@ -39,7 +39,12 @@ public:
   inline int get_nsteps() const  { return nsteps;     }
   inline double get_dt() const   { return time_step;  }
   inline double get_stop() const { return stop;       }
-
+  inline void restore_state(int saved_iteration, double saved_time)
+  {
+    iteration = saved_iteration;
+    cur_time = saved_time;
+  }
+  
   //! Redefine o instante final e recalcula nsteps/size.
   //!
   //! No caminho acoplado quem manda no tempo e o laco da circulacao, nao o

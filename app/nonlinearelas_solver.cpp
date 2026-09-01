@@ -19,14 +19,16 @@ void usage()
   cout << "    -s   \t solution method: ul or tl" << endl;
   cout << "         \t    tl : Total Lagrangian" << endl;
   cout << "         \t    ul : Updated Lagrangian" << endl;
+  cout << "    -restore \t restore state file" <<endl; 
+  cout << "-save_state \t save checkpoint (0 or 1)" << endl; 
   cout << endl;
   exit(0);
 }
 
 int main(int argc, const char* argv[])
 {
-  std::string smethod, mshfile, parfile, outdir, extension;
-
+  std::string smethod, mshfile, parfile, outdir, extension, restorefile;
+  bool save_checkpoint = false; 
   // Parse command line options
   if (argc <= 1) usage();
 
@@ -34,7 +36,9 @@ int main(int argc, const char* argv[])
   outdir  = CommandLineArgs::read("-o","output/");
   mshfile = CommandLineArgs::read("-f","null");
   parfile = CommandLineArgs::read("-p","null");
-  smethod = CommandLineArgs::read("-s","tl");
+  smethod = CommandLineArgs::read("-s","ul");
+  restorefile = CommandLineArgs::read("-restore", "");
+  save_checkpoint = CommandLineArgs::read("-save_state", 0) == 0 ? 0 : 1;
 
   extension = file_extension(mshfile);
   if(extension == "xml")
@@ -65,31 +69,21 @@ int main(int argc, const char* argv[])
     {
       msg("Updated Lagrangian Formulation");
       esolver = new UpdatedLagrangian();
+      msg("Solving problem");
+      esolver->save_checkpoint(save_checkpoint);
+      esolver->run(mshfile, parfile, restorefile);
     }
     else if(smethod=="tl")
     {
       msg("Total Lagrangian Formulation");
       esolver = new TotalLagrangian();
+      msg("Solving problem");
+      esolver->run(mshfile, parfile);
     }
-      /*
-      else if(smethod=="tlsnes")
-      {
-        msg("Total Lagrangian Formulation SNES");
-        esolver = new TotalLagrangianSNES();
-      }
-      */
     else
     {
       throw std::runtime_error("Unknown formulation. Please use TL or UL.");
     }
-
-    // msg("Setting material and elasticity type");
-    // msg("Setting boundary conditions");
-    // esolver->config(mshfile, parfile);
-    // esolver->set_output_step(true);
-
-    msg("Solving problem");
-    esolver->run(mshfile, parfile);
 
     delete esolver;
   }

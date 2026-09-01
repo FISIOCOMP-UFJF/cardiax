@@ -138,7 +138,7 @@ public:
   void reset();
 
   //! Run simulation
-  void run(const string & mshfile, const string & parfile);
+  void run(const string & mshfile, const string & parfile, const string & restorefile = "");
 
   void set_pressure_Ta(int mlv, double plv, int mrv, double prv, arma::vec ta);
 
@@ -264,12 +264,16 @@ public:
   //! Controls loading (incremental Newton)
   LoadControl lc;
 
-  void gambiarra(bool b) {
-    cout << "PRESS MAP " << pressure_map.size() << endl;
-    pressure_map.clear();
-    cout << "PRESS MAP " << pressure_map.size() << endl;
-  }
-
+  //! Restore mechanical state from a checkpoint HDF5 file
+  void restore_checkpoint(std::string restfilename);
+  void save_checkpoint(bool save){ save_state = save; }; 
+  void read_ep_checkpoint(const std::string &filename, double *vm, double *state_vars, 
+                          int &step, double &time);
+  void save_coupled_checkpoint(int ep_step, double ep_time, 
+                               const double* vm, const double* state_vars, 
+                               int num_state_vars);
+                              
+  
 protected:
   
   int num_dofs;                   //!< Number of dofs (per node?)
@@ -279,6 +283,7 @@ protected:
   Mesh msh;                       //!< Computational mesh
   std::string filename;           //!< Input filename
   std::string basename;           //!< Substring of the filename with basename
+  bool save_state;           //!< Save checkpoint flag 
 
   //! Boundary conditions
   std::map<int,arma::vec3> neumann_map;         //!< Traction boundary cond

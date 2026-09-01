@@ -904,6 +904,8 @@ void UpdatedLagrangian::solve()
 
   int nits;
   int num_nz_prescribed = get_num_nz_prescribed();
+  int n_nodes = msh.get_n_points();
+  int n_dim = msh.get_n_dim();
 
   // create nonlinear solver
   if (nls == NULL)
@@ -934,6 +936,11 @@ void UpdatedLagrangian::solve()
   while (lc.has_load())
   {
     lc.update();
+
+    u = 0.0;
+    udisp.zeros();
+    react = 0.0;
+    
     // augmented Lagrangian
     int al_iter = 0;
 
@@ -984,6 +991,26 @@ void UpdatedLagrangian::solve()
     // record pressure and volume of both cavities for this increment
     if (pv_record_increments)
       record_pv_history(lc.increment());
+    if(save_state){
+      std::vector<double> flat_x(num_dofs, 0.0);
+      
+      for(int i = 0; i < n_nodes; i++) {
+          for(int d = 0; d < n_dim; d++) {
+              flat_x[(i * n_dim) + d] = x[i][d];
+          }
+      }
+
+      writer.write_mech_checkpoint(
+          0.0,      
+          0.0,                 
+          lc.increment(),      
+          lc.load(), 
+          flat_x.data(),       
+          fext0.memptr(),      
+          num_dofs             
+      );
+    }
+      
   }
 
   // NOTE: the PV history file is intentionally left open here. solve() may

@@ -75,3 +75,23 @@ void LoadControl::update()
   std::cout << " Load increment " << incs << std::endl;
 }
 
+void LoadControl::restart_from_checkpoint(int restored_incs, double restored_xlamb, int new_ninc)
+{
+  incs  = restored_incs;
+  xlamb = restored_xlamb;
+  
+  ninc  = new_ninc;
+
+  double remaining_load = xlmax - xlamb;
+  int remaining_incs = ninc - incs;
+
+  if (remaining_incs > 0) 
+  {
+    dlamb = remaining_load / (double)remaining_incs;
+  } 
+  else 
+  {
+    dlamb = 0.0; 
+  }
+}
+

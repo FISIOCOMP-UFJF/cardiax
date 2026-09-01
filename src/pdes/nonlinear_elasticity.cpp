@@ -2097,7 +2097,6 @@ void NonlinearElasticity::output_vtk(const int cont, const int step)
 
 void NonlinearElasticity::output_vtk(const int step, const arma::vec & v, const arma::vec & displ)
 {
-  // LUCAS: talvez a fonte de ter dois arquivos de saida
   cout << "Writing Data\n";
   writer.write_vm_step(step, v.memptr());
   writer.write_displ_step(step, displ.memptr());
@@ -2396,7 +2395,7 @@ void NonlinearElasticity::set_active_stabilization(const arma::vec & ka,
   material->set_active_stabilization(ka, lam_prev);
 }
 
-void NonlinearElasticity::run(const string & mshfile, const string & parfile)
+void NonlinearElasticity::run(const string & mshfile, const string & parfile, const string & restorefile)
 {
   // TODO: esta fixo para formato XML, mas pensando em remover codigo do .par
 
@@ -2432,6 +2431,13 @@ void NonlinearElasticity::run(const string & mshfile, const string & parfile)
   // standalone run: the load ramp is monotonic, so per-increment PV data
   // is physically meaningful
   set_pv_record_increments(true);
+
+
+  if(restorefile != "")
+  {
+    restore_checkpoint(restorefile);
+  }
+
 
   solve();
   
@@ -2788,4 +2794,71 @@ void NonlinearElasticity::update(petsc::Vector & uu, double s)
       if( ldgof[idx] )
         x[i][d] = x[i][d] + s * umat(i,d);
     }
+}
+
+void NonlinearElasticity::restore_checkpoint(std::string restfilename)
+{
+    cout << "Evaluating mechanical checkpoint file: " << restfilename << endl;
+
+    int chk_step, chk_load, chk_dofs;
+    double chk_time, chk_load_factor; 
+    writer.read_mech_checkpoint_metadata(restfilename, chk_step, chk_time, chk_load, chk_load_factor, chk_dofs);
+
+    if (chk_dofs != num_dofs) {
+        throw std::runtime_error("Mismatch Error: Checkpoint DOFs differ from loaded mesh.");
+    }
+
+    std::vector<double> flat_x(num_dofs, 0.0);
+    writer.read_mech_checkpoint_data(restfilename, flat_x.data(), fext0.memptr());
+
+    int n_dim = msh.get_n_dim();
+    int n_nodes = msh.get_n_points();
+    
+    for(int i = 0; i < n_nodes; i++) {
+        for(int d = 0; d < n_dim; d++) {
+            int idx = (i * n_dim) + d;
+            x[i][d] = flat_x[idx]; 
+            U(idx) = x[i][d] - x0[i][d]; 
+        }
+    }
+
+    int config_total_increments = lc.get_nincs();
+
+    lc.restart_from_checkpoint(chk_load, chk_load_factor, config_total_increments);
+    cout << "     Restart configured from load increment " << chk_load 
+         << " (Load: " << chk_load_factor * 100 << "%)." << endl;
+    cout << "     New step resolution: " << (config_total_increments - chk_load) 
+         << " increments remaining. New load step: " << lc.load_step() << endl;
+}
+
+void NonlinearElasticity::save_coupled_checkpoint(int ep_step, double ep_time, 
+                                                  const double* vm, const double* state_vars, 
+                                                  int num_state_vars)
+{
+    int n_nodes = msh.get_n_points();
+    int n_dim = msh.get_n_dim();
+    
+    std::vector<double> flat_x(num_dofs, 0.0);
+    for(int i = 0; i < n_nodes; i++) {
+        for(int d = 0; d < n_dim; d++) {
+            flat_x[(i * n_dim) + d] = x[i][d];
+        }
+    }
+
+    writer.write_coupled_checkpoint(
+        ep_step, ep_time,
+        vm, state_vars, num_state_vars,
+        lc.increment(), lc.load(),
+        flat_x.data(), fext0.memptr(), num_dofs
+    );
+}
+
+void NonlinearElasticity::read_ep_checkpoint(const std::string &filename, double *vm, double *state_vars, 
+                                             int &step, double &time)
+{
+    int num_nodes, num_vars;
+    
+    writer.read_checkpoint_metadata(filename, step, time, num_nodes, num_vars);
+    
+    writer.read_checkpoint_data(filename, vm, state_vars);
 }

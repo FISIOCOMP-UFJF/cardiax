@@ -17,22 +17,24 @@ void usage()
   cout << endl;
   cout << " Usage: ";
   cout << "monodomain [OPTIONS]" << endl << endl;
-  cout << "    -f     <meshbase>    prefix of the mesh file" << endl;
-  cout << "    -dt    <dt>          time step (ms)" << endl;
-  cout << "    -t     <tend>        total time of simulation (ms)" << endl;
-  cout << "    -pr    <pr>          print rate to output file" << endl;
-  cout << "    -c     <cellmodel>   string that identifies the ionic model" << endl;
-  cout << "    -m     <odesolver>   ODE solver (ExplicitEuler, Implicit, ...)" << endl;
-	cout << "    -ep    <model>       monodomain or purkinje" << endl;
-  cout << "    -fp    <pkmesh>      Purkinje mesh" << endl;
+  cout << "    -f     <meshbase>              prefix of the mesh file" << endl;
+  cout << "    -dt    <dt>                    time step (ms)" << endl;
+  cout << "    -t     <tend>                  total time of simulation (ms)" << endl;
+  cout << "    -pr    <pr>                    print rate to output file" << endl;
+  cout << "    -c     <cellmodel>             string that identifies the ionic model" << endl;
+  cout << "    -m     <odesolver>             ODE solver (ExplicitEuler, Implicit, ...)" << endl;
+	cout << "    -ep    <model>                 monodomain or purkinje" << endl;
+  cout << "    -fp    <pkmesh>                Purkinje mesh" << endl;
+  cout << "  -restore <restorefile>           Restore state file" <<endl; 
+  cout << "-save_state <checkpoint_interval>  Save state interval (ms)"<<endl; 
   cout << endl;
   exit(0);
 }
 
 int main(int argc, const char *argv[])
 {
-  double dt, T, tp;
-  string mshname, pkmshname, cellmodel, odesolver, typefile;
+  double dt, T, tp, checkpoint_interval;
+  string mshname, pkmshname, cellmodel, odesolver, typefile, restfilename;
 	string model;
 
   if (argc < 7) usage();
@@ -47,7 +49,8 @@ int main(int argc, const char *argv[])
   cellmodel = CommandLineArgs::read("-c","TT2"); 
   odesolver = CommandLineArgs::read("-m","ExplicitEuler");
 	model = CommandLineArgs::read("-ep","monodomain");
-
+  restfilename = CommandLineArgs::read("-restore", "");
+  checkpoint_interval = CommandLineArgs::read("-save_state", -1.0);
 	typefile  = mshname + ".typ";
 
   // Start PETSc
@@ -67,14 +70,21 @@ int main(int argc, const char *argv[])
 			Monodomain monodomain;
       msg("Reading parameters file");
 			monodomain.setup(mshname, cellmodel, odesolver, dt, T, tp, tp);
-			monodomain.init();
+			monodomain.init(restfilename != "");
 			
 			if(!file_exists(typefile))
 				cout << "Cells: all cells are of the same type\n";
 			else    
 				monodomain.setup_types(typefile);
-			
-			monodomain.solve();   
+
+			monodomain.initial_conditions();
+      monodomain.set_checkpoint_interval(checkpoint_interval);
+      if(restfilename != "")
+      {
+        monodomain.restore_checkpoint(restfilename); 
+      }
+
+      monodomain.solve();   
 		}		
 	}
 	else if(model == "purkinje")

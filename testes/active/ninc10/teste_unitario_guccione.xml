@@ -4,7 +4,7 @@
   <parameters>
   <material>Guccione</material>
       <coefficients>0.650, 6.62, 3.65, 2.65, 100, 200.0</coefficients>
-    <ninc>10</ninc>
+    <ninc>25</ninc>
   </parameters>
 
   <pressure>

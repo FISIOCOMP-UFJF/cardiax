@@ -1877,83 +1877,51 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   // set tload (external loads incl. pressure) to current fext (external loads)
   tload = fext;
 
+  //
+  // assemble residual vector r
+  //
+  
+  // 2. Inicia a região paralela principal
   #pragma omp parallel
   {
+    // 3. ISOLAMENTO CRÍTICO: Vetores e instâncias instanciados DENTRO do escopo
+    // para que cada thread tenha a sua própria cópia
     arma::vec Re(n_dofs);
     std::vector<int> dnums;
     MxFE * local_fe = fespace.createFE();
     Quadrature * local_qd = Quadrature::create(0, local_fe->get_type());
 
-    struct ResidData {
-      std::vector<int> dofs;
-      arma::vec R;
-    };
-    
-    const int BUFFER_LIMIT = 500;
-    std::vector<ResidData> buffer;
-    buffer.reserve(BUFFER_LIMIT);
-
+    // 4. Distribuição da carga de elementos
     #pragma omp for schedule(dynamic)
     for(int i = 0; i < n_elem; i++)
     {
+      // A carga pesada da física computada em paralelo
       elem_resid(i, local_fe, local_qd, Re);
       fespace.get_element_dofs_u(i, dnums);
 
-      buffer.push_back({dnums, Re});
-
-      if (buffer.size() >= BUFFER_LIMIT)
-      {
-        #pragma omp critical (petsc_resid_insert)
-        {
-          timer.enter("Residual: critical zone");
-          for (auto& item : buffer)
-          {
-            for(int k = 0; k < n_dofs; k++)
-            {
-              int dof = item.dofs[k];
-              if (ldgof[dof])
-              {
-                r.add(dof, -item.R(k)); // add -R
-              }
-              else
-              {
-                react.add(dof, item.R(k));
-              }
-            }
-          }
-          timer.leave();
-        }
-        buffer.clear(); 
-      }
-    } 
-
-    if (!buffer.empty())
-    {
-      #pragma omp critical (petsc_resid_insert)
+      // 5. PROTEÇÃO DE ESCRITA: Inserção síncrona nos vetores globais
+      #pragma omp critical
       {
         timer.enter("Residual: critical zone");
-        for (auto& item : buffer)
+        for(int k = 0; k < n_dofs; k++)
         {
-          for(int k = 0; k < n_dofs; k++)
+          if (ldgof[dnums[k]])
           {
-            int dof = item.dofs[k];
-            if (ldgof[dof])
-            {
-              r.add(dof, -item.R(k)); // add -R
-            }
-            else
-            {
-              react.add(dof, item.R(k));
-            }
+            r.add(dnums[k], -Re(k)); // add -R
+          }
+          else
+          {
+            react.add(dnums[k], Re(k));
           }
         }
-        timer.leave();
-      }
-    }
+        timer.leave(); 
+      } // Fim do critical
+    } // Fim do for
 
+    // Limpa a memória das instâncias da thread
     delete local_qd;
     delete local_fe;
-  } 
+  } // Fim da região paralela
 
   //
   // pressure forces contribution
@@ -1965,6 +1933,8 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
     int nu  = bfe->get_ndofs_u();
     int nb = msh.get_n_boundary_elements();
     
+    // Novamente, se 'nb' for pequeno, serial é suficiente. 
+    // Se for grande, a mesma lógica do loop acima pode ser aplicada aqui.
     arma::vec belvec(nu);
     std::vector<int> bdof;
 
@@ -1990,7 +1960,7 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   }
   timer.leave(); 
   
-  if (bfe != NULL) delete bfe; 
+  if (bfe != NULL) delete bfe; // Correção de vazamento de memória
 
   timer.enter("Residual: r assemble and copy");
   r.assemble();
@@ -2019,15 +1989,6 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
     arma::mat Ke(n_dofs, n_dofs);
     std::vector<int> dnums;
 
-    struct ElemData {
-      std::vector<int> dofs;
-      arma::mat K;
-    };
-    
-    const int BUFFER_LIMIT = 500;
-    std::vector<ElemData> buffer;
-    buffer.reserve(BUFFER_LIMIT);
-
     #pragma omp for schedule(static)
     for(int i=0; i<n_elem; i++)
     {
@@ -2035,80 +1996,30 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
       fespace.get_element_dofs_u(i, dnums);
 
 #ifndef USE_BFGS
+      // Fast assembling
+      int * pidx = &dnums[0];
       Ke = Ke.t();
       
-      buffer.push_back({dnums, Ke});
-
-      if (buffer.size() >= BUFFER_LIMIT)
+      #pragma omp critical
       {
-        #pragma omp critical (petsc_insert)
-        {
-          timer.enter("Stiffness: assembly flush");
-          for (auto& item : buffer)
-          {
-            int * pidx = &item.dofs[0];
-            Kstiff.add(n_dofs, n_dofs, pidx, pidx, item.K.memptr());
-          }
-          timer.leave();
-        }
-        buffer.clear();
+        timer.enter("Stiffness: critical");
+        Kstiff.add(n_dofs, n_dofs, pidx, pidx, Ke.memptr());
+        timer.leave(); 
       }
 #endif
 
 #ifdef USE_BFGS
-      buffer.push_back({dnums, Ke});
-      
-      if (buffer.size() >= BUFFER_LIMIT)
+      #pragma omp critical
       {
-        #pragma omp critical (petsc_insert)
+        timer.enter("Stiffness: critical");
+
+        for(int j=0; j<n_dofs; j++)
         {
-          timer.enter("Stiffness: assembly flush");
-          for (auto& item : buffer)
+          for(int k=0; k<n_dofs; k++)
           {
-            for(int j=0; j<n_dofs; j++)
-            {
-              for(int k=0; k<n_dofs; k++)
-              {
-                int I = item.dofs[j];
-                int J = item.dofs[k];
-                if(J >= I) Kstiff.add(I, J, item.K(j,k));
-              }
-            }
-          }
-          timer.leave(); 
-        }
-        buffer.clear();
-      }
-#endif
-    } 
-    if (!buffer.empty())
-    {
-#ifndef USE_BFGS
-      #pragma omp critical (petsc_insert)
-      {
-        timer.enter("Stiffness: assembly flush");
-        for (auto& item : buffer)
-        {
-          int * pidx = &item.dofs[0];
-          Kstiff.add(n_dofs, n_dofs, pidx, pidx, item.K.memptr());
-        }
-        timer.leave();
-      }
-#endif
-#ifdef USE_BFGS
-      #pragma omp critical (petsc_insert)
-      {
-        timer.enter("Stiffness: assembly flush");
-        for (auto& item : buffer)
-        {
-          for(int j=0; j<n_dofs; j++)
-          {
-            for(int k=0; k<n_dofs; k++)
-            {
-              int I = item.dofs[j];
-              int J = item.dofs[k];
-              if(J >= I) Kstiff.add(I, J, item.K(j,k));
-            }
+            int I = dnums[j];
+            int J = dnums[k];
+            if(J >= I) Kstiff.add(I, J, Ke(j,k));
           }
         }
         timer.leave(); 
@@ -2119,7 +2030,10 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
     delete local_qd;
     delete local_fe;
   } 
-  
+
+  //
+  // *** PRESSURE COMPONENT DA MATRIZ DE RIGIDEZ ***
+  //
   timer.enter("Stiffness: Pressure component");
   MxFE * bfe = fespace.create_boundary_FE();
   if (bfe != NULL && (pressure_map.size() > 0 || spring_map.size()>0))
@@ -2149,6 +2063,7 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
 
   timer.leave();
 }
+
 
 void NonlinearElasticity::update(petsc::Vector & uu, double s)
 {

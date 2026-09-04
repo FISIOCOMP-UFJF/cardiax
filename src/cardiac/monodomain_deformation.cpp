@@ -163,9 +163,9 @@ void MonodomainDeformation::init()
     writer->open(output, nsteps+1, timestep);
 
     // setup model and cells
-    cellmodel = CellModel::create(cell_name);
-    cellmodel->setup(odesolver, timestep, totaltime, 1.0);
-    cells = new Cells(ndofs,cellmodel);
+    //cellmodel = CellModel::create(cell_name);
+    //cellmodel->setup(odesolver, timestep, totaltime, 1.0);
+    //cells = new Cells(ndofs,cellmodel);
 
     vm.resize(ndofs);
 

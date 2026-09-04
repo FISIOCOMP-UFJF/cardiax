@@ -13,7 +13,7 @@ BidomainBath::BidomainBath()
 BidomainBath::~BidomainBath()
 {
   delete cells;
-  delete cellmodel;
+  //delete cellmodel;
 }
 
 void BidomainBath::assemble_matrices()
@@ -297,11 +297,11 @@ void BidomainBath::init()
   ndof = mesh->get_n_points();
 
   // setup model and cells
-  cellmodel = CellModel::create(cell_name);
-  cellmodel->setup(odesolver, timestep, totaltime, 1.0);
-  cells = new Cells(ndof_tissue, cellmodel);
+  //cellmodel = CellModel::create(cell_name);
+  //cellmodel->setup(odesolver, timestep, totaltime, 1.0);
+  // = new Cells(ndof_tissue, cellmodel);
   
-  neq = cells->get_ode_size();
+  // neq = cells->get_ode_size();
 
   tmp_vm.resize(ndof_tissue);
   tmp_ve.resize(ndof);
@@ -317,7 +317,7 @@ void BidomainBath::initial_conditions()
   tip.reset();
 
   // initial conditions
-  cells->init();
+  // cells->init();
   cells->get_var(0,vm1);
 
   //sv = cells->get_state_vars();
@@ -342,7 +342,7 @@ void BidomainBath::setup_types(std::string & f)
       idx = bidomap[i];
       vtypes[idx] = aux;
     }
-    cells->set_cell_types(size, vtypes);       
+    // cells->set_cell_types(size, vtypes);       
     
     // write in file 
     ofstream out("bidomain_cell_types.typ");

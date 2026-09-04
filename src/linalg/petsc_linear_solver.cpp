@@ -55,6 +55,11 @@ void LinearSolver::init()
   AMGX_SAFE_CALL(AMGX_vector_create(&_amgx_x, _amgx_rsrc, AMGX_mode_dDDI));
   AMGX_SAFE_CALL(AMGX_solver_create(&_amgx_solver, _amgx_rsrc, AMGX_mode_dDDI, _amgx_config));
 
+  // No final do bloco #ifdef AMGX_SOLVER do init()
+  AMGX_SAFE_CALL(AMGX_matrix_create(&_amgx_M, _amgx_rsrc, AMGX_mode_dDDI));
+  AMGX_SAFE_CALL(AMGX_vector_create(&_amgx_v0, _amgx_rsrc, AMGX_mode_dDDI));
+  AMGX_SAFE_CALL(AMGX_vector_create(&_amgx_f, _amgx_rsrc, AMGX_mode_dDDI));
+
 #endif
 }
 
@@ -888,5 +893,7 @@ void LinearSolver::view()
   ierr = KSPView(_ksp,PETSC_VIEWER_STDOUT_WORLD);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
 }
+
+
 
 } // namespace PETSc

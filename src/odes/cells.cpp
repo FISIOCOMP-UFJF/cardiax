@@ -89,16 +89,14 @@ void Cells::advance(double t, double dt, const double istim,
     const uint offset = system * ode->get_num_state_vars();
     it = snodes.find(system);
 
-    // 1. Pega o ponteiro direto para a posição desta célula na matriz global
     double* monitor_ptr = nullptr;
     if (ode->get_num_monitored() > 0) {
       const uint moffset = system * ode->get_num_monitored();
-      monitor_ptr = &monitored_values(moffset); // Endereço de memória direto
+      monitor_ptr = &monitored_values(moffset);
     }
 
     double current_istim = (it != snodes.end()) ? istim : 0.0;
     
-    // 2. Passa o ponteiro para o solver
     ode->advance(states + offset, t, dt, current_istim, monitor_ptr);
   }
 }

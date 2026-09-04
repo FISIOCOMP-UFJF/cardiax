@@ -41,26 +41,25 @@ void CardiacProblem::setup(std::string & b, std::string & c, std::string & m,
 
 void CardiacProblem::setup_types(std::string & f)
 {
-  if( !file_exists(f) )
+  if( !file_exists(f) ) {
     cout << "Cells: all cells are of the same type" << endl;
+    // Se não houver arquivo, preenche com 0 (ENDOCARDIO por padrão, por exemplo)
+    cell_types.assign(mesh->get_n_points(), 0); 
+  }
   else
   {
     cout << "Cells: configuring cell types" << endl;
    
     int aux, size;
-    int * vtypes;
     ifstream in(f.c_str());
     in >> size;
-    vtypes = new int[size];
-
+    
+    cell_types.resize(size);
     for(int i=0; i<size; i++)
     {
       in >> aux;
-      vtypes[i] = aux;
+      cell_types[i] = aux;
     }
-
-    cells->set_cell_types(size, vtypes);   
-    delete [] vtypes;
   }
 }
 
@@ -90,7 +89,7 @@ void CardiacProblem::write_data(const arma::vec & u, const arma::vec & displ,
     if (tip.time2print())
     {
         std::string aux = s.substr(s.length()-2);
-
+      
         // potentials scalar field
         if(aux=="ve")
           writer->write_ve_step(step, u.memptr());

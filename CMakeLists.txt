@@ -3,7 +3,7 @@
 # mail: bernardomartinsrocha@gmail.com
 
 cmake_minimum_required(VERSION 3.12)
-project(Cardiax C CXX)
+project(Cardiax C CXX CUDA)
 
 if(POLICY CMP0144)
   cmake_policy(SET CMP0144 OLD)

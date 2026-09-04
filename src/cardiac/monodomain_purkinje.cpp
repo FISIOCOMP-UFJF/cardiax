@@ -20,7 +20,7 @@ MonodomainPurkinje::MonodomainPurkinje()
 MonodomainPurkinje::~MonodomainPurkinje()
 {
   delete cells;
-  delete cellmodel;
+  //delete cellmodel;
 }
 
 void MonodomainPurkinje::advance()
@@ -228,12 +228,12 @@ void MonodomainPurkinje::init()
   writer->add_ve();
 
   // setup model and cells
-  cellmodel = CellModel::create(cell_name);
-  cellmodel->setup(odesolver, timestep, totaltime, 1.0);
+  //cellmodel = CellModel::create(cell_name);
+  //cellmodel->setup(odesolver, timestep, totaltime, 1.0);
 
   // hermite FE
   int ncells = ndofs/2;
-  cells = new Cells(ncells,cellmodel);
+  // cells = new Cells(ncells,cellmodel);
 
   vm.resize(ndofs);
 
@@ -246,7 +246,7 @@ void MonodomainPurkinje::initial_conditions()
 {
   tip.reset();
 
-  cells->init();
+  // cells->init();
   cells->get_var(0,v1);
 }
 

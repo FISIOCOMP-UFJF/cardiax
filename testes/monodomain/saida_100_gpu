@@ -1,0 +1,74 @@
+Monodomain solver
+Reading parameters file
+Setup of cardiac problem
+Parabolic solver: Crank-Nicolson
+Time discretization information
+ Number of time steps: 10000
+ Time step: 0.001000
+ Start time: 0.000000
+ Final time: 10.000000
+Reading XML mesh file: ./monodomain_ToRORdLand_100_gpu.xml
+Fiber model: fiber_transversely_isotropic
+Number of stimuli: 1
+ Stimulus 1: [1.000000,2.000000, value: -58.000000 ]
+Parameter set "monodomain_parameters"
+ Number of parameters: 7
+ Number of nested parameter sets: 0
+ Parameter=maxnz, type=int, value=40
+ Parameter=pcgtol, type=double, value=1e-16
+ Parameter=sigma_l, type=double, value=0.0001334
+ Parameter=sigma_n, type=double, value=1.76e-05
+ Parameter=sigma_t, type=double, value=1.76e-05
+ Parameter=surface_to_volume, type=double, value=0.14
+ Parameter=theta_method, type=double, value=0.5
+HDF5 Writer
+ HDF5 save rate = 1.000000
+ Number of steps = 10
+ Timestep = 0.001000
+Creating FEM matrices
+AMGX version 2.5.0
+Built on Aug 27 2026, 21:33:16
+Compiled with CUDA Runtime 12.9, using CUDA driver 13.0
+[AMGX] AVISO: file './configs/CG_DILU.json' not found.
+[AMGX] Using fallback configuration (CG + MULTICOLOR_DILU).
+Cells: all cells are of the same type
+
+Simulating
+Time  1.000000e+00  num its 12 rnorm 8.768273e-06
+VM Filename: monodomain_ToRORdLand_100_gpu_output.h5
+Time  2.000000e+00  num its 12 rnorm 8.194538e-06
+VM Filename: monodomain_ToRORdLand_100_gpu_output.h5
+Time  3.000000e+00  num its 12 rnorm 8.909674e-06
+VM Filename: monodomain_ToRORdLand_100_gpu_output.h5
+Time  4.000000e+00  num its 12 rnorm 8.351799e-06
+VM Filename: monodomain_ToRORdLand_100_gpu_output.h5
+Time  5.000000e+00  num its 12 rnorm 9.570010e-06
+VM Filename: monodomain_ToRORdLand_100_gpu_output.h5
+Time  6.000000e+00  num its 12 rnorm 9.177239e-06
+VM Filename: monodomain_ToRORdLand_100_gpu_output.h5
+Time  7.000000e+00  num its 12 rnorm 8.033665e-06
+VM Filename: monodomain_ToRORdLand_100_gpu_output.h5
+Time  8.000000e+00  num its 12 rnorm 8.103185e-06
+VM Filename: monodomain_ToRORdLand_100_gpu_output.h5
+Time  9.000000e+00  num its 12 rnorm 8.993975e-06
+VM Filename: monodomain_ToRORdLand_100_gpu_output.h5
+Time  1.000000e+01  num its 12 rnorm 8.914836e-06
+VM Filename: monodomain_ToRORdLand_100_gpu_output.h5
+
++----------------------------------------+------------+------------+
+| Total time elapsed                     |            |            |
+|                                        |            |            |
+| Section                    | no. calls | time (sec) | % of total |
++----------------------------+-----------+------------+------------+
+| Assemble                   |         1 | 1.292e-01s | 7.62e-01 % |
+| ODEs                       |     10000 | 1.823e-01s | 1.08e+00 % |
+| Parabolic                  |     10000 | 1.663e+01s | 9.82e+01 % |
++----------------------------+-----------+------------+------------+
+
+Done.
+WARNING! There are options you set that were not used!
+WARNING! could be spelling mistake, etc!
+There are 3 unused database options. They are:
+Option left: name:-dt value: 0.001 source: command line
+Option left: name:-f value: ./monodomain_ToRORdLand_100_gpu.xml source: command line
+Option left: name:-t value: 10 source: command line

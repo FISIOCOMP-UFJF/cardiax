@@ -32,7 +32,7 @@ Eikonal::Eikonal()
 Eikonal::~Eikonal()
 {
   delete cells;
-  delete cellmodel;
+  // delete cellmodel;
 }
 
 void Eikonal::advance()
@@ -64,11 +64,11 @@ void Eikonal::init()
   writer->open(output, nsteps+1, timestep);
 
   // setup model and cells
-  cellmodel = CellModel::create(cell_name);
-  cellmodel->setup(odesolver, timestep, totaltime, 1.0);
-  cells = new Cells(ndofs, cellmodel);
+  // = CellModel::create(cell_name);
+  // cellmodel->setup(odesolver, timestep, totaltime, 1.0);
+  // cells = new Cells(ndofs, cellmodel);
 
-  cells->init();
+  // cells->init();
 }
 
 void Eikonal::set_conductivity(int cond)
@@ -92,7 +92,7 @@ void Eikonal::initial_conditions()
 {
   tip.reset();
   
-  cells->init();
+  // cells->init();
   cells->set_var(1, lat); //TODO: Será que eu devo fazer isso?
 
   // loop in time

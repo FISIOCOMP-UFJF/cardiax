@@ -3,7 +3,8 @@
 
 #include "stimulus.hpp"
 #include "linalg/linalg.h"
-#include "odes/odes.h"
+//#include "odes/odes.h"
+#include "odes/cells_gpu.hpp"
 #include "mesh/writer_hdf5.hpp"
 #include "util/parameters.hpp"
 
@@ -37,10 +38,10 @@ public:
   virtual void initial_conditions() = 0;
 
   //! Return an array with the cell types
-  const arma::ivec & get_cell_types() const { return cells->get_cell_types(); }
+  const std::vector<int> & get_cell_types() const { return cell_types; }
 
   //! Return reference to the Cells object
-  const Cells & get_cells() { return *cells; }
+  const CellsGpu & get_cells() { return *cells; }
 
   Stimuli & get_stimuli() { return stimuli; }
 
@@ -112,8 +113,11 @@ protected:
   Stimuli stimuli;
   Parameters parameters;
   TimeParameters tip;
-  Cells * cells;
-  CellModel * cellmodel;
+  
+  std::vector<int> cell_types;
+  CellsGpu * cells;
+  
+  // CellModel * cellmodel;
   Mesh * mesh;
   WriterHDF5 * writer;
 

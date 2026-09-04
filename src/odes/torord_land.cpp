@@ -110,7 +110,7 @@ void TorordLand::init(double * values) const
             values[46] = 9.993734e-01;
             values[47] = 0.000000e+00;
             values[48] = 0.000000e+00;
-	          values[49] = 0.000000e+00;
+            values[49] = 0.000000e+00;
 
             // Default initial conditions for MID cell (from original Matlab script)
             //values[0] = -8.953800e+01;

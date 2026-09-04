@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
   cellmodel->setup(dt, ftime);
   
   Cells *cells = new Cells(ndof,cellmodel);
-  neq = cells->get_ode_size();
+  // neq = cells->get_ode_size();
 
   SparseMatrix Ki, Mi, Ai, invC;
   Vector vm_0(ndof);
@@ -215,7 +215,7 @@ int main(int argc, char *argv[])
   tip.init_time_loop(); 
 
   // initial conditions
-  cells->init(); 
+  // cells->init(); 
   cells->get_var(0,vm_1);
 
   sv = cells->get_state_vars();

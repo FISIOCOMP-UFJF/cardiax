@@ -47,6 +47,9 @@ public:
   Vec vec() const { return _vec; }
   void view();
 
+  double* get_device_ptr();
+  const double* get_device_ptr() const;
+
 private:
 
   Vec _vec;

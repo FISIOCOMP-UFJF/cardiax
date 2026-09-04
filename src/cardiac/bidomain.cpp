@@ -42,7 +42,7 @@ Bidomain::Bidomain()
 Bidomain::~Bidomain()
 {
   delete cells;
-  delete cellmodel;
+  // delete cellmodel;
 }
 
 void Bidomain::assemble_matrices()
@@ -354,11 +354,11 @@ void Bidomain::init()
   writer->add_ve();
 
   // setup model and cells
-  cellmodel = CellModel::create(cell_name);
-  cellmodel->setup(odesolver, timestep, totaltime, 1.0);
+  // cellmodel = CellModel::create(cell_name);
+  // cellmodel->setup(odesolver, timestep, totaltime, 1.0);
 
-  cells = new Cells(ndof_tissue, cellmodel);
-  neq = cells->get_ode_size();
+  // cells = new Cells(ndof_tissue, cellmodel);
+  // neq = cells->get_ode_size();
 
   tmp_vm.resize(ndof_tissue);
   tmp_ve.resize(ndof);
@@ -374,7 +374,7 @@ void Bidomain::initial_conditions()
   tip.reset();
 
   // initial conditions
-  cells->init();
+  // cells->init();
   cells->get_var(0,vm1);
 
   //sv = cells->get_state_vars();
@@ -399,7 +399,7 @@ void Bidomain::setup_types(std::string & f)
       idx = bidomap[i];
       vtypes[idx] = aux;
     }
-    cells->set_cell_types(size, vtypes);       
+    // cells->set_cell_types(size, vtypes);       
     
     // write in file 
     ofstream out("bidomain_cell_types.typ");

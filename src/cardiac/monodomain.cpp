@@ -29,7 +29,7 @@ Monodomain::Monodomain()
 Monodomain::~Monodomain()
 {
   delete cells;
-  delete cellmodel;
+  // delete cellmodel;
 }
 
 void Monodomain::advance()
@@ -271,10 +271,16 @@ void Monodomain::init(bool is_restart)
   cout << " Timestep = " << timestep << endl;
   writer->open(output, nsteps, timestep, false, is_restart);
 
-  // setup model and cells
-  cellmodel = CellModel::create(cell_name);
-  cellmodel->setup(odesolver, timestep, totaltime, 1.0);
-  cells = new Cells(ndofs,cellmodel);
+  // ==========================================
+  // INICIALIZAÇÃO NA GPU
+  // ==========================================
+  // setup model and cells - AQUI É ONDE CellsGpu ENTRA!
+  if(cell_types.empty()) {
+      cell_types.assign(ndofs, 0); // Garante a inicialização padrão
+  }
+  
+  cells = new CellsGpu(ndofs);
+  cells->init_default_conditions(cell_types); // Aloca e transfere estados base para a VRAM
 
   vm.resize(ndofs);
 
@@ -286,9 +292,11 @@ void Monodomain::init(bool is_restart)
 void Monodomain::initial_conditions()
 {
   tip.reset();
+  
+  // Removido o cells->init(); pois cells->init_default_conditions() 
+  // já foi chamado no Monodomain::init() e já injetou na GPU.
 
-  cells->init();
-  cells->get_var(0,v1);
+  cells->get_var(0, v1); // Puxa o potencial inicial da VRAM para a RAM (PETSc)
 }
 
 void Monodomain::set_stimulus_value(int index, double val)
@@ -329,100 +337,62 @@ void Monodomain::solve()
     timer.enter("Parabolic");
     solve_parabolic();
     timer.leave();
-    
-    write_data(vm, "vm", &step);
 
-    if(tip.it() % checkpoint_rate == 0 && checkpoint_rate > 0)
-    {
-      cout<<"Saving State: " <<tip.time() <<endl; 
-      int num_vars = cellmodel->get_num_state_vars(); 
-      
-      writer->write_checkpoint(
-          tip.it(), 
-          tip.time(), 
-          vm.memptr(), 
-          cells->get_state_vars(), 
-          num_vars
-      );
+    if (tip.time2print()) {
+      cells->get_var(0, vm); 
+      write_data(vm, "vm", &step);
     }
+
+    
+    // if(tip.it() % checkpoint_rate == 0 && checkpoint_rate > 0)
+    // {
+      // cout<<"Saving State: " <<tip.time() <<endl; 
+      // int num_vars = cellmodel->get_num_state_vars(); 
+      // int num_vars = cells->get_num_state_vars();
+      // writer->write_checkpoint(
+      //     tip.it(), 
+      //     tip.time(), 
+      //     vm.memptr(), 
+      //     cells->get_state_vars(), 
+      //     num_vars
+      // );
+    // }
   }  
 
   timer.summary();
 }
-
 void Monodomain::solve_odes()
 {
   stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
   
-  cells->advance(tip.time(), timestep, stim_val, stim_nodes);
+  // Mapeia os nós estimulados (std::set) para um array denso que a GPU consegue ler coalescido
+  std::vector<double> host_istim(ndofs, 0.0);
+  if (stim_apply) {
+      for (uint node : stim_nodes) {
+          host_istim[node] = stim_val;
+      }
+      cells->set_stimuli(host_istim); // HtoD do estímulo (só transfere se houver estímulo)
+  } else {
+      cells->set_stimuli(host_istim); // Zera o vetor na placa
+  }
+
+  // Avança todos os sistemas puramente na GPU (sem tráfego de memória)
+  cells->advance(timestep);
   stim_nodes.clear(); 
 
-  // if (stim_apply)
-  // {
-  //   cells->advance(tip.time(), timestep, stim_val, stim_nodes);
-  //   stim_nodes.clear();
-  // }
-  // else if(stim_apply_nodes)
-  // {
-  //   cout << "Aplicando estimulos " << tip.time() << endl;
-  //   cells->advance(tip.time(), timestep, stim_values);
-  //   stim_values.fill(0);
-  //   stim_apply_nodes = false;
-  // }
-  // else
-  // {
-  //   cells->advance(tip.time(), timestep);
-  // }
-
-  cells->get_var(0, v0);  
-  v0.assemble();
+  // cells->send_to_device_vector(0, v0.get_device_ptr());
 }
 
 void Monodomain::solve_parabolic()
 {
-  const double pcgtol = parameters["pcgtol"];
+    const double pcgtol = parameters["pcgtol"];
 
-  // b = M * v0 (sparse matrix vector multiplication)
-  // A * v1 = b (solve)
-
-  std::pair<PetscInt,PetscReal> ir;
-  Mi.mult(v0, f);
-
-#ifdef ELECTRIC_FIELD
-  if(tip.time() > 10 && tip.time() < 15){
-    ZeroFunction<double> zerofunc;
-
-    if(mesh->get_n_boundary_elements() > 0)
-    {
-      FiniteElement & bfe = fespace.create_boundary_FE(0);
-      int m = bfe.get_ndof();
-      arma::vec belvec(m);
-      vector<int> bdnums;
-
-      // Assemble boundary bilinear form to impose boundary conditions
-      for(int i=0; i < mesh->get_n_boundary_elements(); i++)
-      {
-        calc_robin_elvec (i, bfe, zerofunc, zerofunc, belvec);
-
-        fespace.get_boundary_element_dofs(i,bdnums);
-        for(int k=0;k<m;k++) {
-          f.add(bdnums[k],belvec(k));
-        }
-      }
-
-      delete &bfe;
-    }
-  }
-#endif
+    // Multiplicação e resolução nativas na GPU via AMGx
+    Mi.mult(v0, f);
+    std::pair<PetscInt,PetscReal> ir = solver.solve(Ai, v1, f, pcgtol);
   
-  ir = solver.solve(Ai, v1, f, pcgtol);
-  
-  if (tip.time2print())
-    cout << " num its " << ir.first << " rnorm " << ir.second << endl;
-   
-  // copy solution from PETSc Vec to my Vector
-  v1.get_data(vm.memptr());
-  cells->set_var(0, vm);
+    if (tip.time2print())
+        cout << " num its " << ir.first << " rnorm " << ir.second << endl;
 }
 
 void Monodomain::update_coords(const arma::mat & um)
@@ -437,38 +407,42 @@ void Monodomain::update_coords(const arma::mat & um)
 
 void Monodomain::restore_checkpoint(string restfilename)
 {
-    cout << "Avaliando arquivo de checkpoint: " << restfilename << "..." << endl;
+    // cout << "Avaliando arquivo de checkpoint: " << restfilename << "..." << endl;
 
+    // int chk_step = 0;
+    // double chk_time = 0.0;
+    // int chk_nodes = 0;
+    // int chk_vars = 0;
 
-    int chk_step = 0;
-    double chk_time = 0.0;
-    int chk_nodes = 0;
-    int chk_vars = 0;
+    // // metadata from h5 file
+    // writer->read_checkpoint_metadata(restfilename, chk_step, chk_time, chk_nodes, chk_vars);
 
-    // metadata from h5 file
-    writer->read_checkpoint_metadata(restfilename, chk_step, chk_time, chk_nodes, chk_vars);
-
-    int expected_vars = cellmodel->get_num_state_vars();      
-    if (chk_nodes != (int)ndofs) {
-        throw std::runtime_error("Mismatch Error: Checkpoint mesh (" + std::to_string(chk_nodes) + 
-                                 " nodes) differs from the loaded mesh (" + std::to_string(ndofs) + " nodes).");
-    }
+    // int expected_vars = cells->get_num_state_vars(); // Atualizado para usar o CellsGpu     
+    // if (chk_nodes != (int)ndofs) {
+    //     throw std::runtime_error("Mismatch Error: Checkpoint mesh (" + std::to_string(chk_nodes) + 
+    //                              " nodes) differs from the loaded mesh (" + std::to_string(ndofs) + " nodes).");
+    // }
     
-    if (chk_vars != expected_vars) {
-        throw std::runtime_error("Mismatch Error: Checkpoint cellular model (" + std::to_string(chk_vars) + 
-                                 " variables) differs from the loaded model (" + std::to_string(expected_vars) + " variables).");
-    }
+    // if (chk_vars != expected_vars) {
+    //     throw std::runtime_error("Mismatch Error: Checkpoint cellular model (" + std::to_string(chk_vars) + 
+    //                              " variables) differs from the loaded model (" + std::to_string(expected_vars) + " variables).");
+    // }
 
-    writer->read_checkpoint_data(restfilename, vm.memptr(), cells->get_state_vars());
-    tip.restore_state(chk_step, chk_time);
-    cells->set_var(0, vm);
+    // // Usando a ponte estática para transferir do HDF5 direto pro Host state_vars buffer
+    // writer->read_checkpoint_data(restfilename, vm.memptr(), cells->get_state_vars_ptr());
+    // tip.restore_state(chk_step, chk_time);
+    
+    // // Atualiza o V na RAM e joga todos os estados recuperados pra GPU
+    // cells->set_var(0, vm);
+    // // IMPORTANTE: Como alteramos os estados no Host via HDF5, precisamos enviar pra VRAM
+    // // Adicione um método auxiliar `push_states()` ou transfira manualmente:
+    // // cudaMemcpy(d_states, h_states, num_systems * num_states * sizeof(double), cudaMemcpyHostToDevice);
 
-    v0.set_data(vm.memptr());
-    v0.assemble();    
-    v1.set_data(vm.memptr());
-    v1.assemble();
+    // v0.set_data(vm.memptr());
+    // v0.assemble();    
+    // v1.set_data(vm.memptr());
+    // v1.assemble();
 
-    cout << "  -> Restart successfully configured starting from t = " << chk_time 
-     << " (step " << chk_step << ")." << endl;
+    // cout << "  -> Restart successfully configured starting from t = " << chk_time 
+    //  << " (step " << chk_step << ")." << endl;
 }
-

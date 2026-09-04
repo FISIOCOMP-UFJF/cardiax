@@ -102,6 +102,9 @@ public:
                                         petsc::Vector & x,
                                         petsc::Vector & b,
                                         const double tol=1.0e-16);
+
+  std::pair<PetscInt, PetscReal> solve_100_gpu(petsc::Matrix &A, petsc::Matrix &M, 
+        double* d_V, const double tol=1.0e-16);
   std::pair<PetscInt, PetscReal> solveFieldSplit (petsc::Matrix & A,
                                           petsc::Vector & x,
                                           petsc::Vector & b,
@@ -124,6 +127,12 @@ private:
       AMGX_vector_handle    _amgx_b;
       AMGX_vector_handle    _amgx_x;
       AMGX_solver_handle    _amgx_solver;
+
+      AMGX_matrix_handle    _amgx_M; // Matriz de massa na GPU
+      AMGX_vector_handle    _amgx_v0; // Vetor V (input)
+      AMGX_vector_handle    _amgx_f;  // Lado direito calculado (f = M * v0)
+      
+      bool _amgx_matrices_uploaded = false;
   #endif
 
   //! The preconditioner object to be used for the solution

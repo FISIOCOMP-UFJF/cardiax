@@ -275,6 +275,8 @@ void Monodomain::init(bool is_restart)
   cellmodel = CellModel::create(cell_name);
   cellmodel->setup(odesolver, timestep, totaltime, 1.0);
   cells = new Cells(ndofs,cellmodel);
+  
+  set_solver_time_unit_ms(1); // ms
 
   vm.resize(ndofs);
 

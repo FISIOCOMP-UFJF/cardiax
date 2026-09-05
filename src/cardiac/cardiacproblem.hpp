@@ -88,6 +88,16 @@ public:
   void set_fiber_stretch(const arma::vec & lam,
                          const arma::vec & lam_rate = arma::vec());
 
+  //! Milliseconds per solver time unit: 1000 when the solver runs in
+  //! seconds, 1 when it runs in milliseconds. Quantities stated in ms in the
+  //! input files (passive_time, activation window) are converted with it.
+  void set_solver_time_unit_ms(double ms)
+  { solver_time_unit_ms = ms; if (cells) cells->set_solver_time_unit_ms(ms); }
+
+  //! Factor converting a value given in ms into the solver time unit
+  double ms_to_solver_time() const { return 1.0 / solver_time_unit_ms; }
+
+
   //! Pre-condicionamento ("warm up") do modelo celular 0D.
   //!
   //! Resolve o modelo celular isolado por varios batimentos, ate o ciclo
@@ -214,6 +224,7 @@ protected:
   Mesh * mesh;
   WriterHDF5 * writer;
 
+  double solver_time_unit_ms = 1000.0;  //!< solver in seconds by default
 };
 
 

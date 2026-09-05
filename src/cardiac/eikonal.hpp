@@ -65,15 +65,6 @@ public:
   void apply_lat_stimulus(double amplitude, double duration,
                           double period = 0.0);
 
-  //! Milliseconds per solver time unit: 1000 when the solver runs in
-  //! seconds, 1 when it runs in milliseconds. Quantities stated in ms in the
-  //! input files (passive_time, activation window) are converted with it.
-  void set_solver_time_unit_ms(double ms)
-  { solver_time_unit_ms = ms; if (cells) cells->set_solver_time_unit_ms(ms); }
-
-  //! Factor converting a value given in ms into the solver time unit
-  double ms_to_solver_time() const { return 1.0 / solver_time_unit_ms; }
-
   //! Local activation times (solver time unit)
   const arma::vec & get_lat() const { return lat; }
 
@@ -128,8 +119,6 @@ protected:
   //! Advance systems of ODEs in time
   void solve_odes();
 
-
-  double solver_time_unit_ms = 1000.0;  //!< solver in seconds by default
 };
 
 #endif

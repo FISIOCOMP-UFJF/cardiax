@@ -206,7 +206,7 @@ def main():
     ap.add_argument("--units", choices=["um", "mm"], default="um",
                     help="output coordinate units (default: um, matches reference)")
     ap.add_argument("--outdir", default=".")
-    ap.add_argument("--fiber", choices=["x", "y", "z", "iso"], default="x",
+    ap.add_argument("--fiber", choices=["x", "y", "z", "iso"], default="z",
                     help="constant fibre direction (default: x, as requested; "
                          "'z' is the benchmark's longitudinal long-axis; "
                          "'iso' writes empty isotropic fibres)")

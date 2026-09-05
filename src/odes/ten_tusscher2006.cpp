@@ -8,11 +8,18 @@ TenTusscher2006::TenTusscher2006() : CellModel(21)
 TenTusscher2006::TenTusscher2006() : CellModel(19)
 #endif
 {
+  // naming
   const string vn[] = {"V", "Xr1", "Xr2", "Xs", "m", "h", "j", "d", "f",
                        "f2", "fCass", "s", "r", "Cai", "CaSR", "Cass",
                        "Rprime", "Nai", "Ki"};
   for(int i=0; i<19; i++)
     var_names.insert( std::pair<int, std::string>(i, vn[i]) );
+
+  // Rush-Larsen
+  rl_inf.resize(get_num_state_vars()); 
+  rl_tau.resize(get_num_state_vars());
+  is_rl.assign(get_num_state_vars(), false);
+  for (int i=1; i<=12; i++) is_rl[i] = true;
 }
 
 void TenTusscher2006::init(double * values) const
@@ -153,7 +160,24 @@ void TenTusscher2006::equation(const double time, const double * statevars,
   double IKs = g_Ks * pow(Xs, 2) * (V - EKs);
   double IpK = (g_pK * (V - EK)) / (1.0 + exp((25.0 - V) / 5.98));
  
+
+  // Problematic
   double ICaL = (V < 15.0-1.0e-5 || V > 15.0+1.0e-5) ? ((((g_CaL * d * f * f2 * fCass * 4.0 * (V - 15.0) * pow(F, 2)) / (R * T)) * ((0.25 * Ca_ss * exp((2.0 * (V - 15.0) * F) / (R * T))) - Cao)) / (exp((2.0 * (V - 15.0) * F) / (R * T)) - 1.0)) : g_CaL * d * f * f2 * fCass * 2.0 * F * (0.25 * Ca_ss  - Cao);
+
+  // // ICal FIXED
+  // double x = (2.0 * (V - 15.0) * F) / (R * T);
+  // double phi; // phi = x / (exp(x) - 1)
+  // if (fabs(x) < 1.0e-4)
+  //   phi = 1.0 - 0.5 * x + (x * x) / 12.0;
+  // else
+  //   phi = x / (exp(x) - 1.0);
+
+  // double ICaL = g_CaL * d * f * f2 * fCass * 2.0 * F * phi * (0.25 * Ca_ss * exp(x) - Cao);
+  
+
+
+
+
   double IbCa = g_bca * (V - ECa);
   double IpCa = (g_pCa * Ca_i) / (Ca_i + K_pCa);
   
@@ -330,4 +354,19 @@ void TenTusscher2006::equation(const double time, const double * statevars,
   values[11] = s_inf + (s-s_inf)*exp(-dt/tau_s);
   values[12] = r_inf + (r-r_inf)*exp(-dt/tau_r);
   */
+
+  // ---- NEW: stash inf/tau for the RL stepper (gates only) ----
+  rl_inf[ 1] = xr1_inf;    rl_tau[ 1] = tau_xr1;
+  rl_inf[ 2] = xr2_inf;    rl_tau[ 2] = tau_xr2;
+  rl_inf[ 3] = xs_inf;     rl_tau[ 3] = tau_xs;
+  rl_inf[ 4] = m_inf;      rl_tau[ 4] = tau_m;
+  rl_inf[ 5] = h_inf;      rl_tau[ 5] = tau_h;
+  rl_inf[ 6] = j_inf;      rl_tau[ 6] = tau_j;
+  rl_inf[ 7] = d_inf;      rl_tau[ 7] = tau_d;
+  rl_inf[ 8] = f_inf;      rl_tau[ 8] = tau_f;
+  rl_inf[ 9] = f2_inf;     rl_tau[ 9] = tau_f2;
+  rl_inf[10] = fCass_inf;  rl_tau[10] = tau_fCass;
+  rl_inf[11] = s_inf;      rl_tau[11] = tau_s;
+  rl_inf[12] = r_inf;      rl_tau[12] = tau_r;
+
 }

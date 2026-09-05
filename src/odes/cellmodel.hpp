@@ -140,7 +140,13 @@ class CellModel
 
   //! RL variables
   std::set<int> rlvars;
+  
+  //! Arrays for RL data - filled for rlvars indices only
+  std::vector<double> rl_inf, rl_tau; 
 
+  // is_rl[i] == true  <=>  i is a Rush-Larsen variable
+  std::vector<bool> is_rl;   
+  
   double dt_solver = 0.0;
 
  protected:

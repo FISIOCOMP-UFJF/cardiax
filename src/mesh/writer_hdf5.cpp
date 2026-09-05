@@ -505,7 +505,7 @@ void WriterHDF5::write_vm_step(int step, const double *data)
     herr_t status;
 
     // open an existing file.
-    cout << "VM Filename: " << h5name.c_str() << endl;
+    // cout << "VM Filename: " << h5name.c_str() << endl;
 
     file_id    = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
     dataset_id = H5Dopen(file_id, "/vertex_field/vm", H5P_DEFAULT);    

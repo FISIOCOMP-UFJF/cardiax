@@ -28,10 +28,11 @@ Monodomain::Monodomain()
 
 Monodomain::~Monodomain()
 {
+  if(ecg_file.is_open())
+    ecg_file.close();
   delete cells;
   delete cellmodel;
 }
-
 void Monodomain::advance()
 {
   static int step = 0;
@@ -230,6 +231,106 @@ void Monodomain::calc_elmat_mass(const int eindex,
   delete qd;
 }
 
+void Monodomain::compute_pseudo_ecg()
+{
+  // Nothing to do if no electrodes were configured.
+  if(ecg_electrodes.empty())
+    return;
+
+  const int nelec = ecg_electrodes.size();
+  std::vector<double> phi(nelec, 0.0);
+
+  const double inv4pi = 1.0 / (4.0 * M_PI);
+
+  FiniteElement & fe = fespace.createFE(0);
+  const int ndim = fe.get_ndim();
+  const int ndof = fe.ndofs();
+
+  arma::mat dshape;
+  arma::mat gradn(ndof, ndim);
+  arma::mat jacinv(ndim, ndim);
+  arma::mat sigma(ndim, ndim);
+  arma::vec shape;
+  std::vector<int> dnums;
+
+  // Local nodal Vm values for the current element.
+  arma::vec vm_loc(ndof);
+
+  for(int e = 0; e < mesh->get_n_elements(); e++)
+  {
+    // Conductivity tensor for this element (same as used in the stiffness matrix).
+    calc_cond_tensor(e, ndim, sigma);
+
+    // Gather nodal Vm for this element.
+    fespace.get_element_dofs(e, dnums);
+    for(int a = 0; a < ndof; a++)
+      vm_loc(a) = vm(dnums[a]);
+
+    Quadrature * qd = Quadrature::create(fe.order(), fe.type());
+    Mapping em = fe.get_mapping(e);
+
+    for(int q = 0; q < qd->get_num_ipoints(); q++)
+    {
+      const arma::vec & qpoint = qd->get_point(q);
+
+      fe.calc_shape(qpoint, shape);
+      fe.calc_deriv_shape(qpoint, dshape);
+      em.calc_jacobian(dshape);
+
+      const double detJxW = qd->get_weight(q) * em.get_det_jacobian();
+      jacinv = em.get_inv_jacobian();
+
+      // Physical gradient of the shape functions.
+      gradn = dshape * jacinv;               // (ndof x ndim)
+
+      // grad(Vm) at this quadrature point: sum_a Vm_a * gradN_a
+      arma::vec gradVm = gradn.t() * vm_loc; // (ndim)
+
+      // Apply conductivity: sigma * grad(Vm)
+      arma::vec sgradVm = sigma * gradVm;    // (ndim)
+
+      // Physical coordinates of this quadrature point: x_q = sum_a N_a * X_a
+      arma::vec3 xq; xq.zeros();
+      for(int a = 0; a < ndof; a++)
+      {
+        arma::vec3 Xa = mesh->get_point(dnums[a]); // node coordinates
+        for(int d = 0; d < ndim; d++)
+          xq(d) += shape(a) * Xa(d);
+      }
+
+      // Accumulate contribution to each electrode.
+      for(int p = 0; p < nelec; p++)
+      {
+        arma::vec3 r = xq - ecg_electrodes[p];   // x_q - x'
+        double dist = arma::norm(r, 2);
+        if(dist < 1.0e-12) continue;             // skip singularity
+        double inv_r3 = 1.0 / (dist * dist * dist);
+
+        // sigma*grad(Vm) . r / |r|^3
+        double dotp = 0.0;
+        for(int d = 0; d < ndim; d++)
+          dotp += sgradVm(d) * r(d);
+
+        phi[p] += -inv4pi * dotp * inv_r3 * detJxW;
+      }
+    }
+
+    delete qd;
+  }
+
+  delete & fe;
+
+  // Write one row: time  phi_1  phi_2 ... phi_nelec
+  if(ecg_file.is_open())
+  {
+    ecg_file << tip.time();
+    for(int p = 0; p < nelec; p++)
+      ecg_file << " " << phi[p];
+    ecg_file << "\n";
+    ecg_file.flush();
+  }
+}
+
 void Monodomain::init(bool is_restart) 
 {
   tip = TimeParameters(timestep, totaltime, printrate);
@@ -279,6 +380,19 @@ void Monodomain::init(bool is_restart)
   set_solver_time_unit_ms(1); // ms
 
   vm.resize(ndofs);
+
+  // pseudo-ECG setup
+  ecg_electrodes.clear();
+  ecg_electrodes.push_back(arma::vec3({ 20000.0, 0.0, 0.0 })); // in um, outside tissue
+
+  if(!ecg_electrodes.empty())
+  {
+    ecg_file.open("output_ecg.dat");
+    ecg_file << "# time";
+    for(size_t p = 0; p < ecg_electrodes.size(); p++)
+      ecg_file << " elec" << p;
+    ecg_file << "\n";
+  }
 
   timer.enter("Assemble");
   assemble_matrices();
@@ -332,6 +446,10 @@ void Monodomain::solve()
     timer.leave();
     
     write_data(vm, "vm", &step);
+
+    // pseudo-ecg computation
+    if(tip.time2print())
+      compute_pseudo_ecg();
 
     if(tip.it() % checkpoint_rate == 0 && checkpoint_rate > 0)
     {

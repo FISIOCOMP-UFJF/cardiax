@@ -9,34 +9,19 @@ ExplicitEuler::ExplicitEuler(CellModel *model)
 void ExplicitEuler::advance(double * y, double & t, double & dt)
 {
   const int n = ode->get_num_state_vars();
-  
-  //t = t  * 12.9;
-  //y[0] = (y[0] + 80)/100;
 
-  //teste minimal model
-  //y[0] = (y[0] + 88.54) / 115.50;
-  
-  // Disponibiliza o passo de tempo para os modelos que usam Rush-Larsen
-  ode->dt_solver = dt;
-
-  // Evaluate ODE rhs equations
+  // Evaluate ODE rhs: dydt = derivatives for all vars;
+  // equation() also fills ode->rl_inf[i] / ode->rl_tau[i] for RL vars.
   ode->equation(t, y, dydt.memptr());
-  
+
+  const double* __restrict dy = dydt.memptr();
+
   // Advance
-  for (int i=0; i<n; i++)
-  {  
-    // RL GAMB
-    if(ode->rlvars.find(i) != ode->rlvars.end())
-      y[i] = dydt(i);
+  for (int i = 0; i < n; i++)
+  {
+    if (ode->is_rl[i])
+      y[i] = ode->rl_inf[i] + (y[i] - ode->rl_inf[i]) * std::exp(-dt / ode->rl_tau[i]);
     else
-      y[i] += dt * dydt(i);
+      y[i] += dt * dy[i];
   }
-
-
-  //y[0] = 100*y[0] - 80;
-
-  //teste minimal model
-  //y[0] = 115.50 * y[0] -88.54;
-  
 }
-

@@ -99,6 +99,10 @@ protected:
   //! Compute element mass matrix
   void calc_elmat_mass(const int eindex, const FiniteElement & fe,
                        arma::mat & elmat);
+
+  //! Compute pseudo-ECG at each electrode and append one row to the ECG file.
+  //! Uses the anisotropic form: phi_e = -(1/4pi) * integral( sigma*grad(Vm) . r/|r|^3 )
+  void compute_pseudo_ecg();
   
   //! Advance systems of ODEs in time
   void solve_odes();
@@ -108,6 +112,12 @@ protected:
     
   //! Checkpoint interval in milliseconds (ms)
   double checkpoint_interval;
+
+  //! Electrode positions for pseudo-ECG (each column/row is a point x,y,z)
+  std::vector<arma::vec3> ecg_electrodes;
+
+  //! Output file stream for pseudo-ECG time series
+  std::ofstream ecg_file;
 
 };
 

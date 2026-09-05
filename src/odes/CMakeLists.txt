@@ -10,7 +10,7 @@ add_library(ODE
   solver_gpu.cu
   # ===================================
 
-  cells.cpp         # Você pode remover ou comentar o antigo
+  cells.cpp         
   
   ode_solver.cpp
   explicit_euler.cpp 
@@ -33,7 +33,7 @@ add_library(ODE
   minimalmodel.cpp
   mm_silva.cpp
   
-  torord_land.cpp   # Você pode remover ou comentar o antigo (agora está no .cuh)
+  torord_land.cpp   
   
   kerkoff2003.cpp
   ${agos_source} # Esta variável vem do seu CMakeLists.txt principal

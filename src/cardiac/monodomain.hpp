@@ -47,7 +47,8 @@ public:
   void set_checkpoint_interval(double interval) {checkpoint_interval = interval;};
 
 protected:
-
+  bool _prev_stim_apply = false;
+  
   //! Number of degrees of freedom 
   uint ndofs;
 

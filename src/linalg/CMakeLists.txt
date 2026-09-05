@@ -14,17 +14,14 @@ add_library(LinAlg
   petsc_linear_solver.cpp
 )
 
-# [NOVO] Exporta os headers do LinAlg (tensor.h, etc.)
-# para outros módulos (como FEM) que dependem dele.
 target_include_directories(LinAlg PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+    $ENV{CONDA_PREFIX}/include
+    /usr/local/cuda/include
 )
 
-# [MODIFICADO] Linka as dependências
-# O alvo 'LinAlg' precisa de todas as dependências externas
-# (PETSc, AMGX, Pardiso, OpenMP/gomp).
-# Nós simplesmente linkamos contra o alvo 'ext_libs'
-# que já contém TODAS elas.
+
 target_link_libraries(LinAlg PUBLIC
     ext_libs
 )

@@ -1,9 +1,40 @@
 #include "petsc_linear_solver.hpp"
 #include "util/command_line_args.h"
 #include <chrono>
+#include <cuda_runtime.h>
+
+
 
 namespace petsc
 {
+
+LinearSolver::~LinearSolver()
+{
+  if(_ksp != NULL)
+  {
+    ierr = KSPDestroy(&_ksp);
+    CHKERRABORT(PETSC_COMM_WORLD,ierr);
+  }
+
+  #ifdef AMGX_SOLVER
+    AMGX_SAFE_CALL(AMGX_solver_destroy(_amgx_solver));
+    AMGX_SAFE_CALL(AMGX_vector_destroy(_amgx_x));
+    AMGX_SAFE_CALL(AMGX_vector_destroy(_amgx_b));
+    AMGX_SAFE_CALL(AMGX_matrix_destroy(_amgx_A));
+    
+    // Limpeza dos novos objetos
+    AMGX_SAFE_CALL(AMGX_matrix_destroy(_amgx_M));
+    AMGX_SAFE_CALL(AMGX_vector_destroy(_amgx_v0));
+    AMGX_SAFE_CALL(AMGX_vector_destroy(_amgx_f));
+
+    AMGX_SAFE_CALL(AMGX_resources_destroy(_amgx_rsrc));
+    // AMGX_SAFE_CALL(AMGX_config_destroy(_amgx_config)); // (Se houver crash no final, pode comentar o config_destroy)
+
+    if (_h_buffer) cudaFreeHost(_h_buffer);
+    
+    AMGX_SAFE_CALL(AMGX_finalize());
+  #endif
+}
 
 void callback(const char *msg, int length)
 {
@@ -895,5 +926,66 @@ void LinearSolver::view()
 }
 
 
+#ifdef AMGX_SOLVER
+std::pair<PetscInt, PetscReal> LinearSolver::solve_100_gpu(petsc::Matrix &A, 
+                                                           petsc::Matrix &M, 
+                                                           double* d_V, 
+                                                           const double tol)
+{
+    int its = 0;
+    double rnorm = 0.0;
+    int n = A.size();
+
+    // 1. Aloca um buffer Pinned (uma única vez)
+    if (!_h_buffer) {
+        cudaMallocHost((void**)&_h_buffer, n * sizeof(double));
+    }
+
+    // 2. Upload das matrizes A e M (Apenas na primeira iteração!)
+    if (!_amgx_matrices_uploaded) {
+        int nnz_A, nnz_M, *row_A, *col_A, *row_M, *col_M;
+        double *val_A, *val_M;
+
+        // Matriz A
+        nnz_A = A.get_nnz();
+        row_A = new int[n + 1]; col_A = new int[nnz_A]; val_A = new double[nnz_A];
+        A.get_CSR(&n, row_A, col_A, val_A);
+        for(int i=0; i<n+1; i++) row_A[i] -= 1; 
+        for(int i=0; i<nnz_A; i++) col_A[i] -= 1;
+        AMGX_SAFE_CALL(AMGX_matrix_upload_all(_amgx_A, n, nnz_A, 1, 1, row_A, col_A, val_A, NULL));
+        AMGX_SAFE_CALL(AMGX_solver_setup(_amgx_solver, _amgx_A));
+        delete[] row_A; delete[] col_A; delete[] val_A;
+
+        // Matriz M
+        nnz_M = M.get_nnz();
+        row_M = new int[n + 1]; col_M = new int[nnz_M]; val_M = new double[nnz_M];
+        M.get_CSR(&n, row_M, col_M, val_M);
+        for(int i=0; i<n+1; i++) row_M[i] -= 1; 
+        for(int i=0; i<nnz_M; i++) col_M[i] -= 1;
+        AMGX_SAFE_CALL(AMGX_matrix_upload_all(_amgx_M, n, nnz_M, 1, 1, row_M, col_M, val_M, NULL));
+        delete[] row_M; delete[] col_M; delete[] val_M;
+
+        // TRAVA O PORTÃO: O upload nunca mais será executado nesta simulação
+        _amgx_matrices_uploaded = true; 
+    }
+
+    // 3. Ponte de alta velocidade: GPU (Cells) -> Pinned RAM -> GPU (AMGx)
+    cudaMemcpy(_h_buffer, d_V, n * sizeof(double), cudaMemcpyDeviceToHost);
+    AMGX_SAFE_CALL(AMGX_vector_upload(_amgx_v0, n, 1, _h_buffer));
+
+    // 4. Multiplicação e Resolução 100% AMGx
+    AMGX_SAFE_CALL(AMGX_matrix_vector_multiply(_amgx_M, _amgx_v0, _amgx_f));
+    AMGX_SAFE_CALL(AMGX_solver_solve(_amgx_solver, _amgx_f, _amgx_x));
+
+    // 5. Devolve o resultado: GPU (AMGx) -> Pinned RAM -> GPU (Cells)
+    AMGX_SAFE_CALL(AMGX_vector_download(_amgx_x, _h_buffer));
+    cudaMemcpy(d_V, _h_buffer, n * sizeof(double), cudaMemcpyHostToDevice);
+
+    AMGX_SAFE_CALL(AMGX_solver_get_iterations_number(_amgx_solver, &its)); 
+    AMGX_SAFE_CALL(AMGX_solver_get_iteration_residual(_amgx_solver, its, 0, &rnorm));
+
+    return std::make_pair((PetscInt)its, (PetscReal)rnorm);
+}
+#endif
 
 } // namespace PETSc

@@ -27,26 +27,7 @@ public:
   {}
 
   //! Destructor
-  ~LinearSolver()
-{
-  if(_ksp != NULL)
-  {
-    ierr = KSPDestroy(&_ksp);
-    CHKERRABORT(PETSC_COMM_WORLD,ierr);
-  }
-
-  #ifdef AMGX_SOLVER
-    AMGX_SAFE_CALL(AMGX_solver_destroy(_amgx_solver));
-    AMGX_SAFE_CALL(AMGX_vector_destroy(_amgx_x));
-    AMGX_SAFE_CALL(AMGX_vector_destroy(_amgx_b));
-    AMGX_SAFE_CALL(AMGX_matrix_destroy(_amgx_A));
-    
-    AMGX_SAFE_CALL(AMGX_resources_destroy(_amgx_rsrc));
-    AMGX_SAFE_CALL(AMGX_config_destroy(_amgx_config));
-
-    AMGX_SAFE_CALL(AMGX_finalize());
-  #endif
-}
+  ~LinearSolver(); 
 
   //! Reason a Krylov method was said to have converged or diverged
   void converged_reason();
@@ -127,12 +108,15 @@ private:
       AMGX_vector_handle    _amgx_b;
       AMGX_vector_handle    _amgx_x;
       AMGX_solver_handle    _amgx_solver;
-
-      AMGX_matrix_handle    _amgx_M; // Matriz de massa na GPU
-      AMGX_vector_handle    _amgx_v0; // Vetor V (input)
-      AMGX_vector_handle    _amgx_f;  // Lado direito calculado (f = M * v0)
       
+      // Matriz de Massa e vetores temporários do método 100% GPU
+      AMGX_matrix_handle    _amgx_M; 
+      AMGX_vector_handle    _amgx_v0; 
+      AMGX_vector_handle    _amgx_f;  
+      
+      // Controle de fluxo e Buffer Pinned
       bool _amgx_matrices_uploaded = false;
+      double* _h_buffer = nullptr;
   #endif
 
   //! The preconditioner object to be used for the solution

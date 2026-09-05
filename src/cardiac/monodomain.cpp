@@ -361,26 +361,32 @@ void Monodomain::solve()
 
   timer.summary();
 }
+
 void Monodomain::solve_odes()
 {
-  stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
+    stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
   
-  // Mapeia os nós estimulados (std::set) para um array denso que a GPU consegue ler coalescido
-  std::vector<double> host_istim(ndofs, 0.0);
-  if (stim_apply) {
-      for (uint node : stim_nodes) {
-          host_istim[node] = stim_val;
-      }
-      cells->set_stimuli(host_istim); // HtoD do estímulo (só transfere se houver estímulo)
-  } else {
-      cells->set_stimuli(host_istim); // Zera o vetor na placa
-  }
+    // Cenário 1: Há estímulo ativo neste exato momento
+    if (stim_apply) {
+        std::vector<double> host_istim(ndofs, 0.0);
+        for (uint node : stim_nodes) {
+            host_istim[node] = stim_val;
+        }
+        cells->set_stimuli(host_istim); // Faz o HtoD do estímulo
+        _prev_stim_apply = true;        // Salva o estado para a próxima iteração
+    } 
+    // Cenário 2: O estímulo acabou de desligar (Borda de descida)
+    else if (_prev_stim_apply) {
+        std::vector<double> host_istim(ndofs, 0.0);
+        cells->set_stimuli(host_istim); // Faz um único HtoD para zerar a VRAM
+        _prev_stim_apply = false;       // Desativa a flag para ignorar os próximos passos
+    }
+    // Cenário 3: Não há estímulo e já estava zerado. 
+    // Cai no vazio e não faz NENHUMA transferência de memória.
 
-  // Avança todos os sistemas puramente na GPU (sem tráfego de memória)
-  cells->advance(timestep);
-  stim_nodes.clear(); 
-
-  // cells->send_to_device_vector(0, v0.get_device_ptr());
+    // Avança todos os sistemas puramente na GPU
+    cells->advance(timestep);
+    stim_nodes.clear(); 
 }
 
 void Monodomain::solve_parabolic()

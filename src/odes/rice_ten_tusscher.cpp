@@ -6,8 +6,6 @@
 #define heav(a) ((a) < (0.) ? (0.) : (1.))
 #define abs(a) ((a) < (0.) ? (-a) : (a))
 
-
-
 #ifdef HF
 RiceTenTusscher::RiceTenTusscher() : CellModel(30)
 #endif
@@ -16,34 +14,12 @@ RiceTenTusscher::RiceTenTusscher() : CellModel(28)
 #endif
 {
   // state variable names
-  var_names.insert( std::pair<int, std::string>(0, "V") );
-  var_names.insert( std::pair<int, std::string>(1, "Xr1") );
-  var_names.insert( std::pair<int, std::string>(2, "Xr2") );
-  var_names.insert( std::pair<int, std::string>(3, "Xs") );
-  var_names.insert( std::pair<int, std::string>(4, "m") );
-  var_names.insert( std::pair<int, std::string>(5, "h") );
-  var_names.insert( std::pair<int, std::string>(6, "j") );
-  var_names.insert( std::pair<int, std::string>(7, "d") );
-  var_names.insert( std::pair<int, std::string>(8, "f") );
-  var_names.insert( std::pair<int, std::string>(9, "fCa") );
-  var_names.insert( std::pair<int, std::string>(10, "s") );
-  var_names.insert( std::pair<int, std::string>(11, "r") );
-  var_names.insert( std::pair<int, std::string>(12, "g") );
-  var_names.insert( std::pair<int, std::string>(13, "Ca_SR") );
-  var_names.insert( std::pair<int, std::string>(14, "Ca_i_total") );
-  var_names.insert( std::pair<int, std::string>(15, "Na_i") );
-  var_names.insert( std::pair<int, std::string>(16, "K_i") );
-  var_names.insert( std::pair<int, std::string>(17, "TRPNCaL") );
-  var_names.insert( std::pair<int, std::string>(18, "TRPNCaH") );
-  var_names.insert( std::pair<int, std::string>(19, "N_NoXB") );
-  var_names.insert( std::pair<int, std::string>(20, "P_NoXB") );
-  var_names.insert( std::pair<int, std::string>(21, "N") );
-  var_names.insert( std::pair<int, std::string>(22, "XBprer") );
-  var_names.insert( std::pair<int, std::string>(23, "XBpostr") );
-  var_names.insert( std::pair<int, std::string>(24, "xXBprer") );
-  var_names.insert( std::pair<int, std::string>(25, "xXBpostr") );
-  var_names.insert( std::pair<int, std::string>(26, "SL") );
-  var_names.insert( std::pair<int, std::string>(27, "intf") );
+  const char* vn[] = {"V", "Xr1", "Xr2", "Xs", "m", "h", "j", "d", "f", "fCa",
+                      "s", "r", "g", "Ca_SR", "Ca_i_total", "Na_i", "K_i",
+                      "TRPNCaL", "TRPNCaH", "N_NoXB", "P_NoXB", "N", "XBprer",
+                      "XBpostr", "xXBprer", "xXBpostr", "SL", "intf"};
+  for (int i = 0; i < 28; i++)
+    var_names.insert( std::pair<int, std::string>(i, vn[i]) );
 
   // setup
   type = EPI;
@@ -58,11 +34,16 @@ RiceTenTusscher::RiceTenTusscher() : CellModel(28)
   // variables for RL integration in Explicit Euler
   for(int i=1; i<12; i++) if(i != 9) rlvars.insert(i);
 
+  #ifdef HF
+    rlvars.insert(28);
+    rlvars.insert(29);
+  #endif
 
-#ifdef HF  
-  rlvars.insert(28);
-  rlvars.insert(29);
-#endif
+    // size RL arrays and build the fast is_rl lookup from rlvars
+    rl_inf.resize(get_num_state_vars());
+    rl_tau.resize(get_num_state_vars());
+    is_rl.assign(get_num_state_vars(), false);
+    for (int i : rlvars) is_rl[i] = true;
 
 }
 
@@ -733,35 +714,19 @@ void RiceTenTusscher::equation(const double time, const double * statevars,
   
   // ---------------------------------------------------------------------------
  
-  // copy new
-  values[0]  = d_dt_V;  
-  //values[1]  = d_dt_Xr1;
-  //values[2]  = d_dt_Xr2;
-  //values[3]  = d_dt_Xs;
-  //values[4]  = d_dt_m;
-  //values[5]  = d_dt_h;
-  //values[6]  = d_dt_j;
-  //values[7]  = d_dt_d;
-  //values[8]  = d_dt_f;
-  //values[9]  = d_dt_fCa;
-  //values[10] = d_dt_s;
-  //values[11] = d_dt_r;
-  // values[12] = d_dt_g;
-  // Rush-Larsen
-  const double dt = 0.05;
-  values[ 1] = xr1_inf + (Xr1 - xr1_inf) * exp(-dt / tau_xr1);
-  values[ 2] = xr2_inf + (Xr2 - xr2_inf) * exp(-dt / tau_xr2);
-  values[ 3] = xs_inf + (Xs - xs_inf) * exp(-dt / tau_xs);
-  values[ 4] = m_inf + (m - m_inf) * exp(-dt / tau_m);
-  values[ 5] = h_inf + (h - h_inf) * exp(-dt / tau_h);
-  values[ 6] = j_inf + (j - j_inf) * exp(-dt / tau_j);
-  values[ 7] = d_inf + (d - d_inf) * exp(-dt / tau_d);
-  values[ 8] = f_inf + (f - f_inf) * exp(-dt / tau_f);
-  values[ 9] = d_dt_fCa; 
-  values[10] = s_inf + (s - s_inf) * exp(-dt / tau_s);
-  values[11] = r_inf + (r - r_inf) * exp(-dt / tau_r);
-  values[12] = d_dt_g; 
-  
+  values[0]  = d_dt_V;
+  values[1]  = d_dt_Xr1;
+  values[2]  = d_dt_Xr2;
+  values[3]  = d_dt_Xs;
+  values[4]  = d_dt_m;
+  values[5]  = d_dt_h;
+  values[6]  = d_dt_j;
+  values[7]  = d_dt_d;
+  values[8]  = d_dt_f;
+  values[9]  = d_dt_fCa;   // NOT RL - conditional clamp, stays Euler
+  values[10] = d_dt_s;
+  values[11] = d_dt_r;
+  values[12] = d_dt_g;     // NOT RL - conditional clamp, stays Euler 
   values[13] = d_dt_Ca_SR;
   values[14] = d_dt_Ca_i_total;
   values[15] = d_dt_Na_i;
@@ -777,146 +742,27 @@ void RiceTenTusscher::equation(const double time, const double * statevars,
   values[25] = dxXBpostr;
   values[26] = 0.0; //dSL;
   values[27] = dintf;
-   
+
 #ifdef HF
-  //double d_dt_mL = alpha_mL * (1-mL) - beta_mL*mL;
-  //double d_dt_hL = (hL_inf - hL)/tau_hL; 
-  // uses the same m from INa (Beatriz Trevor, PLoS ONE, 2012)
-  double d_dt_mL = m_inf  + (m  -  m_inf) * exp(-dt / tau_m);
-  double d_dt_hL = hL_inf + (hL - hL_inf) * exp(-dt / tau_hL);
-  values[28] = d_dt_mL;
-  values[29] = d_dt_hL;
+  values[28] = (m_inf  - mL) / tau_m;    // mL uses INa's m_inf/tau_m (Trevor 2012)
+  values[29] = (hL_inf - hL) / tau_hL;
 #endif
   
+  // ---- stash inf/tau for the RL stepper (gates only; NOT fCa/g)
+  rl_inf[ 1] = xr1_inf;  rl_tau[ 1] = tau_xr1;
+  rl_inf[ 2] = xr2_inf;  rl_tau[ 2] = tau_xr2;
+  rl_inf[ 3] = xs_inf;   rl_tau[ 3] = tau_xs;
+  rl_inf[ 4] = m_inf;    rl_tau[ 4] = tau_m;
+  rl_inf[ 5] = h_inf;    rl_tau[ 5] = tau_h;
+  rl_inf[ 6] = j_inf;    rl_tau[ 6] = tau_j;
+  rl_inf[ 7] = d_inf;    rl_tau[ 7] = tau_d;
+  rl_inf[ 8] = f_inf;    rl_tau[ 8] = tau_f;
+  rl_inf[10] = s_inf;    rl_tau[10] = tau_s;
+  rl_inf[11] = r_inf;    rl_tau[11] = tau_r;
+
+#ifdef HF
+  rl_inf[28] = m_inf;    rl_tau[28] = tau_m;
+  rl_inf[29] = hL_inf;   rl_tau[29] = tau_hL;
+#endif
+
 }
-
-//inline double RiceTenTusscher::ifnumber_0()
-//{
-//  if(V < -40.)
-//    return 0.057 * exp( -(V+80.)/6.8 );
-//  else
-//    return 0.0;
-//}
-
-//inline double RiceTenTusscher::ifnumber_1()
-//{
-//  if(V < -40.)
-//    return ((2.7*exp((0.079*V))) + (3.1e+05 * exp(0.3485*V)));
-//  else
-//    return ((0.77/(0.13*(1.+exp(((V + 10.66)/(-11.1)))))));
-//}
-
-//inline double RiceTenTusscher::ifnumber_2()
-//{
-//  if(V < -40.)
-//    return ( ((-2.5428e+04)*exp(0.2444*V)-
-//	      (6.9480e-06*exp(-0.04391*V)) ) * (V+37.78) )/(1. + exp(0.311*(V+79.23)));
-//  else
-//    return 0.0;
-//}
-
-//inline double RiceTenTusscher::ifnumber_3()
-//{
-//  if(V < -40.)
-//    return (((2.4240e-02*exp(((-1.0520e-02)*V)))/(1.+exp(((-0.13780)*(V+40.14))))));
-//  else
-//    return (0.6*exp(0.057*V))/(1.+exp((-0.1)*(V+32.)));
-//}
-
-//inline double RiceTenTusscher::ifnumber_4()
-//{
-//  if(((0.01 * d_fCa) > 0.0) && (V > (-60.0)))
-//    return 0.0;
-//  else
-//    return d_fCa;
-//}
-
-//inline double RiceTenTusscher::ifnumber_5()
-//{
-//  if(Ca_i < 3.5e-04)
-//    return (1.0/(1.0+pow((Ca_i/3.5e-04),6.0)));
-//  else
-//    return (1.0/(1.0+pow((Ca_i/3.5e-04),16.0)));
-//}
-
-//inline double RiceTenTusscher::ifnumber_6()
-//{
-//  if(((0.01 * d_g) > 0.0) && (V > (-60.0)))
-//    return 0.0;
-//  else
-//    return d_g;
-//}
-
-//inline double RiceTenTusscher::ifnumber_8()
-//{
-//  if((len_thick/2.0) < (SL/2.))
-//    return (len_thick/2.);
-//  else
-//    return (SL/2.);
-//}
-//
-//inline double RiceTenTusscher::ifnumber_9()
-//{
-//  if(((SL/2.) - (SL-len_thin)) > (len_hbare/2.0))
-//    return ((SL/2.) - (SL-len_thin));
-//  else
-//    return (len_hbare/2.);
-//}
-
-//inline double RiceTenTusscher::ifnumber_10()
-//{
-//  if((1./permtot) < 100.)
-//    return (1./permtot);
-//  else
-//    return 100.;
-//}
-
-//inline double RiceTenTusscher::ifnumber_11(double sigmap, double sigman)
-//{
-//  if(xXBpostr < x_0)
-//    return exp((sigmap*pow(((x_0-xXBpostr)/x_0),2.0)));
-//  else 
-//    return exp((sigman*pow(((xXBpostr-x_0)/x_0),2.0)));
-//}
-
-//inline double RiceTenTusscher::ifnumber_12()
-//{
-//  if(SL > SL_c)
-//    return (PCon_c * (exp((PExp_c * fabs((SL-SL_c)))) - 1.0));
-//  else
-//    return 0.0;
-//}
-
-//inline double RiceTenTusscher::ifnumber_14()
-//{
-//  const double stretch=1.0;
-//  if(!isometric && ((SL <= SLmax) && (SL > SLmin)) )
-//    return SL*(stretch-1.0)/0.05;
-//  //return (((intf + ((SLset - SL)*visc))/massf));
-//  else
-//    return 0.0;
-//}
-
-//inline double RiceTenTusscher::ifnumber_13()
-//{
-//  if(SEon == 1.0)
-//    return (KSE * (SLset - SL));
-//  else
-//    return 0.0;
-//}
-
-//inline double RiceTenTusscher::ifnumber_15()
-//{
-//  if(SL < len_thick)
-//    return -0.5*dSL;
-//  else
-//    return 0.0;
-//}
-//
-//inline double RiceTenTusscher::ifnumber_16()
-//{
-//  if(((2.*len_thin)-SL) > len_hbare)
-//    return -0.5*dSL;
-//  else
-//    return 0.0;
-//}

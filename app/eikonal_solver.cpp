@@ -21,6 +21,13 @@ void usage()
   exit(0);
 }
 
+void print_banner()
+{
+  cout << "========================================" << endl;
+  cout << "     E I K O N A L   S O L V E R        " << endl;
+  cout << "========================================" << endl;
+}
+
 int main(int argc, const char *argv[])
 {
   double dt = 0.1, T = 10.0, tp = 1.0; 
@@ -44,9 +51,9 @@ int main(int argc, const char *argv[])
   ierr = MPI_Comm_rank(PETSC_COMM_WORLD, &rank); CHKERRQ(ierr);
   ierr = MPI_Comm_size(PETSC_COMM_WORLD,&size); CHKERRQ(ierr);
 
-  cout << "Eikonal solver\n";
   Eikonal* eikonal = new Eikonal();
 
+  print_banner();
   msg("Reading parameters file");
 
   eikonal->setup(mshname, cellmodel, odesolver, dt, T, tp, tp);

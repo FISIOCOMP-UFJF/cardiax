@@ -1,7 +1,5 @@
 // TO-DO: corrigir lance do ODE_solver
 
-
-
 #include "eikonal.hpp"
 #include "monodomain.hpp"
 #include <queue>
@@ -28,7 +26,6 @@ Eikonal::Eikonal()
     //sigma_l(0.0001334), sigma_t(0.0000176),  sigma_n(0.0000176),
     stim_apply_nodes(false)
 {
-  cout << "Eikonal" << endl; 
   mesh = new Mesh();
   writer = new WriterHDF5(mesh);
 

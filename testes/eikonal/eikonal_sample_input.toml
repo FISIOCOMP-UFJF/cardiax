@@ -1,0 +1,59 @@
+# ============================================================
+#  Eikonal solver input
+# ============================================================
+
+[problem]
+model       = "eikonal"          # selects the solver
+description = "Activation-time computation on a cable/tissue mesh"
+mesh        = "cable_10x_fiber.xml"
+dimension   = 3
+
+# ------------------------------------------------------------
+#  Numerics: discretization + how activation times are computed
+# ------------------------------------------------------------
+[numerics]
+timestep      = 0.1              # dt  [ms]   (kept for interface compatibility)
+total_time    = 1.0             # T   [ms]
+print_rate    = 0.1             # output cadence [ms]
+print_rate_apd = 0.1
+
+[numerics.eikonal]
+method        = "dijkstra"      # dijkstra | fast_marching | fim
+graph         = "edge"          # build costs on element edges
+
+# ------------------------------------------------------------
+#  Physical parameters: conduction velocities + fiber model
+# ------------------------------------------------------------
+[physical]
+conductivity_type = "M_TRANSVERSE"   # S_ISOTROPIC | S_TRANSVERSE | M_ISOTROPIC | M_TRANSVERSE | M_ORTHOTROPIC
+
+[physical.velocity]
+vel_f = 1.0                     # along fiber        [mm/ms] or [m/s]
+vel_s = 1.0                     # transverse (sheet)
+vel_n = 1.0                     # normal
+
+# ------------------------------------------------------------
+#  Activation sources (root nodes). Optional: if the mesh
+#  already carries <node lat=...>, prescribed LAT is used instead.
+# ------------------------------------------------------------
+[stimuli]
+source = "mesh"                 # mesh | file | inline
+                                #   mesh   -> read <root_node>/<node> from the xml
+                                #   inline -> use [[stimuli.root]] below
+
+[[stimuli.root]]
+id   = 0
+time = 0.0                      # activation time at this root [ms]
+
+[[stimuli.root]]
+id   = 512
+time = 5.0
+
+# ------------------------------------------------------------
+#  Output
+# ------------------------------------------------------------
+[output]
+directory   = "results/eikonal"
+format      = "hdf5"            # hdf5 (+xdmf) | txt | both
+write_lat   = true
+lat_txt     = "eikonal.txt"     # legacy per-node dump

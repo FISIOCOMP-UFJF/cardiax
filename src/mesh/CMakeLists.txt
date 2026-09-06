@@ -5,6 +5,7 @@ add_library(Mesh
     mesh.cpp
     box_mesh.cpp
     purkinje_mesh.cpp
+    reader_hdf5.cpp
     writer.cpp
     writer_vtk.cpp
     writer_hdf5.cpp

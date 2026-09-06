@@ -3,6 +3,7 @@
 #include "../mesh.hpp"
 #include "../box_mesh.hpp"
 #include "../purkinje_mesh.hpp"
+#include "../reader_hdf5.hpp"
 #include "../writer_hdf5.hpp"
 
 int main()
@@ -84,5 +85,19 @@ int main()
   cout << pm << endl;
   */
 
+
+  // --------------------------------------------------------------------------
+  // Test 4: create a mesh from the .h5 file
+  // --------------------------------------------------------------------------
+ 
+  cout << endl;
+  cout << "TEST 4" << endl;
+  cout << "Creating a mesh from a HDF5 file" << endl;
+
+  ReaderHDF5 rh5;
+  Mesh * mesh;
+  mesh = rh5.read_mesh("../../../testes/monodomain/benchmark_slab_0p5mm_output.h5");
+  cout << *mesh;
+   
   return 0;
 }

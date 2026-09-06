@@ -56,8 +56,12 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     group_id = H5Gcreate2(file_id, "/topology", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     status = H5Gclose(group_id);
 
-    // cria o grupo "/vertex_field" no arquivo
-    group_id = H5Gcreate2(file_id, "/vertex_field", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    // cria o grupo "/point_data" no arquivo
+    group_id = H5Gcreate2(file_id, "/point_data", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    status = H5Gclose(group_id);
+
+    // cria o grupo "/cell_data" no arquivo
+    group_id = H5Gcreate2(file_id, "/cell_data", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     status = H5Gclose(group_id);
 
     //
@@ -156,7 +160,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     dims[0] = nsteps;
     dims[1] = np;        
     dataspace_id = H5Screate_simple(2, dims, NULL);          
-    dataset_id = H5Dcreate(file_id, "/vertex_field/vm", H5T_NATIVE_DOUBLE, 
+    dataset_id = H5Dcreate(file_id, "/point_data/vm", H5T_NATIVE_DOUBLE, 
                             dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
     //status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
     //                H5P_DEFAULT, vm);
@@ -168,7 +172,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     dims[0] = nsteps;
     dims[1] = np;
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/active_stress",
+    dataset_id = H5Dcreate(file_id, "/point_data/active_stress",
                            H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
                            props, H5P_DEFAULT);
     status = H5Dclose(dataset_id);
@@ -180,7 +184,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     dims[0] = nsteps;
     dims[1] = np;
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/lambda_f",
+    dataset_id = H5Dcreate(file_id, "/point_data/lambda_f",
                            H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
                            props, H5P_DEFAULT);
     status = H5Dclose(dataset_id);
@@ -191,7 +195,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     dims[0] = nsteps;
     dims[1] = np;
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/lambda_rate",
+    dataset_id = H5Dcreate(file_id, "/point_data/lambda_rate",
                            H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
                            props, H5P_DEFAULT);
     status = H5Dclose(dataset_id);
@@ -202,7 +206,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     dims[0] = nsteps;
     dims[1] = ne;
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/stress", H5T_NATIVE_DOUBLE,
+    dataset_id = H5Dcreate(file_id, "/cell_data/stress", H5T_NATIVE_DOUBLE,
                            dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
     //status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
     //                H5P_DEFAULT, vm);
@@ -210,7 +214,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     status = H5Sclose(dataspace_id);
 
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/strain", H5T_NATIVE_DOUBLE,
+    dataset_id = H5Dcreate(file_id, "/cell_data/strain", H5T_NATIVE_DOUBLE,
                          dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
 
     status = H5Dclose(dataset_id);
@@ -222,7 +226,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     // montagem usa; o campo nodal "active_stress" e o valor BRUTO do modelo
     // celular, antes da escala por material, e os dois nao coincidem.
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/Ta_applied",
+    dataset_id = H5Dcreate(file_id, "/cell_data/Ta_applied",
                            H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
                            props, H5P_DEFAULT);
     status = H5Dclose(dataset_id);
@@ -231,14 +235,14 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     // Mapa do multiplicador ta_scale por elemento. Constante no tempo, mas
     // gravado como campo para poder ser sobreposto aos demais no ParaView.
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/ta_scale",
+    dataset_id = H5Dcreate(file_id, "/cell_data/ta_scale",
                            H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
                            props, H5P_DEFAULT);
     status = H5Dclose(dataset_id);
     status = H5Sclose(dataspace_id);
 
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/long_strain", H5T_NATIVE_DOUBLE,
+    dataset_id = H5Dcreate(file_id, "/cell_data/long_strain", H5T_NATIVE_DOUBLE,
                          dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
 
     status = H5Dclose(dataset_id);
@@ -246,7 +250,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     //fim teste
 
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/circ_strain", H5T_NATIVE_DOUBLE,
+    dataset_id = H5Dcreate(file_id, "/cell_data/circ_strain", H5T_NATIVE_DOUBLE,
                          dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
 
     status = H5Dclose(dataset_id);
@@ -254,7 +258,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     //fim teste
 
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/rad_strain", H5T_NATIVE_DOUBLE,
+    dataset_id = H5Dcreate(file_id, "/cell_data/rad_strain", H5T_NATIVE_DOUBLE,
                          dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
 
     status = H5Dclose(dataset_id);
@@ -262,7 +266,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     //fim teste
 
   dataspace_id = H5Screate_simple(2, dims, NULL);
-  dataset_id = H5Dcreate(file_id, "/vertex_field/fibrosis", H5T_NATIVE_DOUBLE,
+  dataset_id = H5Dcreate(file_id, "/cell_data/fibrosis", H5T_NATIVE_DOUBLE,
                          dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
   int * aha = new int[nsteps*ne];
   for(hsize_t i=0; i<nsteps; i++)
@@ -276,7 +280,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
   //fim teste
 
   dataspace_id = H5Screate_simple(2, dims, NULL);
-  dataset_id = H5Dcreate(file_id, "/vertex_field/aha_marker", H5T_NATIVE_DOUBLE,
+  dataset_id = H5Dcreate(file_id, "/cell_data/aha_marker", H5T_NATIVE_DOUBLE,
                          dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
 
   for(hsize_t i=0; i<nsteps; i++)
@@ -303,7 +307,7 @@ void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
     dims[1] = np;
     dims[2] = 3;
     dataspace_id = H5Screate_simple(3, dims, NULL);       
-    dataset_id = H5Dcreate(file_id, "/vertex_field/displacements", H5T_NATIVE_DOUBLE,
+    dataset_id = H5Dcreate(file_id, "/point_data/displacements", H5T_NATIVE_DOUBLE,
                             dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
     //status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
     //                H5P_DEFAULT, displ);
@@ -326,7 +330,7 @@ void WriterHDF5::write_cell_field_step(int step, const double *data, string fiel
   // open an existing file.
   //cout << "Filename: " << h5name.c_str() << endl;
   file_id    = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-  string auxstr = string("/vertex_field/") + fieldname.c_str();
+  string auxstr = string("/cell_data/") + fieldname.c_str();
   dataset_id = H5Dopen(file_id, auxstr.c_str(), H5P_DEFAULT);
 
   hsize_t k = step;
@@ -370,7 +374,7 @@ void WriterHDF5::write_eikonal_lat(const std::string & file, const double *lat_d
     
     H5Gclose(H5Gcreate2(file_id, "/geometry", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
     H5Gclose(H5Gcreate2(file_id, "/topology", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
-    H5Gclose(H5Gcreate2(file_id, "/vertex_field", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
+    H5Gclose(H5Gcreate2(file_id, "/point_data", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
 
     hsize_t np = mesh->get_n_points();
     std::vector<arma::vec3> pts = mesh->get_points();
@@ -404,7 +408,7 @@ void WriterHDF5::write_eikonal_lat(const std::string & file, const double *lat_d
 
     hsize_t dims_lat[1] = {np};
     hid_t space_lat = H5Screate_simple(1, dims_lat, NULL);
-    hid_t dset_lat = H5Dcreate(file_id, "/vertex_field/lat", H5T_NATIVE_DOUBLE, space_lat, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    hid_t dset_lat = H5Dcreate(file_id, "/point_data/lat", H5T_NATIVE_DOUBLE, space_lat, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     H5Dwrite(dset_lat, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, lat_data);
     H5Dclose(dset_lat); H5Sclose(space_lat);
 
@@ -434,7 +438,7 @@ void WriterHDF5::write_eikonal_lat(const std::string & file, const double *lat_d
         << "      </Geometry>\n"
         << "      <Attribute Name=\"LAT\" AttributeType=\"Scalar\" Center=\"Node\">\n"
         << "        <DataItem Format=\"HDF\" Dimensions=\"" << np << "\">" 
-        << h5_file << ":/vertex_field/lat</DataItem>\n"
+        << h5_file << ":/point_data/lat</DataItem>\n"
         << "      </Attribute>\n"
         << "    </Grid>\n"
         << "  </Domain>\n"
@@ -452,7 +456,7 @@ void WriterHDF5::write_point_field_step(int step, const double *data,
   herr_t status;
 
   file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-  string auxstr = string("/vertex_field/") + fieldname.c_str();
+  string auxstr = string("/point_data/") + fieldname.c_str();
 
   // A field that was never created in write_hdf5() cannot be written into.
   // Without this check H5Dopen fails and every call afterwards (get_space,
@@ -508,7 +512,7 @@ void WriterHDF5::write_vm_step(int step, const double *data)
     // cout << "VM Filename: " << h5name.c_str() << endl;
 
     file_id    = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-    dataset_id = H5Dopen(file_id, "/vertex_field/vm", H5P_DEFAULT);    
+    dataset_id = H5Dopen(file_id, "/point_data/vm", H5P_DEFAULT);    
    
     hsize_t k = step;
     hsize_t np = mesh->get_n_points();    
@@ -547,7 +551,7 @@ void WriterHDF5::write_displ_step(int step, const double *displ)
   //cout <<  "H5Fopen" << endl;
     file_id    = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
   //cout <<  "H5Dopen" << endl;
-    dataset_id = H5Dopen(file_id, "/vertex_field/displacements", H5P_DEFAULT);
+    dataset_id = H5Dopen(file_id, "/point_data/displacements", H5P_DEFAULT);
        
     hsize_t k = step;
     hsize_t np = mesh->get_n_points();    
@@ -593,7 +597,7 @@ void WriterHDF5::add_ve()
     file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
     
     // query vm dataset to find dimensions
-    dataset_id = H5Dopen(file_id, "/vertex_field/vm", H5P_DEFAULT);     
+    dataset_id = H5Dopen(file_id, "/point_data/vm", H5P_DEFAULT);     
     dataspace_id = H5Dget_space(dataset_id);
     const int ndims = H5Sget_simple_extent_ndims(dataspace_id);
     hsize_t dims[ndims];
@@ -613,7 +617,7 @@ void WriterHDF5::add_ve()
     dims[0] = nsteps;
     dims[1] = nnodes;        
     dataspace_id = H5Screate_simple(2, dims, NULL);          
-    dataset_id = H5Dcreate(file_id, "/vertex_field/ve", H5T_NATIVE_DOUBLE, 
+    dataset_id = H5Dcreate(file_id, "/point_data/ve", H5T_NATIVE_DOUBLE, 
                             dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, 
                     H5P_DEFAULT, ve);
@@ -633,7 +637,7 @@ void WriterHDF5::add_scalar_field(std::string & field_name)
 
     file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
 
-    std::string scalarfield = "/vertex_field/" + field_name;
+    std::string scalarfield = "/point_data/" + field_name;
 
     // query vm dataset to find dimensions
     dataset_id = H5Dopen(file_id, scalarfield.c_str(), H5P_DEFAULT);
@@ -656,7 +660,7 @@ void WriterHDF5::add_scalar_field(std::string & field_name)
     dims[0] = nsteps;
     dims[1] = nnodes;
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/ve", H5T_NATIVE_DOUBLE,
+    dataset_id = H5Dcreate(file_id, "/point_data/ve", H5T_NATIVE_DOUBLE,
                            dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
                       H5P_DEFAULT, ve);
@@ -678,7 +682,7 @@ void WriterHDF5::add_fibers()
     file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
 
     // query vm dataset to find dimensions
-    dataset_id = H5Dopen(file_id, "/vertex_field/vm", H5P_DEFAULT);
+    dataset_id = H5Dopen(file_id, "/point_data/vm", H5P_DEFAULT);
     dataspace_id = H5Dget_space(dataset_id);
     const int ndims = H5Sget_simple_extent_ndims(dataspace_id);
     hsize_t dims[ndims];
@@ -697,7 +701,7 @@ void WriterHDF5::add_fibers()
     dims[0] = nsteps;
     dims[1] = nnodes;
     dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/vertex_field/ve", H5T_NATIVE_DOUBLE,
+    dataset_id = H5Dcreate(file_id, "/point_data/ve", H5T_NATIVE_DOUBLE,
                            dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
                       H5P_DEFAULT, ve);
@@ -716,7 +720,7 @@ void WriterHDF5::write_ve_step(int step, const double *data)
 
     // open an existing file.
     file_id    = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-    dataset_id = H5Dopen(file_id, "/vertex_field/ve", H5P_DEFAULT);    
+    dataset_id = H5Dopen(file_id, "/point_data/ve", H5P_DEFAULT);    
    
     hsize_t k = step;
     hsize_t np = mesh->get_n_points();    
@@ -833,7 +837,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Points\" \n"
             << "                    Dimensions=\"" << nsteps << " " << np << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/vm\n"
+            << "                    Format=\"HDF\">" << h5name << ":/point_data/vm\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";
@@ -854,7 +858,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Points\" \n"
             << "                    Dimensions=\"" << nsteps << " " << np << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/active_stress\n"
+            << "                    Format=\"HDF\">" << h5name << ":/point_data/active_stress\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";
@@ -875,7 +879,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Points\" \n"
             << "                    Dimensions=\"" << nsteps << " " << np << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/lambda_f\n"
+            << "                    Format=\"HDF\">" << h5name << ":/point_data/lambda_f\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";
@@ -896,7 +900,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Points\" \n"
             << "                    Dimensions=\"" << nsteps << " " << np << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/lambda_rate\n"
+            << "                    Format=\"HDF\">" << h5name << ":/point_data/lambda_rate\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";
@@ -916,7 +920,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Cells\" \n"
             << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/Ta_applied\n"
+            << "                    Format=\"HDF\">" << h5name << ":/cell_data/Ta_applied\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";
@@ -934,7 +938,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Cells\" \n"
             << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/ta_scale\n"
+            << "                    Format=\"HDF\">" << h5name << ":/cell_data/ta_scale\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";
@@ -952,7 +956,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Cells\" \n"
             << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/stress\n"
+            << "                    Format=\"HDF\">" << h5name << ":/cell_data/stress\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";
@@ -970,7 +974,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Cells\" \n"
             << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/strain\n"
+            << "                    Format=\"HDF\">" << h5name << ":/cell_data/strain\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";
@@ -988,7 +992,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Cells\" \n"
             << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/long_strain\n"
+            << "                    Format=\"HDF\">" << h5name << ":/cell_data/long_strain\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";
@@ -1006,7 +1010,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Cells\" \n"
             << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/circ_strain\n"
+            << "                    Format=\"HDF\">" << h5name << ":/cell_data/circ_strain\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";
@@ -1024,7 +1028,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Cells\" \n"
             << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/rad_strain\n"
+            << "                    Format=\"HDF\">" << h5name << ":/cell_data/rad_strain\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";
@@ -1042,7 +1046,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
           << "                </DataItem>\n"
           << "                <DataItem Name=\"Cells\" \n"
           << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
-          << "                    Format=\"HDF\">" << h5name << ":/vertex_field/fibrosis\n"
+          << "                    Format=\"HDF\">" << h5name << ":/cell_data/fibrosis\n"
           << "                </DataItem>\n"
           << "            </DataItem>\n"
           << "            </Attribute>\n";
@@ -1060,7 +1064,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
           << "                </DataItem>\n"
           << "                <DataItem Name=\"Cells\" \n"
           << "                    Dimensions=\"" << nsteps << " " << ne << "\" \n"
-          << "                    Format=\"HDF\">" << h5name << ":/vertex_field/aha_marker\n"
+          << "                    Format=\"HDF\">" << h5name << ":/cell_data/aha_marker\n"
           << "                </DataItem>\n"
           << "            </DataItem>\n"
           << "            </Attribute>\n";
@@ -1084,7 +1088,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
                 << "                </DataItem>\n"
                 << "                <DataItem Name=\"Points\" \n"
                 << "                    Dimensions=\"" << nsteps << " " << np << "\" \n"
-                << "                    Format=\"HDF\">" << h5name << ":/vertex_field/ve\n"
+                << "                    Format=\"HDF\">" << h5name << ":/point_data/ve\n"
                 << "                </DataItem>\n"
                 << "            </DataItem>\n"
                 << "            </Attribute>\n";          
@@ -1106,7 +1110,7 @@ void WriterHDF5::write_xdmf(const std::string & file, int nsteps,
             << "                </DataItem>\n"
             << "                <DataItem Name=\"Points\" \n"
             << "                    Dimensions=\"" << nsteps << " " << np << " 3" << "\" \n"
-            << "                    Format=\"HDF\">" << h5name << ":/vertex_field/displacements\n"
+            << "                    Format=\"HDF\">" << h5name << ":/point_data/displacements\n"
             << "                </DataItem>\n"
             << "            </DataItem>\n"
             << "            </Attribute>\n";

@@ -64,6 +64,21 @@ find_package(MPI REQUIRED)
 # --- HDF5 ---
 find_package(HDF5 REQUIRED)
 
+# --- thirdparty/highfive ---
+add_subdirectory(src/thirdparty/highfive)
+
+if(TARGET HighFive::HighFive)
+  message(STATUS "HighFive found (vendored):")
+  if(DEFINED HighFive_VERSION)
+    message(STATUS "  Version  : ${HighFive_VERSION}")
+  endif()
+  message(STATUS "  Source   : ${PROJECT_SOURCE_DIR}/src/thirdparty/highfive")
+  message(STATUS "  Target   : HighFive::HighFive")
+else()
+  message(FATAL_ERROR "HighFive target not found. Did you run "
+                      "'git submodule update --init --recursive'?")
+endif()
+
 # --- BLAS/LAPACK (conda Netlib — must match Armadillo's build) ---
 find_library(BLAS_LIBRARY
   NAMES blas
@@ -193,6 +208,7 @@ target_link_libraries(ext_libs INTERFACE
     ${BLAS_LIBRARIES}
     ${LAPACK_LIBRARIES}
     ${ScaLAPACK_LIBRARIES}
+    HighFive::HighFive
 )
 
 target_compile_definitions(ext_libs INTERFACE

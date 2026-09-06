@@ -2,14 +2,17 @@
 
 LuoRudy::LuoRudy() : CellModel(8)
 {
-  var_names.insert( std::pair<int, std::string>(0, "V") );
-  var_names.insert( std::pair<int, std::string>(1, "m") );
-  var_names.insert( std::pair<int, std::string>(2, "h") );
-  var_names.insert( std::pair<int, std::string>(3, "j") );
-  var_names.insert( std::pair<int, std::string>(4, "d") );
-  var_names.insert( std::pair<int, std::string>(5, "f") );
-  var_names.insert( std::pair<int, std::string>(6, "X") );
-  var_names.insert( std::pair<int, std::string>(7, "Cai") );
+  const string vn[] = {"V", "m", "h", "j", "d", "f", "X", "Cai"};
+  for(int i=0; i<8; i++)
+    var_names.insert( std::pair<int, std::string>(i,  vn[i]) );
+
+  // Rush-Larsen: gates 1..6 (m, h, j, d, f, X). V (0) and Cai (7) use Euler.
+  for (int i = 1; i <= 6; i++) rlvars.insert(i);
+
+  rl_inf.resize(get_num_state_vars());
+  rl_tau.resize(get_num_state_vars());
+  is_rl.assign(get_num_state_vars(), false);
+  for (int i = 1; i <= 6; i++) is_rl[i] = true;
 }
 
 void LuoRudy::init(double * values) const
@@ -159,5 +162,35 @@ void LuoRudy::equation(const double time, const double * statevars, double * val
   values[5] = d_dt_slow_inward_current_f_gate__f;
   values[6] = d_dt_time_dependent_potassium_current_X_gate__X;
   values[7] = d_dt_intracellular_calcium_concentration__Cai;
+
+  // inf/tau for the RL stepper (gates 1..6) 
+  // gates are in alpha/beta form: inf = a/(a+b), tau = 1/(a+b).
+  {
+    double a, b;
+
+    a = var_fast_sodium_current_m_gate__alpha_m;
+    b = var_fast_sodium_current_m_gate__beta_m;
+    rl_inf[1] = a / (a + b);   rl_tau[1] = 1.0 / (a + b);
+
+    a = var_fast_sodium_current_h_gate__alpha_h;
+    b = var_fast_sodium_current_h_gate__beta_h;
+    rl_inf[2] = a / (a + b);   rl_tau[2] = 1.0 / (a + b);
+
+    a = var_fast_sodium_current_j_gate__alpha_j;
+    b = var_fast_sodium_current_j_gate__beta_j;
+    rl_inf[3] = a / (a + b);   rl_tau[3] = 1.0 / (a + b);
+
+    a = var_slow_inward_current_d_gate__alpha_d;
+    b = var_slow_inward_current_d_gate__beta_d;
+    rl_inf[4] = a / (a + b);   rl_tau[4] = 1.0 / (a + b);
+
+    a = var_slow_inward_current_f_gate__alpha_f;
+    b = var_slow_inward_current_f_gate__beta_f;
+    rl_inf[5] = a / (a + b);   rl_tau[5] = 1.0 / (a + b);
+
+    a = var_time_dependent_potassium_current_X_gate__alpha_X;
+    b = var_time_dependent_potassium_current_X_gate__beta_X;
+    rl_inf[6] = a / (a + b);   rl_tau[6] = 1.0 / (a + b);
+  }
 }
 

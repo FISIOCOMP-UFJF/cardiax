@@ -201,10 +201,9 @@ void CellModel::solveTest(double stim, double sstart, double sstop,
   }
 
   out.close();
-
-  cout << " Done" << endl
-       << endl;
+  cout << "Done" << endl<< endl;
 }
+
 /*
 void CellModel::solveTestHDF5(double stim, double stime, double sdur,
                               const std::string &fname)

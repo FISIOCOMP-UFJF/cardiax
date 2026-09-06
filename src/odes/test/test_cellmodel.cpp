@@ -7,12 +7,18 @@
 #include "util/command_line_args.h"
 
 using namespace std;
-
 void usage()
 {
-  const int W = 26; // column width for alignment
-  auto opt = [&](const string& flag, const string& desc) {
-    cout << "  " << left << setw(W) << flag << desc << "\n";
+  const int FW = 16;  // flag column width
+  const int AW = 12;  // argument column width
+
+  // opt: flag | argument | description, each in its own aligned column
+  auto opt = [&](const string& flag, const string& arg, const string& desc) {
+    cout << "  " << left << setw(FW) << flag << setw(AW) << arg << desc << "\n";
+  };
+  // note: a plain full-width line (models, methods — no separate argument)
+  auto note = [&](const string& name, const string& desc) {
+    cout << "  " << left << setw(FW + AW) << name << desc << "\n";
   };
 
   cout << "\n";
@@ -23,66 +29,71 @@ void usage()
   cout << "    ./testCellmodel -c <model> -m <method> -dt <step> -p <protocol> [options]\n\n";
 
   cout << "  Protocols (-p):\n";
-  opt("-p single",       "Single stimulus run (default)");
-  opt("-p pacing",       "Basic cycle length pacing");
-  opt("-p restitution",  "Restitution protocol");
+  opt("-p", "single",      "Single stimulus run (default)");
+  opt("-p", "pacing",      "Basic cycle length pacing");
+  opt("-p", "restitution", "Restitution protocol");
   cout << "\n";
 
   cout << "  Required options:\n";
-  opt("-c  <model>",     "Cell model (see list below)");
-  opt("-m  <method>",    "ODE method (see list below)");
-  opt("-dt <step>",      "Time step (ms)");
+  opt("-c",  "<model>",    "Cell model (see list below)");
+  opt("-m",  "<method>",   "ODE method (see list below)");
+  opt("-dt", "<step>",     "Time step (ms)");
   cout << "\n";
 
   cout << "  General options:\n";
-  opt("-T   <time>",     "Total simulation time (ms)");
-  opt("-tr  <rate>",     "Time rate");
-  opt("-out <file>",     "Output file name [default: output.h5]");
-  opt("-ct  <type>",     "Cell type: EPI | MCELL | ENDO | APEX | BASE");
+  opt("-T",   "<time>",    "Total simulation time (ms)");
+  opt("-tr",  "<rate>",    "Time rate");
+  opt("-out", "<file>",    "Output file name [default: output.h5]");
+  opt("-ct",  "<type>",    "Cell type: EPI | MCELL | ENDO | APEX | BASE");
   cout << "\n";
 
   cout << "  Stimulus options:\n";
-  opt("-st  <time>",     "Stimulus start time (ms)");
-  opt("-sv  <value>",    "Stimulus value");
-  opt("-sd  <duration>", "Stimulus duration (ms) [default: 1.0]");
+  opt("-st", "<time>",     "Stimulus start time (ms)");
+  opt("-sv", "<value>",    "Stimulus value");
+  opt("-sd", "<duration>", "Stimulus duration (ms) [default: 1.0]");
   cout << "\n";
 
   cout << "  Pacing options:\n";
-  opt("-bcl <length>",   "Basic cycle length (ms)");
-  opt("-nbc <n>",        "Number of basic cycles");
+  opt("-bcl", "<length>",  "Basic cycle length (ms)");
+  opt("-nbc", "<n>",       "Number of basic cycles");
   cout << "\n";
 
   cout << "  Restitution options:\n";
-  opt("-bcl <length>",   "Basic cycle length (ms)");
-  opt("-nbc <n>",        "Number of basic cycles (to reach steady state)");
-  opt("-nrc <n>",        "Number of restitution cycles");
-  opt("-d   <delta>",    "Time step variation per restitution cycle (ms)");
+  opt("-bcl", "<length>",  "Basic cycle length (ms)");
+  opt("-nbc", "<n>",       "Number of basic cycles (to reach steady state)");
+  opt("-nrc", "<n>",       "Number of restitution cycles");
+  opt("-d",   "<delta>",   "Time step variation per restitution cycle (ms)");
   cout << "\n";
 
   cout << "  Models:\n";
-  opt("NP",          "Nash-Panfilov");
-  opt("MNP",         "MyNash-Panfilov");
-  opt("MS",          "Mitchell-Schaeffer");
-  opt("MV",          "Minimal Ventricular");
-  opt("FHN",         "FitzHugh-Nagumo");
-  opt("LR1",         "Luo-Rudy I");
-  opt("TT2",         "ten Tusscher 2006");
-  opt("TT2Ta",       "ten Tusscher + Active tension (cell types: EPI,MCELL,ENDO,APEX,BASE)");
-  opt("RiceTT2",     "Rice + ten Tusscher");
-  opt("ToRORdLand",  "ToR-ORd + Land");
-  opt("SODE",        "Simple ODE (test)");
+  note("NP",          "Nash-Panfilov");
+  note("MNP",         "MyNash-Panfilov");
+  note("MS",          "Mitchell-Schaeffer");
+  note("MV",          "Minimal Ventricular");
+  note("FHN",         "FitzHugh-Nagumo");
+  note("LR1",         "Luo-Rudy I");
+  note("TNNP",        "ten Tusscher 2004");
+  note("TT2",         "ten Tusscher 2006");
+  note("TT2Ta",       "ten Tusscher + Active tension (cell types: EPI,MCELL,ENDO,APEX,BASE)");
+  note("RiceTT2",     "Rice + ten Tusscher");
+  note("ToRORdLand",  "ToR-ORd + Land");
+  note("SODE",        "Simple ODE (test)");
   cout << "\n";
 
   cout << "  Methods:\n";
-  opt("ExplicitEuler",  "Forward Euler");
-  opt("ImplicitEuler",  "Backward Euler");
-  opt("RungeKutta4",    "4th order Runge-Kutta");
+  note("ExplicitEuler",  "Forward Euler");
+  note("ImplicitEuler",  "Backward Euler");
+  note("RungeKutta4",    "4th order Runge-Kutta");
+  cout << "\n";
+  cout << "    Note: models with gating variables (e.g. TNNP, TT2, TT2Ta, LR1,\n";
+  cout << "    RiceTT2, ToRORdLand) use Rush-Larsen for those gates automatically\n";
+  cout << "    under ExplicitEuler flag; all other state variables use the explicit method.\n";
   cout << "\n";
 
   cout << "  Examples:\n";
-  cout << "    ./testCellmodel -p single      -c TT2 -m RungeKutta4 -dt 0.001 -T 500 -sv -52 -st 10 -sd 1\n";
-  cout << "    ./testCellmodel -p pacing      -c FHN -m ExplicitEuler -dt 0.1 -bcl 500 -nbc 10 -sv -0.3 -sd 1\n";
-  cout << "    ./testCellmodel -p restitution -c TT2 -m RungeKutta4 -dt 0.001 -bcl 500 -nbc 20 -nrc 10 -d 10\n";
+  cout << "    ./testCellModel -p single      -c TT2 -m RungeKutta4 -dt 0.001 -T 500 -sv -52 -st 10 -sd 1\n";
+  cout << "    ./testCellModel -p pacing      -c FHN -m ExplicitEuler -dt 0.1 -bcl 500 -nbc 10 -sv -0.3 -sd 1\n";
+  cout << "    ./testCellModel -p restitution -c TT2 -m RungeKutta4 -dt 0.001 -bcl 500 -nbc 20 -nrc 10 -d 10\n";
   cout << "\n";
 }
 
@@ -126,6 +137,7 @@ int main(int argc, const char **argv)
 
     cell->setup(method, step, T, tts);
 //    cell->solveTestHDF5(stim, stime, sdur, outf);
+    outf = "output.dat";
     cell->solveTest(stim, stime, sdur, outf);
   }
   else if(protocol == "pacing")

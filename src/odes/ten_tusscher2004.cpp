@@ -11,10 +11,15 @@ TenTusscher2004::TenTusscher2004() : CellModel(19)
   for(int i=0; i<19; i++)
     var_names.insert( std::pair<int, std::string>(i,  vn[i]) );
 
-  // variables for RL integration in Explicit Euler
+  // Rush-Larsen: gates 1..12 use the exponential integrator
   for(int i=1; i<=12; i++) rlvars.insert(i);
 
+  rl_inf.resize(get_num_state_vars());
+  rl_tau.resize(get_num_state_vars());
+  is_rl.assign(get_num_state_vars(), false);
+  for(int i=1; i<=12; i++) is_rl[i] = true;
 }
+
 
 void TenTusscher2004::init(double * values) const
 {
@@ -77,9 +82,6 @@ void TenTusscher2004::equation(const double time,
   const double RToF  = (R*T)/F;
   const double VcF   = V_c * F;
   const double VFoRT = (V*F)/(R*T);
-
-  // GAMBIARA RL
-  double dt = 0.01;
 
   // Calculations            
   const double Ko  = 5.4;
@@ -304,24 +306,36 @@ void TenTusscher2004::equation(const double time,
 # endif
 
   values[ 0] = d_dt_V;
-
-  values[ 1] = xr1_inf + (Xr1 - xr1_inf) * exp(-dt / tau_xr1);
-  values[ 2] = xr2_inf + (Xr2 - xr2_inf) * exp(-dt / tau_xr2);
-  values[ 3] = xs_inf + (Xs - xs_inf) * exp(-dt / tau_xs);
-  values[ 4] = m_inf + (m - m_inf) * exp(-dt / tau_m);
-  values[ 5] = h_inf + (h - h_inf) * exp(-dt / tau_h);
-  values[ 6] = j_inf + (j - j_inf) * exp(-dt / tau_j);
-  values[ 7] = d_inf + (d - d_inf) * exp(-dt / tau_d);
-  values[ 8] = f_inf + (f - f_inf) * exp(-dt / tau_f);
-  values[ 9] = f2_inf + (f2 - f2_inf) * exp(-dt / tau_f2);
-  values[10] = fCass_inf + (fCass - fCass_inf) * exp(-dt / tau_fCass);
-  values[11] = s_inf + (s - s_inf) * exp(-dt / tau_s);
-  values[12] = r_inf + (r - r_inf) * exp(-dt / tau_r);
-
+  values[ 1] = (xr1_inf - Xr1) / tau_xr1;
+  values[ 2] = (xr2_inf - Xr2) / tau_xr2;
+  values[ 3] = (xs_inf  - Xs)  / tau_xs;
+  values[ 4] = (m_inf   - m)   / tau_m;
+  values[ 5] = (h_inf   - h)   / tau_h;
+  values[ 6] = (j_inf   - j)   / tau_j;
+  values[ 7] = (d_inf   - d)   / tau_d;
+  values[ 8] = (f_inf   - f)   / tau_f;
+  values[ 9] = (f2_inf  - f2)  / tau_f2;
+  values[10] = (fCass_inf - fCass) / tau_fCass;
+  values[11] = (s_inf   - s)   / tau_s;
+  values[12] = (r_inf   - r)   / tau_r;
   values[13] = d_dt_Ca_i;
   values[14] = d_dt_Ca_SR;
   values[15] = d_dt_Ca_ss;
   values[16] = d_dt_R_prime;
   values[17] = d_dt_Na_i;
   values[18] = d_dt_K_i;
+
+  // inf/tau for the RL stepper (gates only)
+  rl_inf[ 1] = xr1_inf;   rl_tau[ 1] = tau_xr1;
+  rl_inf[ 2] = xr2_inf;   rl_tau[ 2] = tau_xr2;
+  rl_inf[ 3] = xs_inf;    rl_tau[ 3] = tau_xs;
+  rl_inf[ 4] = m_inf;     rl_tau[ 4] = tau_m;
+  rl_inf[ 5] = h_inf;     rl_tau[ 5] = tau_h;
+  rl_inf[ 6] = j_inf;     rl_tau[ 6] = tau_j;
+  rl_inf[ 7] = d_inf;     rl_tau[ 7] = tau_d;
+  rl_inf[ 8] = f_inf;     rl_tau[ 8] = tau_f;
+  rl_inf[ 9] = f2_inf;    rl_tau[ 9] = tau_f2;
+  rl_inf[10] = fCass_inf; rl_tau[10] = tau_fCass;
+  rl_inf[11] = s_inf;     rl_tau[11] = tau_s;
+  rl_inf[12] = r_inf;     rl_tau[12] = tau_r;
 }

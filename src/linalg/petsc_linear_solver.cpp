@@ -927,9 +927,6 @@ void LinearSolver::view()
 
 
 #ifdef AMGX_SOLVER
-#endif
-
-
 std::pair<PetscInt, PetscReal> LinearSolver::solve_100_gpu(petsc::Matrix &A, 
                                                            petsc::Matrix &M, 
                                                            double* d_V, 

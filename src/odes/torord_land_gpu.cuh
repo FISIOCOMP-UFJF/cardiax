@@ -4,7 +4,7 @@
 #include <cuda_runtime.h>
 #include <math.h>
 
-// Definições dos tipos celulares (ajuste os inteiros se no seu código C++ forem diferentes)
+// Definições dos tipos celulares 
 #define ENDO  0
 #define MCELL 1
 #define EPI   2

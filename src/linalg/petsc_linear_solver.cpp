@@ -927,6 +927,9 @@ void LinearSolver::view()
 
 
 #ifdef AMGX_SOLVER
+#endif
+
+
 std::pair<PetscInt, PetscReal> LinearSolver::solve_100_gpu(petsc::Matrix &A, 
                                                            petsc::Matrix &M, 
                                                            double* d_V, 
@@ -936,12 +939,12 @@ std::pair<PetscInt, PetscReal> LinearSolver::solve_100_gpu(petsc::Matrix &A,
     double rnorm = 0.0;
     int n = A.size();
 
-    // 1. Aloca um buffer Pinned (uma única vez)
+    // Aloca um buffer uma única vez
     if (!_h_buffer) {
         cudaMallocHost((void**)&_h_buffer, n * sizeof(double));
     }
 
-    // 2. Upload das matrizes A e M (Apenas na primeira iteração!)
+    // Upload das matrizes uma única vez (constantes)
     if (!_amgx_matrices_uploaded) {
         int nnz_A, nnz_M, *row_A, *col_A, *row_M, *col_M;
         double *val_A, *val_M;
@@ -965,13 +968,15 @@ std::pair<PetscInt, PetscReal> LinearSolver::solve_100_gpu(petsc::Matrix &A,
         AMGX_SAFE_CALL(AMGX_matrix_upload_all(_amgx_M, n, nnz_M, 1, 1, row_M, col_M, val_M, NULL));
         delete[] row_M; delete[] col_M; delete[] val_M;
 
-        // TRAVA O PORTÃO: O upload nunca mais será executado nesta simulação
         _amgx_matrices_uploaded = true; 
     }
 
     // 3. Ponte de alta velocidade: GPU (Cells) -> Pinned RAM -> GPU (AMGx)
     cudaMemcpy(_h_buffer, d_V, n * sizeof(double), cudaMemcpyDeviceToHost);
     AMGX_SAFE_CALL(AMGX_vector_upload(_amgx_v0, n, 1, _h_buffer));
+
+    AMGX_SAFE_CALL(AMGX_vector_upload(_amgx_x, n, 1, _h_buffer));
+    AMGX_SAFE_CALL(AMGX_vector_upload(_amgx_f, n, 1, _h_buffer));
 
     // 4. Multiplicação e Resolução 100% AMGx
     AMGX_SAFE_CALL(AMGX_matrix_vector_multiply(_amgx_M, _amgx_v0, _amgx_f));

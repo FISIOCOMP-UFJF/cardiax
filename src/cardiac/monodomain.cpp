@@ -342,21 +342,6 @@ void Monodomain::solve()
       cells->get_var(0, vm); 
       write_data(vm, "vm", &step);
     }
-
-    
-    // if(tip.it() % checkpoint_rate == 0 && checkpoint_rate > 0)
-    // {
-      // cout<<"Saving State: " <<tip.time() <<endl; 
-      // int num_vars = cellmodel->get_num_state_vars(); 
-      // int num_vars = cells->get_num_state_vars();
-      // writer->write_checkpoint(
-      //     tip.it(), 
-      //     tip.time(), 
-      //     vm.memptr(), 
-      //     cells->get_state_vars(), 
-      //     num_vars
-      // );
-    // }
   }  
 
   timer.summary();
@@ -366,25 +351,20 @@ void Monodomain::solve_odes()
 {
     stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
   
-    // Cenário 1: Há estímulo ativo neste exato momento
     if (stim_apply) {
         std::vector<double> host_istim(ndofs, 0.0);
         for (uint node : stim_nodes) {
             host_istim[node] = stim_val;
         }
-        cells->set_stimuli(host_istim); // Faz o HtoD do estímulo
-        _prev_stim_apply = true;        // Salva o estado para a próxima iteração
+        cells->set_stimuli(host_istim); 
+        _prev_stim_apply = true;        
     } 
-    // Cenário 2: O estímulo acabou de desligar (Borda de descida)
     else if (_prev_stim_apply) {
         std::vector<double> host_istim(ndofs, 0.0);
-        cells->set_stimuli(host_istim); // Faz um único HtoD para zerar a VRAM
-        _prev_stim_apply = false;       // Desativa a flag para ignorar os próximos passos
+        cells->set_stimuli(host_istim);
+        _prev_stim_apply = false;       
     }
-    // Cenário 3: Não há estímulo e já estava zerado. 
-    // Cai no vazio e não faz NENHUMA transferência de memória.
-
-    // Avança todos os sistemas puramente na GPU
+    
     cells->advance(timestep);
     stim_nodes.clear(); 
 }
@@ -393,9 +373,9 @@ void Monodomain::solve_parabolic()
 {
     const double pcgtol = parameters["pcgtol"];
 
-    // Multiplicação e resolução nativas na GPU via AMGx
-    Mi.mult(v0, f);
-    std::pair<PetscInt,PetscReal> ir = solver.solve(Ai, v1, f, pcgtol);
+    // Pega o ponteiro da placa de vídeo onde o potencial V acabou de ser atualizado pelas EDOs
+    double* d_V = cells->get_var_device_ptr(0);
+    std::pair<PetscInt,PetscReal> ir = solver.solve_100_gpu(Ai, Mi, d_V, pcgtol);
   
     if (tip.time2print())
         cout << " num its " << ir.first << " rnorm " << ir.second << endl;

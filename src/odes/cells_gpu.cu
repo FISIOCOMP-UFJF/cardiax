@@ -92,9 +92,10 @@ void CellsGpu::set_stimuli(const std::vector<double>& host_istim) {
 }
 
 void CellsGpu::advance(double dt) {
-    // A integração acontece puramente na placa. Nenhuma transferência de memória aqui.
     launch_euler_kernel(d_states, d_istim, d_celltypes, dt, num_systems);
 }
+
+
 void CellsGpu::get_var_from_device(int var_idx, double* host_array) const {
     double* d_var_ptr = d_states + (var_idx * num_systems);
     cudaMemcpy(host_array, d_var_ptr, num_systems * sizeof(double), cudaMemcpyDeviceToHost);

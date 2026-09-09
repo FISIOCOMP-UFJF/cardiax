@@ -1,9 +1,35 @@
 #include "writer_hdf5.hpp"
 
-WriterHDF5::WriterHDF5(Mesh * m) : Writer(m) //, mesh(m)
+#include <highfive/highfive.hpp>
+
+using HighFive::File;
+using HighFive::DataSpace;
+
+namespace {
+
+// create a zero-initialised dataset of the given shape
+template <typename T>
+void create_dataset(File & f, const std::string & path,
+                    const std::vector<std::size_t> & shape)
+{
+    f.createDataSet<T>(path, DataSpace(shape));
+}
+
+// write one time slice (row `step`) into an existing 2-D dataset [nsteps, ncols]
+void write_row(const std::string & h5name, const std::string & path,
+               std::size_t step, const double * data, std::size_t ncols)
+{
+    File f(h5name, File::ReadWrite);
+    auto dset = f.getDataSet(path);
+    dset.select({step, 0}, {1, ncols}).write_raw(data);
+}
+
+} // namespace
+
+WriterHDF5::WriterHDF5(Mesh * m) : Writer(m)
 {
   // do nothing
-} 
+}
 
 WriterHDF5::~WriterHDF5()
 {
@@ -11,10 +37,10 @@ WriterHDF5::~WriterHDF5()
 }
 
 void WriterHDF5::open(const std::string & file, int nsteps, double step, bool bido, bool is_restart)
-{   
+{
     std::size_t pos  = file.find_last_of("/");
-    std::string base = file.c_str(); 
-     if (pos != std::string::npos) {
+    std::string base = file.c_str();
+    if (pos != std::string::npos) {
         base = file.substr(pos+1);
     }
     if (is_restart) base = base + "_restarted";
@@ -31,334 +57,94 @@ void WriterHDF5::close()
 
 void WriterHDF5::write_hdf5(const std::string & file, int nsteps, double step)
 {
-    // prepare to write HDF5 file
-    hsize_t np = mesh->get_n_points();
-    hsize_t dims[3];
-    hid_t file_id, group_id, dataset_id, dataspace_id, props;
-    herr_t status;
+    const std::size_t np = mesh->get_n_points();
+    const std::size_t ne = mesh->get_n_elements();
+    const std::size_t nn = mesh->get_nen();
+    const std::size_t ns = static_cast<std::size_t>(nsteps);
 
     std::size_t pos  = file.find_last_of("/");
     std::string base = file.c_str();
     if (pos != std::string::npos)
       base = file.substr(pos+1);
-
     h5name = base + ".h5";
 
-    double fill_zero = 0.0;
+    // create (truncate) the file and the groups
+    File f(h5name, File::Truncate);
+    f.createGroup("/geometry");
+    f.createGroup("/topology");
+    f.createGroup("/point_data");
+    f.createGroup("/cell_data");
 
-    file_id = H5Fcreate(h5name.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-    
-    // cria o grupo "/geometry" no arquivo
-    group_id = H5Gcreate2(file_id, "/geometry", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    status = H5Gclose(group_id);
-    
-    // cria o grupo "/topology" no arquivo
-    group_id = H5Gcreate2(file_id, "/topology", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    status = H5Gclose(group_id);
-
-    // cria o grupo "/point_data" no arquivo
-    group_id = H5Gcreate2(file_id, "/point_data", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    status = H5Gclose(group_id);
-
-    // cria o grupo "/cell_data" no arquivo
-    group_id = H5Gcreate2(file_id, "/cell_data", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    status = H5Gclose(group_id);
-
-    //
-    // prepare to write time array to HDF5 file
-    //
-    double * time = new double[nsteps];
-    for(int i=0; i<nsteps; i++) 
-        time[i] = i*step;
-
-    // open HDF5 dataset and write array
-    file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-    if(H5Lexists(file_id, "/time", H5P_DEFAULT) == false)
+    // time array [nsteps, 1]
     {
-        dims[0] = nsteps;
-        dims[1] = 1;
-        dims[2] = 1;
-        dataspace_id = H5Screate_simple(2, dims, NULL);
-       
-        dataset_id = H5Dcreate(file_id, "/time", H5T_NATIVE_DOUBLE, dataspace_id,
-                               H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-        status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
-                          H5P_DEFAULT, time);
-        status = H5Dclose(dataset_id);    
-        status = H5Sclose(dataspace_id);
+        std::vector<std::vector<double>> time(ns, std::vector<double>(1));
+        for (std::size_t i = 0; i < ns; ++i) time[i][0] = i * step;
+        f.createDataSet("/time", time);
     }
-    delete time;
-      
-    //
-    // write coordinates of the mesh in HDF5 file
-    //
-    std::vector<arma::vec3> pts = mesh->get_points();
-    double * coords = new double[3*np];
-    for(uint i=0; i<np; i++)
+
+    // geometry coordinates [np, 3]
     {
-        arma::vec3 pt = pts[i];
-        coords[i*3 + 0] = pt(0);
-        coords[i*3 + 1] = pt(1);
-        coords[i*3 + 2] = pt(2);
-    }                        
-    dims[0] = np;
-    dims[1] = 3;
-    dataspace_id = H5Screate_simple(2, dims, NULL);   
-    dataset_id = H5Dcreate(file_id, "/geometry/coordinates", H5T_NATIVE_DOUBLE, 
-                           dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, 
-                    H5P_DEFAULT, coords);    
-    status = H5Dclose(dataset_id); 
-    status = H5Sclose(dataspace_id);
-    delete [] coords;     
-    
-    //
-    // write connectivity of the mesh in HDF5 file 
-    //
-    int ne = mesh->get_n_elements();
-    int nn = mesh->get_nen();      
-    int * connec = new int[ne*nn];
-    for(int i=0; i<ne; i++)
-    {   
-        std::vector<int> ptnums;
-        mesh->get_element_pt_nums(i, ptnums);
-        for(int j=0; j<nn; j++)
-        {
-            connec[i*nn + j] = ptnums[j];
+        const std::vector<arma::vec3> & pts = mesh->get_points();
+        std::vector<std::vector<double>> coords(np, std::vector<double>(3));
+        for (std::size_t i = 0; i < np; ++i) {
+            coords[i][0] = pts[i](0);
+            coords[i][1] = pts[i](1);
+            coords[i][2] = pts[i](2);
         }
+        f.createDataSet("/geometry/coordinates", coords);
     }
 
+    // topology connectivity [ne, nn]
     // TODO: mesh is fixed for one type of element only -> improve this
-    dims[0] = ne;    
-    dims[1] = nn;
-    dataspace_id = H5Screate_simple(2, dims, NULL);
+    {
+        std::vector<std::vector<int>> connec(ne, std::vector<int>(nn));
+        for (std::size_t i = 0; i < ne; ++i) {
+            std::vector<int> ptnums;
+            mesh->get_element_pt_nums(i, ptnums);
+            for (std::size_t j = 0; j < nn; ++j) connec[i][j] = ptnums[j];
+        }
+        f.createDataSet("/topology/connectivity", connec);
+    }
 
-    dataset_id = H5Dcreate(file_id, "/topology/connectivity", H5T_NATIVE_INT, dataspace_id,
-                           H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    status = H5Dwrite(dataset_id, H5T_NATIVE_INT, H5S_ALL, H5S_ALL,
-                      H5P_DEFAULT, connec);
-    status = H5Dclose(dataset_id);    
-    status = H5Sclose(dataspace_id);
-    delete connec;
-    
-    // 
-    // vertex fields 
-    //
+    // nodal fields [nsteps, np]
+    create_dataset<double>(f, "/point_data/vm",            {ns, np});
+    create_dataset<double>(f, "/point_data/active_stress", {ns, np});
+    create_dataset<double>(f, "/point_data/lambda_f",      {ns, np});
+    create_dataset<double>(f, "/point_data/lambda_rate",   {ns, np});
 
-    // all vertex fields will be initialized to zero
-    props = H5Pcreate(H5P_DATASET_CREATE);
-    status = H5Pset_fill_value(props, H5T_NATIVE_DOUBLE, &fill_zero);
+    // cell fields [nsteps, ne]
+    create_dataset<double>(f, "/cell_data/stress",      {ns, ne});
+    create_dataset<double>(f, "/cell_data/strain",      {ns, ne});
+    create_dataset<double>(f, "/cell_data/Ta_applied",  {ns, ne});
+    create_dataset<double>(f, "/cell_data/ta_scale",    {ns, ne});
+    create_dataset<double>(f, "/cell_data/long_strain", {ns, ne});
+    create_dataset<double>(f, "/cell_data/circ_strain", {ns, ne});
+    create_dataset<double>(f, "/cell_data/rad_strain",  {ns, ne});
 
-    // VM array
-    //double * vm = new double[nsteps*np];
-    //for(hsize_t i=0; i<nsteps*np; i++)
-    //    vm[i] = 0.0;
-    props = H5Pcreate(H5P_DATASET_CREATE);
-    status = H5Pset_fill_value(props, H5T_NATIVE_DOUBLE, &fill_zero);
-                
-    // cria o dataset coordinates0 (inicial)
-    dims[0] = nsteps;
-    dims[1] = np;        
-    dataspace_id = H5Screate_simple(2, dims, NULL);          
-    dataset_id = H5Dcreate(file_id, "/point_data/vm", H5T_NATIVE_DOUBLE, 
-                            dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
-    //status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
-    //                H5P_DEFAULT, vm);
-    status = H5Dclose(dataset_id); 
-    status = H5Sclose(dataspace_id);
+    // fibrosis + aha_marker: per-element values replicated across all steps,
+    // stored as doubles to match the existing on-disk layout
+    {
+        std::vector<std::vector<double>> fib(ns, std::vector<double>(ne));
+        for (std::size_t i = 0; i < ns; ++i)
+            for (std::size_t e = 0; e < ne; ++e)
+                fib[i][e] = static_cast<double>(mesh->get_element(e).get_index());
+        f.createDataSet("/cell_data/fibrosis", fib);
 
-    // ACTIVE STRESS array (nodal, same layout as vm). The active tension of
-    // the cell model lives on the nodes, exactly like the potential.
-    dims[0] = nsteps;
-    dims[1] = np;
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/point_data/active_stress",
-                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
-                           props, H5P_DEFAULT);
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
+        std::vector<std::vector<double>> aha(ns, std::vector<double>(ne));
+        for (std::size_t i = 0; i < ns; ++i)
+            for (std::size_t e = 0; e < ne; ++e)
+                aha[i][e] = static_cast<double>(mesh->get_element(e).get_aha_num());
+        f.createDataSet("/cell_data/aha_marker", aha);
+    }
 
-    // FIBRE STRETCH array (nodal, same layout as vm and active_stress).
-    // lambda_f = sqrt(I4f) comes from the mechanics and is handed to the
-    // cell model; 
-    dims[0] = nsteps;
-    dims[1] = np;
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/point_data/lambda_f",
-                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
-                           props, H5P_DEFAULT);
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-
-    // FIBRE STRETCH RATE array (nodal, same layout as lambda_f).
-    // d(lambda_f)/dt in the CELL MODEL's own time unit (1/ms for ToRORd)
-    dims[0] = nsteps;
-    dims[1] = np;
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/point_data/lambda_rate",
-                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
-                           props, H5P_DEFAULT);
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-
-
-    // cria o dataset coordinates0 (inicial)
-    dims[0] = nsteps;
-    dims[1] = ne;
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/cell_data/stress", H5T_NATIVE_DOUBLE,
-                           dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
-    //status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
-    //                H5P_DEFAULT, vm);
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/cell_data/strain", H5T_NATIVE_DOUBLE,
-                         dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
-
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-    //fim teste
-
-    // TENSAO ATIVA EFETIVAMENTE APLICADA (por elemento).
-    // Media nodal de Ta no elemento vezes o ta_scale do material. E o que a
-    // montagem usa; o campo nodal "active_stress" e o valor BRUTO do modelo
-    // celular, antes da escala por material, e os dois nao coincidem.
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/cell_data/Ta_applied",
-                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
-                           props, H5P_DEFAULT);
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-
-    // Mapa do multiplicador ta_scale por elemento. Constante no tempo, mas
-    // gravado como campo para poder ser sobreposto aos demais no ParaView.
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/cell_data/ta_scale",
-                           H5T_NATIVE_DOUBLE, dataspace_id, H5P_DEFAULT,
-                           props, H5P_DEFAULT);
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/cell_data/long_strain", H5T_NATIVE_DOUBLE,
-                         dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
-
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-    //fim teste
-
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/cell_data/circ_strain", H5T_NATIVE_DOUBLE,
-                         dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
-
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-    //fim teste
-
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/cell_data/rad_strain", H5T_NATIVE_DOUBLE,
-                         dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
-
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-    //fim teste
-
-  dataspace_id = H5Screate_simple(2, dims, NULL);
-  dataset_id = H5Dcreate(file_id, "/cell_data/fibrosis", H5T_NATIVE_DOUBLE,
-                         dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
-  int * aha = new int[nsteps*ne];
-  for(hsize_t i=0; i<nsteps; i++)
-    for(hsize_t e=0; e<ne; e++)
-      aha[e + ne*i] = mesh->get_element(e).get_index();
-  status = H5Dwrite(dataset_id, H5T_NATIVE_INT, H5S_ALL, H5S_ALL,
-                    H5P_DEFAULT, aha);
-
-  status = H5Dclose(dataset_id);
-  status = H5Sclose(dataspace_id);
-  //fim teste
-
-  dataspace_id = H5Screate_simple(2, dims, NULL);
-  dataset_id = H5Dcreate(file_id, "/cell_data/aha_marker", H5T_NATIVE_DOUBLE,
-                         dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
-
-  for(hsize_t i=0; i<nsteps; i++)
-    for(hsize_t e=0; e<ne; e++)
-      aha[e + ne*i] = mesh->get_element(e).get_aha_num();
-  status = H5Dwrite(dataset_id, H5T_NATIVE_INT, H5S_ALL, H5S_ALL,
-                    H5P_DEFAULT, aha);
-
-  status = H5Dclose(dataset_id);
-  status = H5Sclose(dataspace_id);
-  //fim teste
-
-  delete [] aha;
-
-    //delete [] vm;
-        
-    // DISPLACEMENT array
-    //double * displ = new double[nsteps*3*np];
-    //for(hsize_t i=0; i<nsteps*3*np; i++)
-    //    displ[i] = 0.0;
-
-    // cria o dataset coordinates0 (inicial)
-    dims[0] = nsteps;
-    dims[1] = np;
-    dims[2] = 3;
-    dataspace_id = H5Screate_simple(3, dims, NULL);       
-    dataset_id = H5Dcreate(file_id, "/point_data/displacements", H5T_NATIVE_DOUBLE,
-                            dataspace_id, H5P_DEFAULT, props, H5P_DEFAULT);
-    //status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
-    //                H5P_DEFAULT, displ);
-    status = H5Dclose(dataset_id); 
-    status = H5Sclose(dataspace_id);
-    //delete [] displ;
-    
-    // fecha o arquivo
-    status = H5Fclose(file_id);
-
-    if(status != 0) H5Eprint2(status,NULL);
+    // displacement vector field [nsteps, np, 3]
+    create_dataset<double>(f, "/point_data/displacements", {ns, np, 3});
 }
-
 
 void WriterHDF5::write_cell_field_step(int step, const double *data, string fieldname)
 {
-  hid_t file_id, dataset_id, dataspace_id, memspace_id;
-  herr_t status;
-
-  // open an existing file.
-  //cout << "Filename: " << h5name.c_str() << endl;
-  file_id    = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-  string auxstr = string("/cell_data/") + fieldname.c_str();
-  dataset_id = H5Dopen(file_id, auxstr.c_str(), H5P_DEFAULT);
-
-  hsize_t k = step;
-  hsize_t np = mesh->get_n_elements();
-  hsize_t dims[2]   = {1,np};
-  hsize_t start[2]  = {k,0};
-  hsize_t count[2]  = {1,np};
-  hsize_t stride[2] = {1,1};
-  hsize_t block[2]  = {1,1};
-
-  // define memory dataspace
-  memspace_id = H5Screate_simple(2, dims, NULL);
-
-  // select hyperslab
-  dataspace_id = H5Dget_space(dataset_id);
-  status = H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET,
-                               start, stride, count, block);
-
-  // write data
-  status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, memspace_id, dataspace_id,
-                    H5P_DEFAULT, data);
-
-  // close stuff
-  status = H5Sclose(dataspace_id);
-  status = H5Dclose(dataset_id);
-  status = H5Fclose(file_id);
-
-  if(status != 0) H5Eprint2(status,NULL);
+    write_row(h5name, std::string("/cell_data/") + fieldname,
+              static_cast<std::size_t>(step), data, mesh->get_n_elements());
 }
 
 void WriterHDF5::write_eikonal_lat(const std::string & file, const double *lat_data)
@@ -366,54 +152,44 @@ void WriterHDF5::write_eikonal_lat(const std::string & file, const double *lat_d
     std::string base = file;
     std::size_t pos = file.find_last_of("/");
     if (pos != std::string::npos) base = file.substr(pos + 1);
-    
-    std::string h5_file = base + "_lat.h5";
+
+    std::string h5_file  = base + "_lat.h5";
     std::string xmf_file = base + "_lat.xmf";
 
-    hid_t file_id = H5Fcreate(h5_file.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-    
-    H5Gclose(H5Gcreate2(file_id, "/geometry", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
-    H5Gclose(H5Gcreate2(file_id, "/topology", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
-    H5Gclose(H5Gcreate2(file_id, "/point_data", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
+    const std::size_t np = mesh->get_n_points();
+    const std::size_t ne = mesh->get_n_elements();
+    const std::size_t nn = mesh->get_nen();
 
-    hsize_t np = mesh->get_n_points();
-    std::vector<arma::vec3> pts = mesh->get_points();
-    double *coords = new double[3 * np];
-    for (uint i = 0; i < np; i++) {
-        coords[i * 3 + 0] = pts[i](0);
-        coords[i * 3 + 1] = pts[i](1);
-        coords[i * 3 + 2] = pts[i](2);
+    // hdf5 part
+    {
+        File f(h5_file, File::Truncate);
+        f.createGroup("/geometry");
+        f.createGroup("/topology");
+        f.createGroup("/point_data");
+
+        std::vector<arma::vec3> pts = mesh->get_points();
+        std::vector<std::vector<double>> coords(np, std::vector<double>(3));
+        for (std::size_t i = 0; i < np; ++i) {
+            coords[i][0] = pts[i](0);
+            coords[i][1] = pts[i](1);
+            coords[i][2] = pts[i](2);
+        }
+        f.createDataSet("/geometry/coordinates", coords);
+
+        std::vector<std::vector<int>> connec(ne, std::vector<int>(nn));
+        for (std::size_t i = 0; i < ne; ++i) {
+            std::vector<int> ptnums;
+            mesh->get_element_pt_nums(i, ptnums);
+            for (std::size_t j = 0; j < nn; ++j) connec[i][j] = ptnums[j];
+        }
+        f.createDataSet("/topology/connectivity", connec);
+
+        // lat [np]
+        std::vector<double> lat(lat_data, lat_data + np);
+        f.createDataSet("/point_data/lat", lat);
     }
-    hsize_t dims_geom[2] = {np, 3};
-    hid_t space_geom = H5Screate_simple(2, dims_geom, NULL);
-    hid_t dset_geom = H5Dcreate(file_id, "/geometry/coordinates", H5T_NATIVE_DOUBLE, space_geom, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    H5Dwrite(dset_geom, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, coords);
-    H5Dclose(dset_geom); H5Sclose(space_geom);
-    delete[] coords;
 
-    int ne = mesh->get_n_elements();
-    int nn = mesh->get_nen();
-    int *connec = new int[ne * nn];
-    for (int i = 0; i < ne; i++) {
-        std::vector<int> ptnums;
-        mesh->get_element_pt_nums(i, ptnums);
-        for (int j = 0; j < nn; j++) connec[i * nn + j] = ptnums[j];
-    }
-    hsize_t dims_top[2] = {(hsize_t)ne, (hsize_t)nn};
-    hid_t space_top = H5Screate_simple(2, dims_top, NULL);
-    hid_t dset_top = H5Dcreate(file_id, "/topology/connectivity", H5T_NATIVE_INT, space_top, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    H5Dwrite(dset_top, H5T_NATIVE_INT, H5S_ALL, H5S_ALL, H5P_DEFAULT, connec);
-    H5Dclose(dset_top); H5Sclose(space_top);
-    delete[] connec;
-
-    hsize_t dims_lat[1] = {np};
-    hid_t space_lat = H5Screate_simple(1, dims_lat, NULL);
-    hid_t dset_lat = H5Dcreate(file_id, "/point_data/lat", H5T_NATIVE_DOUBLE, space_lat, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    H5Dwrite(dset_lat, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, lat_data);
-    H5Dclose(dset_lat); H5Sclose(space_lat);
-
-    H5Fclose(file_id);
-
+    // xdmf part
     int nd = mesh->get_n_dim();
     std::string toptype;
     if (nn == 2) toptype = "Polyline";
@@ -429,15 +205,15 @@ void WriterHDF5::write_eikonal_lat(const std::string & file, const double *lat_d
         << "  <Domain>\n"
         << "    <Grid Name=\"Mesh\" GridType=\"Uniform\">\n"
         << "      <Topology TopologyType=\"" << toptype << "\" NumberOfElements=\"" << ne << "\">\n"
-        << "        <DataItem Format=\"HDF\" DataType=\"Int\" Dimensions=\"" << ne << " " << nn << "\">" 
+        << "        <DataItem Format=\"HDF\" DataType=\"Int\" Dimensions=\"" << ne << " " << nn << "\">"
         << h5_file << ":/topology/connectivity</DataItem>\n"
         << "      </Topology>\n"
         << "      <Geometry GeometryType=\"XYZ\">\n"
-        << "        <DataItem Format=\"HDF\" NumberType=\"Double\" Precision=\"8\" Dimensions=\"" << np << " 3\">" 
+        << "        <DataItem Format=\"HDF\" NumberType=\"Double\" Precision=\"8\" Dimensions=\"" << np << " 3\">"
         << h5_file << ":/geometry/coordinates</DataItem>\n"
         << "      </Geometry>\n"
         << "      <Attribute Name=\"LAT\" AttributeType=\"Scalar\" Center=\"Node\">\n"
-        << "        <DataItem Format=\"HDF\" Dimensions=\"" << np << "\">" 
+        << "        <DataItem Format=\"HDF\" Dimensions=\"" << np << "\">"
         << h5_file << ":/point_data/lat</DataItem>\n"
         << "      </Attribute>\n"
         << "    </Grid>\n"
@@ -449,305 +225,68 @@ void WriterHDF5::write_eikonal_lat(const std::string & file, const double *lat_d
 void WriterHDF5::write_point_field_step(int step, const double *data,
                                         string fieldname)
 {
-  // Same as write_vm_step, but for any node-centred scalar field. The
-  // dataset must already exist in the HDF5 file (see write_hdf5) and the
-  // matching attribute must be declared in the XDMF (see write_xdmf).
-  hid_t file_id, dataset_id, dataspace_id, memspace_id;
-  herr_t status;
+    const std::string path = std::string("/point_data/") + fieldname;
 
-  file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-  string auxstr = string("/point_data/") + fieldname.c_str();
+    File f(h5name, File::ReadWrite);
 
-  // A field that was never created in write_hdf5() cannot be written into.
-  // Without this check H5Dopen fails and every call afterwards (get_space,
-  // select_hyperslab, write) fails too, burying the real cause under a wall
-  // of HDF5-DIAG output once per output step.
-  if (H5Lexists(file_id, auxstr.c_str(), H5P_DEFAULT) <= 0)
-  {
-    cout << " Warning: nodal field '" << fieldname
-         << "' has no dataset in the HDF5 file; not written."
-         << " Add it to WriterHDF5::write_hdf5() and"
-         << " WriterHDF5::write_xdmf()." << endl;
-    H5Fclose(file_id);
-    return;
-  }
+    // a field that was never created cannot be written into; warn once and skip
+    if (!f.exist(path))
+    {
+        cout << " Warning: nodal field '" << fieldname
+             << "' has no dataset in the HDF5 file; not written."
+             << " Add it to WriterHDF5::write_hdf5() and"
+             << " WriterHDF5::write_xdmf()." << endl;
+        return;
+    }
 
-  dataset_id = H5Dopen(file_id, auxstr.c_str(), H5P_DEFAULT);
-
-  hsize_t k = step;
-  hsize_t np = mesh->get_n_points();
-  hsize_t dims[2]   = {1,np};
-  hsize_t start[2]  = {k,0};
-  hsize_t count[2]  = {1,np};
-  hsize_t stride[2] = {1,1};
-  hsize_t block[2]  = {1,1};
-
-  // define memory dataspace
-  memspace_id = H5Screate_simple(2, dims, NULL);
-
-  // select hyperslab
-  dataspace_id = H5Dget_space(dataset_id);
-  status = H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET,
-                               start, stride, count, block);
-
-  // write data
-  status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, memspace_id, dataspace_id,
-                    H5P_DEFAULT, data);
-
-  // close stuff
-  status = H5Sclose(dataspace_id);
-  status = H5Dclose(dataset_id);
-  status = H5Fclose(file_id);
-
-  if(status != 0) H5Eprint2(status,NULL);
+    auto dset = f.getDataSet(path);
+    dset.select({static_cast<std::size_t>(step), 0},
+                {1, mesh->get_n_points()}).write_raw(data);
 }
 
-
 void WriterHDF5::write_vm_step(int step, const double *data)
-{    
-    hid_t file_id, dataset_id, dataspace_id, memspace_id;
-    herr_t status;
-
-    // open an existing file.
-    // cout << "VM Filename: " << h5name.c_str() << endl;
-
-    file_id    = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-    dataset_id = H5Dopen(file_id, "/point_data/vm", H5P_DEFAULT);    
-   
-    hsize_t k = step;
-    hsize_t np = mesh->get_n_points();    
-    hsize_t dims[2]   = {1,np};
-    hsize_t start[2]  = {k,0};
-    hsize_t count[2]  = {1,np};
-    hsize_t stride[2] = {1,1};    
-    hsize_t block[2]  = {1,1};    
-    
-    // define memory dataspace
-    memspace_id = H5Screate_simple(2, dims, NULL);
-  
-    // select hyperslab
-    dataspace_id = H5Dget_space(dataset_id);   
-    status = H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET, 
-            start, stride, count, block);           
-    
-    // write data
-    status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, memspace_id, dataspace_id, 
-            H5P_DEFAULT, data);    
-     
-    // close stuff
-    status = H5Sclose(dataspace_id);
-    status = H5Dclose(dataset_id);
-    status = H5Fclose(file_id);
-
-    if(status != 0) H5Eprint2(status,NULL);
+{
+    write_row(h5name, "/point_data/vm",
+              static_cast<std::size_t>(step), data, mesh->get_n_points());
 }
 
 void WriterHDF5::write_displ_step(int step, const double *displ)
 {
-    hid_t file_id, dataset_id, dataspace_id, memspace_id;
-    herr_t status;    
-       
-    // open an existing file.
-  //cout <<  "H5Fopen" << endl;
-    file_id    = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-  //cout <<  "H5Dopen" << endl;
-    dataset_id = H5Dopen(file_id, "/point_data/displacements", H5P_DEFAULT);
-       
-    hsize_t k = step;
-    hsize_t np = mesh->get_n_points();    
-    hsize_t dims[3]   = {1,np,3};    
-    hsize_t start[3]  = {k,0,0};
-    hsize_t count[3]  = {1,np,3};
-    hsize_t stride[3] = {1,1,1};    
-    hsize_t block[3]  = {1,1,1};        
-    
-    // define memory dataspace
-  //cout <<  "H5Screate_simple" << endl;
-    memspace_id = H5Screate_simple(3, dims, NULL);
-  
-    // select hyperslab
-  //cout <<  "H5Dget_space" << endl;
-    dataspace_id = H5Dget_space(dataset_id);
-  //cout <<  "H5Sselect_hyperslab" << endl;
-    status = H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET,
-                                 start, stride, count, block);
-  if(status != 0) H5Eprint2(status,NULL);
-    // write data
-  //cout <<  "H5Dwrite" << endl;
-    status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, memspace_id,
-                      dataspace_id, H5P_DEFAULT, displ);
-  if(status != 0) H5Eprint2(status,NULL);
-  //cout <<  "H5Sclose" << endl;
-  status = H5Sclose(dataspace_id);
-  if(status != 0) H5Eprint2(status,NULL);
-  //cout <<  "H5Dclose" << endl;
-  status = H5Dclose(dataset_id);
-  if(status != 0) H5Eprint2(status,NULL);
-  //cout <<  "H5Fclose" << endl;
-  status = H5Fclose(file_id);
-
-    if(status != 0) H5Eprint2(status,NULL);
+    // displacement [nsteps, np, 3]; write the [1, np, 3] slice for `step`
+    File f(h5name, File::ReadWrite);
+    auto dset = f.getDataSet("/point_data/displacements");
+    const std::size_t np = mesh->get_n_points();
+    dset.select({static_cast<std::size_t>(step), 0, 0}, {1, np, 3}).write_raw(displ);
 }
 
 void WriterHDF5::add_ve()
-{       
-    hid_t  file_id, dataset_id, dataspace_id;
-    herr_t status;
-
-    file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-    
-    // query vm dataset to find dimensions
-    dataset_id = H5Dopen(file_id, "/point_data/vm", H5P_DEFAULT);     
-    dataspace_id = H5Dget_space(dataset_id);
-    const int ndims = H5Sget_simple_extent_ndims(dataspace_id);
-    hsize_t dims[ndims];
-    H5Sget_simple_extent_dims(dataspace_id, dims, NULL);    
-    status = H5Dclose(dataset_id); 
-    status = H5Sclose(dataspace_id);    
-
-    // then create ve dataset
-    hsize_t nsteps = dims[0];
-    hsize_t nnodes = dims[1];
-
-    double * ve = new double[nsteps*nnodes];
-    for(hsize_t i=0; i<nsteps*nnodes; i++)
-        ve[i] = 0.0;
-                
-    // cria o dataset coordinates0 (inicial)
-    dims[0] = nsteps;
-    dims[1] = nnodes;        
-    dataspace_id = H5Screate_simple(2, dims, NULL);          
-    dataset_id = H5Dcreate(file_id, "/point_data/ve", H5T_NATIVE_DOUBLE, 
-                            dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, 
-                    H5P_DEFAULT, ve);
-    status = H5Dclose(dataset_id); 
-    status = H5Sclose(dataspace_id);
-    status = H5Fclose(file_id);
-
-    if(status != 0) H5Eprint2(status,NULL);
-
-    delete [] ve;
+{
+    // create /point_data/ve with the same [nsteps, nnodes] shape as vm
+    File f(h5name, File::ReadWrite);
+    auto vm = f.getDataSet("/point_data/vm");
+    auto dims = vm.getSpace().getDimensions();
+    f.createDataSet<double>("/point_data/ve", DataSpace(dims));
 }
 
 void WriterHDF5::add_scalar_field(std::string & field_name)
 {
-    hid_t  file_id, dataset_id, dataspace_id;
-    herr_t status;
-
-    file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-
-    std::string scalarfield = "/point_data/" + field_name;
-
-    // query vm dataset to find dimensions
-    dataset_id = H5Dopen(file_id, scalarfield.c_str(), H5P_DEFAULT);
-    dataspace_id = H5Dget_space(dataset_id);
-    const int ndims = H5Sget_simple_extent_ndims(dataspace_id);
-    hsize_t dims[ndims];
-    H5Sget_simple_extent_dims(dataspace_id, dims, NULL);
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-
-    // then create ve dataset
-    hsize_t nsteps = dims[0];
-    hsize_t nnodes = dims[1];
-
-    double * ve = new double[nsteps*nnodes];
-    for(hsize_t i=0; i<nsteps*nnodes; i++)
-        ve[i] = 0.0;
-
-    // cria o dataset coordinates0 (inicial)
-    dims[0] = nsteps;
-    dims[1] = nnodes;
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/point_data/ve", H5T_NATIVE_DOUBLE,
-                           dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
-                      H5P_DEFAULT, ve);
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-    status = H5Fclose(file_id);
-
-    if(status != 0) H5Eprint2(status,NULL);
-
-    delete [] ve;
+    // size the new field from an existing field's dimensions; as in the
+    // original, the created dataset is /point_data/ve
+    File f(h5name, File::ReadWrite);
+    auto src = f.getDataSet(std::string("/point_data/") + field_name);
+    auto dims = src.getSpace().getDimensions();
+    f.createDataSet<double>("/point_data/ve", DataSpace(dims));
 }
 
 void WriterHDF5::add_fibers()
 {
-    /*
-    hid_t  file_id, dataset_id, dataspace_id;
-    herr_t status;
-
-    file_id = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-
-    // query vm dataset to find dimensions
-    dataset_id = H5Dopen(file_id, "/point_data/vm", H5P_DEFAULT);
-    dataspace_id = H5Dget_space(dataset_id);
-    const int ndims = H5Sget_simple_extent_ndims(dataspace_id);
-    hsize_t dims[ndims];
-    H5Sget_simple_extent_dims(dataspace_id, dims, NULL);
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-
-    // then create ve dataset
-    hsize_t nsteps = dims[0];
-    hsize_t nnodes = dims[1];
-    double * ve = new double[nsteps*nnodes];
-    for(hsize_t i=0; i<nsteps*nnodes; i++)
-        ve[i] = 0.0;
-
-    // cria o dataset coordinates0 (inicial)
-    dims[0] = nsteps;
-    dims[1] = nnodes;
-    dataspace_id = H5Screate_simple(2, dims, NULL);
-    dataset_id = H5Dcreate(file_id, "/point_data/ve", H5T_NATIVE_DOUBLE,
-                           dataspace_id, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL,
-                      H5P_DEFAULT, ve);
-    status = H5Dclose(dataset_id);
-    status = H5Sclose(dataspace_id);
-    status = H5Fclose(file_id);
-
-    delete [] ve;
-     */
+    // unchanged: body was commented out in the original
 }
 
 void WriterHDF5::write_ve_step(int step, const double *data)
-{    
-    hid_t     file_id, dataset_id, dataspace_id, memspace_id;
-    herr_t    status;    
-
-    // open an existing file.
-    file_id    = H5Fopen(h5name.c_str(), H5F_ACC_RDWR, H5P_DEFAULT);
-    dataset_id = H5Dopen(file_id, "/point_data/ve", H5P_DEFAULT);    
-   
-    hsize_t k = step;
-    hsize_t np = mesh->get_n_points();    
-    hsize_t dims[2]   = {1,np};
-    hsize_t start[2]  = {k,0};
-    hsize_t count[2]  = {1,np};
-    hsize_t stride[2] = {1,1};    
-    hsize_t block[2]  = {1,1};    
-    
-    // define memory dataspace
-    memspace_id = H5Screate_simple(2, dims, NULL);
-  
-    // select hyperslab
-    dataspace_id = H5Dget_space(dataset_id);   
-    status = H5Sselect_hyperslab(dataspace_id, H5S_SELECT_SET, 
-            start, stride, count, block);           
-    
-    // write data
-    status = H5Dwrite(dataset_id, H5T_NATIVE_DOUBLE, memspace_id, dataspace_id, 
-            H5P_DEFAULT, data);    
-     
-    // close stuff
-    status = H5Sclose(dataspace_id);
-    status = H5Dclose(dataset_id);
-    status = H5Fclose(file_id);
-
-    if(status != 0) H5Eprint2(status,NULL);
+{
+    write_row(h5name, "/point_data/ve",
+              static_cast<std::size_t>(step), data, mesh->get_n_points());
 }
 
 void WriterHDF5::write_xdmf(const std::string & file, int nsteps, 
@@ -1186,52 +725,26 @@ void WriterHDF5::write_checkpoint(int step, double current_time, const double *v
 
 void WriterHDF5::read_checkpoint_metadata(const std::string &filename, int &step, double &time, int &num_nodes, int &num_vars)
 {
-    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
-    if (file_id < 0) {
-        throw std::runtime_error("Error: Not possible to open checkpoint file: " + filename);
-    }
+    HighFive::File file(filename, HighFive::File::ReadOnly);
 
-    hid_t attr_step = H5Aopen(file_id, "step", H5P_DEFAULT);
-    H5Aread(attr_step, H5T_NATIVE_INT, &step);
-    H5Aclose(attr_step);
+    file.getAttribute("step").read(step);
+    file.getAttribute("time").read(time);
 
-    hid_t attr_time = H5Aopen(file_id, "time", H5P_DEFAULT);
-    H5Aread(attr_time, H5T_NATIVE_DOUBLE, &time);
-    H5Aclose(attr_time);
-
-    hid_t dataset_vm = H5Dopen2(file_id, "/ep/vm", H5P_DEFAULT);
-    hid_t space_vm = H5Dget_space(dataset_vm);
-    hsize_t dims_vm[1];
-    H5Sget_simple_extent_dims(space_vm, dims_vm, NULL);
+    auto dims_vm = file.getDataSet("/ep/vm").getSpace().getDimensions();
     num_nodes = (int)dims_vm[0];
-    
-    H5Sclose(space_vm);
-    H5Dclose(dataset_vm);
 
-    hid_t dataset_sv = H5Dopen2(file_id, "/ep/state_variables", H5P_DEFAULT);
-    hid_t space_sv = H5Dget_space(dataset_sv);
-    hsize_t dims_sv[2];
-    H5Sget_simple_extent_dims(space_sv, dims_sv, NULL);
+    auto dims_sv = file.getDataSet("/ep/state_variables").getSpace().getDimensions();
     num_vars = (int)dims_sv[1];
-    
-    H5Sclose(space_sv);
-    H5Dclose(dataset_sv);
-    H5Fclose(file_id);
 }
 
 void WriterHDF5::read_checkpoint_data(const std::string &filename, double *vm, double *state_vars)
 {
-    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    HighFive::File file(filename, HighFive::File::ReadOnly);
 
-    hid_t dataset_vm = H5Dopen2(file_id, "/ep/vm", H5P_DEFAULT);
-    H5Dread(dataset_vm, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, vm);
-    H5Dclose(dataset_vm);
-
-    hid_t dataset_sv = H5Dopen2(file_id, "/ep/state_variables", H5P_DEFAULT);
-    H5Dread(dataset_sv, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, state_vars);
-    H5Dclose(dataset_sv);
-
-    H5Fclose(file_id);
+    // read_raw fills the caller-provided buffers, which must already be sized
+    // (via read_checkpoint_metadata) to match the datasets on disk.
+    file.getDataSet("/ep/vm").read_raw(vm);
+    file.getDataSet("/ep/state_variables").read_raw(state_vars);
 }
 
 void WriterHDF5::write_mech_checkpoint(int step, double current_time, int load_increment, double load_factor,
@@ -1308,55 +821,29 @@ void WriterHDF5::read_mech_checkpoint_metadata(const std::string &filename,
                                                int &step, double &time, int &load_increment, 
                                                double &load_factor, int &num_dofs)
 {
-    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
-    
-    hid_t attr_step = H5Aopen(file_id, "step", H5P_DEFAULT);
-    H5Aread(attr_step, H5T_NATIVE_INT, &step);
-    H5Aclose(attr_step);
+    HighFive::File file(filename, HighFive::File::ReadOnly);
 
-    hid_t attr_time = H5Aopen(file_id, "time", H5P_DEFAULT);
-    H5Aread(attr_time, H5T_NATIVE_DOUBLE, &time);
-    H5Aclose(attr_time);
+    file.getAttribute("step").read(step);
+    file.getAttribute("time").read(time);
 
-    hid_t group_mech = H5Gopen2(file_id, "/mechanics", H5P_DEFAULT);
-    
-    hid_t attr_load = H5Aopen(group_mech, "load_increment", H5P_DEFAULT);
-    H5Aread(attr_load, H5T_NATIVE_INT, &load_increment);
-    H5Aclose(attr_load);
+    auto group_mech = file.getGroup("/mechanics");
+    group_mech.getAttribute("load_increment").read(load_increment);
+    group_mech.getAttribute("load_factor").read(load_factor);
 
-    hid_t attr_lf = H5Aopen(group_mech, "load_factor", H5P_DEFAULT);
-    H5Aread(attr_lf, H5T_NATIVE_DOUBLE, &load_factor);
-    H5Aclose(attr_lf);
-
-    hid_t dset_x = H5Dopen2(group_mech, "x_current", H5P_DEFAULT);
-    hid_t space_x = H5Dget_space(dset_x);
-    hsize_t dims[1];
-    H5Sget_simple_extent_dims(space_x, dims, NULL);
+    auto dims = group_mech.getDataSet("x_current").getSpace().getDimensions();
     num_dofs = (int)dims[0];
-    
-    H5Sclose(space_x);
-    H5Dclose(dset_x);
-    H5Gclose(group_mech);
-    H5Fclose(file_id);
 }
 
 void WriterHDF5::read_mech_checkpoint_data(const std::string &filename, 
                                            double *x_current, double *fext0)
 {
-    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
-    hid_t group_mech = H5Gopen2(file_id, "/mechanics", H5P_DEFAULT);
+    HighFive::File file(filename, HighFive::File::ReadOnly);
+    auto group_mech = file.getGroup("/mechanics");
 
-    auto read_dataset = [&](const char* name, double* data) {
-        hid_t dset = H5Dopen2(group_mech, name, H5P_DEFAULT);
-        H5Dread(dset, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, data);
-        H5Dclose(dset);
-    };
-
-    read_dataset("x_current", x_current);
-    read_dataset("fext0", fext0);
-
-    H5Gclose(group_mech);
-    H5Fclose(file_id);
+    // read_raw fills the caller-provided buffers, which must already be sized
+    // (via read_mech_checkpoint_metadata) to match the datasets on disk.
+    group_mech.getDataSet("x_current").read_raw(x_current);
+    group_mech.getDataSet("fext0").read_raw(fext0);
 }
 
 void WriterHDF5::write_coupled_checkpoint(int step, double current_time, 

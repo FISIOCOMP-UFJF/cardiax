@@ -119,6 +119,15 @@ protected:
   //! Output file stream for pseudo-ECG time series
   std::ofstream ecg_file;
 
+  //! Filename for the HDF5 output (stored to delay opening)
+  std::string out_filename;
+  
+  //! Flag indicating if this is a restart run
+  bool is_restart_run = false;
+
+  //! Number of print steps to skip at the beginning of the file
+  int output_step_offset = 0;
+  
 };
 
 #endif

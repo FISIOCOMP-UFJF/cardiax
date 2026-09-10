@@ -365,12 +365,25 @@ void Monodomain::init(bool is_restart)
   cout << parameters.str();
 
   // setup data writer
-  int nsteps = tip.get_nsteps()/(printrate/timestep);
-  cout << "HDF5 Writer" << endl;
-  cout << " HDF5 save rate = " << printrate << endl;
-  cout << " Number of steps = " << nsteps << endl;
-  cout << " Timestep = " << timestep << endl;
-  writer->open(output, nsteps, timestep, false, is_restart);
+  if(is_restart)
+  {
+    cout << "Initializing Monodomain Solver with restart:" << endl;
+    cout << " Delaying HDF5 Writer " << endl;
+
+    out_filename = output;
+    is_restart_run = is_restart;
+    output_step_offset = 0;
+  }
+  else
+  {
+    int nsteps = tip.get_nsteps()/(printrate/timestep);
+    cout << "HDF5 Writer" << endl;
+    cout << " HDF5 save rate = " << printrate << endl;
+    cout << " Number of steps = " << nsteps << endl;
+    cout << " Timestep = " << timestep << endl;
+    writer->open(output, nsteps, timestep, false, is_restart);
+  }
+  
 
   // setup model and cells
   cellmodel = CellModel::create(cell_name);
@@ -417,10 +430,21 @@ void Monodomain::solve()
 {
   cout << "\nSimulating" << endl;
 
-  // initial_conditions();
+
+  if(is_restart_run)
+  {
+    int total_print_steps = tip.get_nsteps() / tip.pr();
+    int remaining_print_steps = total_print_steps - output_step_offset;
     
+    cout << "HDF5 Writer" << endl;
+    cout << " HDF5 save rate = " << tip.pr() * timestep << endl;
+    cout << " Remaining steps to write = " << remaining_print_steps << endl;
+    writer->open(out_filename, remaining_print_steps, timestep, false, false);
+  }
+  
+
   // loop in time
-  int step = tip.it() / tip.pr();
+  int step = (tip.it() / tip.pr()) - output_step_offset;
   int checkpoint_rate = (int) std::round(checkpoint_interval / timestep);
   if (checkpoint_rate <= 0) checkpoint_rate = -1; 
   
@@ -584,6 +608,8 @@ void Monodomain::restore_checkpoint(string restfilename)
     v0.assemble();    
     v1.set_data(vm.memptr());
     v1.assemble();
+
+    output_step_offset = chk_step / tip.pr();
 
     cout << "  -> Restart successfully configured starting from t = " << chk_time 
      << " (step " << chk_step << ")." << endl;

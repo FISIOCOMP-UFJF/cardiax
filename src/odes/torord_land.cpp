@@ -86,6 +86,12 @@ TorordLand::TorordLand() : CellModel(50) {
   // Variaveis algebricas (nao sao EDOs): tambem entram como "valor direto"
   rlvars.insert(49);                               // Ta (tensao ativa)
 
+//   // RL arrays + fast lookup (new convention: equation() stores inf/tau, solver applies exp)
+//   rl_inf.resize(get_num_state_vars());
+//   rl_tau.resize(get_num_state_vars());
+//   is_rl.assign(get_num_state_vars(), false);
+//   for (int i : rlvars) is_rl[i] = true;
+
 }
 
 void TorordLand::init(double * values) const

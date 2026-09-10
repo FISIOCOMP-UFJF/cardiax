@@ -14,12 +14,13 @@ void ExplicitEuler::advance(double * y, double & t, double & dt)
   // equation() also fills ode->rl_inf[i] / ode->rl_tau[i] for RL vars.
   ode->equation(t, y, dydt.memptr());
 
+  const bool has_rl = !ode->is_rl.empty();   // empty => no RL, pure Euler
   const double* __restrict dy = dydt.memptr();
 
   // Advance
   for (int i = 0; i < n; i++)
   {
-    if (ode->is_rl[i])
+    if (has_rl && ode->is_rl[i])
       y[i] = ode->rl_inf[i] + (y[i] - ode->rl_inf[i]) * std::exp(-dt / ode->rl_tau[i]);
     else
       y[i] += dt * dy[i];

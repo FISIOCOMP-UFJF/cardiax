@@ -30,7 +30,7 @@ void BidomainDeformation::advance(const ArrayMat33 & vec_F)
   static int vm_apd_step=0;
   static int vestep=0;
 
-  if(vec_F.empty()) error("vecF is empty");
+  if(vec_F.empty()) show_error("vecF is empty");
 
   if( !tip.finished() )
   {

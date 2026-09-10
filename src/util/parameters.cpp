@@ -58,7 +58,7 @@ void Parameters::clear()
 void Parameters::add(std::string key, int value)
 {
   if (find_parameter(key))
-    error("parameter already defined");
+    show_error("parameter already defined");
 
   _parameters[key] = new IntParameter(key, value);
 }
@@ -66,7 +66,7 @@ void Parameters::add(std::string key, int value)
 void Parameters::add(std::string key, double value)
 {
   if (find_parameter(key))
-    error("parameter already defined");
+    show_error("parameter already defined");
 
   _parameters[key] = new DoubleParameter(key, value);
 }
@@ -74,7 +74,7 @@ void Parameters::add(std::string key, double value)
 void Parameters::add(std::string key, std::string value)
 {
   if (find_parameter(key))
-    error("parameter already defined");
+    show_error("parameter already defined");
 
   _parameters[key] = new StringParameter(key, value);
 }
@@ -85,7 +85,7 @@ void Parameters::add(std::string key, const char* value)
   // the add function for bool parameters.
 
   if (find_parameter(key))
-    error("parameter already defined");
+    show_error("parameter already defined");
 
   _parameters[key] = new StringParameter(key, value);
 }
@@ -93,7 +93,7 @@ void Parameters::add(std::string key, const char* value)
 void Parameters::add(std::string key, bool value)
 {
   if (find_parameter(key))
-    error("parameter already defined");
+    show_error("parameter already defined");
 
   _parameters[key] = new BoolParameter(key, value);
 }
@@ -101,7 +101,7 @@ void Parameters::add(std::string key, bool value)
 void Parameters::add(const Parameters& parameters)
 {
   if (find_parameter_set(parameters.name()))
-    error("parameter already defined");
+    show_error("parameter already defined");
 
   Parameters* p = new Parameters("");
   *p = parameters;
@@ -111,7 +111,7 @@ void Parameters::add(const Parameters& parameters)
 void Parameters::remove(std::string key)
 {
   if (!find_parameter(key) && !find_parameter_set(key))
-    error("no parameter defined");
+    show_error("no parameter defined");
 
   // delete objects (safe to delete both even if only one is nonzero)
   delete find_parameter(key);
@@ -129,7 +129,7 @@ Parameter& Parameters::operator[] (std::string key)
 {
   Parameter* p = find_parameter(key);
   if (!p)
-    error("parameter is not defined");
+    show_error("parameter is not defined");
 
   return *p;
 }
@@ -138,7 +138,7 @@ const Parameter& Parameters::operator[] (std::string key) const
 {
   Parameter* p = find_parameter(key);
   if (!p)
-    error("parameter is not defined");
+    show_error("parameter is not defined");
 
   return *p;
 }
@@ -147,7 +147,7 @@ Parameters& Parameters::operator() (std::string key)
 {
   Parameters* p = find_parameter_set(key);
   if (!p)
-    error("parameter is not defined");
+    show_error("parameter is not defined");
 	
   return *p;
 }
@@ -156,7 +156,7 @@ const Parameters& Parameters::operator() (std::string key) const
 {
   Parameters* p = find_parameter_set(key);
   if (!p)
-    error("parameter is not defined");
+    show_error("parameter is not defined");
 
   return *p;
 }
@@ -188,7 +188,7 @@ const Parameters& Parameters::operator= (const Parameters& parameters)
     else if (p.type_str() == "string")
       q = new StringParameter(dynamic_cast<const StringParameter&>(p));
     else
-      error("unknown parameter type");
+      show_error("unknown parameter type");
 
     _parameters[p.key()] = q;
   }
@@ -352,7 +352,7 @@ void Parameters::update(const Parameters& parameters)
     else if (other.type_str() == "string")
       *self = static_cast<std::string>(other);
     else
-      error("Parameters.cpp",
+      show_error("Parameters.cpp",
 			     "update parameter set",
 		       "Parameter \"%s\" has unknown type: \"%s\"",
 			      other.key().c_str(), other.type_str().c_str());

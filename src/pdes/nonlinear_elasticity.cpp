@@ -729,7 +729,7 @@ void NonlinearElasticity::elem_pforce(const int elem_id, const MxFE * fe,
     }
     else
     {
-      error("Boundary index for pressure load not found");  
+      show_error("Boundary index for pressure load not found");  
     }
   }
 }
@@ -894,7 +894,7 @@ void NonlinearElasticity::elem_kpress(const int elem_id, const MxFE * fe,
     }
     else
     {
-      error("Boundary index for pressure load not found");
+      show_error("Boundary index for pressure load not found");
     }
   }
 }
@@ -1702,13 +1702,13 @@ void NonlinearElasticity::config(const string & mshfile, const string & parfile)
 void NonlinearElasticity::elem_resid (const int iel, const MxFE * fe,
                                       const Quadrature * qd, arma::vec & Re)
 {
-  error("NonlinearElasticity is an abstract class.");
+  show_error("NonlinearElasticity is an abstract class.");
 }
 
 void NonlinearElasticity::elem_stiff (const int iel, const MxFE * fe,
                                       const Quadrature * qd, arma::mat & Ke)
 {
-  error("NonlinearElasticity is an abstract class.");
+  show_error("NonlinearElasticity is an abstract class.");
 }
 
 void NonlinearElasticity::evaluate_forces(petsc::Vector & R)

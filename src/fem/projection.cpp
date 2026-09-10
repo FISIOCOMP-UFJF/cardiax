@@ -164,7 +164,7 @@ void Projection::calc_elvec_source (const int iel, const FiniteElement & fe,
 
 void Projection::init()
 {
-  if(!file_exists(filename)) error("mesh file does not exist");
+  if(!file_exists(filename)) show_error("mesh file does not exist");
 
   std::string fext = file_extension(filename);
   if(fext == "msh")

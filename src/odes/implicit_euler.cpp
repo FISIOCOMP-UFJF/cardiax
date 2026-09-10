@@ -66,7 +66,7 @@ void ImplicitEuler::advance(double * y, double & t, double & dt)
   }
 
   if (it==maxits)
-    error("implicit_euler::newton did not converge");
+    show_error("implicit_euler::newton did not converge");
 
   // Update
   for(int i=0; i < num_states; i++)

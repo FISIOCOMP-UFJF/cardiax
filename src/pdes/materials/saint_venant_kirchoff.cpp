@@ -34,7 +34,7 @@ void SaintVenantKirchoff::mt_elastensor(MaterialData * md, arma::mat & D) const
 
   if (ndim == 2)
   {
-    error("2D not implemented yet!");
+    show_error("2D not implemented yet!");
   }
   else if (ndim == 3)
   {

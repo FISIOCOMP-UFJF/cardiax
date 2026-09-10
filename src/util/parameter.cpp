@@ -148,7 +148,7 @@ std::string IntParameter::str() const
 std::string IntParameter::value_str() const
 {
   if (!p_is_set)
-      error("Parameter has not been set");
+      show_error("Parameter has not been set");
 
   std::stringstream s;
   s << value;

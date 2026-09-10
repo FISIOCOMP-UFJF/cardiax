@@ -42,7 +42,7 @@ int main(int argc, const char* argv[])
   // New for XML
   meshname = basename;
 
-  if (!file_exists(meshname)) error("mesh file not found");
+  if (!file_exists(meshname)) show_error("mesh file not found");
 
   // check and clean output directory
   if ( fs::exists("output") )

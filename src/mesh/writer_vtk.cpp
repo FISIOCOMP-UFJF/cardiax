@@ -50,7 +50,7 @@ void WriterVTK::write_xml(const std::string & file, int nsteps,
       break;
     case 8: type = 11; break;
     default:
-      error("element not found");
+      show_error("element not found");
   }
 
   std::string filename;
@@ -160,7 +160,7 @@ void WriterVTK::write_bin(const std::string & filename)
           break;
     case 8: type = 11; break;
     default:
-      error("element not found");
+      show_error("element not found");
   }
 
   char start = '_';

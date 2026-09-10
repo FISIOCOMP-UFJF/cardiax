@@ -110,7 +110,7 @@ int NewtonLineSearch::solve()
   if (nits >= nmax)
   {
     ls->converged_reason();
-    error("newton solver did not converge");
+    show_error("newton solver did not converge");
   }
 
   return nits;

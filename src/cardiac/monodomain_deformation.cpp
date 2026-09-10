@@ -23,7 +23,7 @@ void MonodomainDeformation::advance(const std::vector<arma::mat33*> & vec_F)
 {
   //static int step=1;
 
-  if(vec_F.empty()) error("vecF is empty");
+  if(vec_F.empty()) show_error("vecF is empty");
 
   if( !tip.finished() )
   {

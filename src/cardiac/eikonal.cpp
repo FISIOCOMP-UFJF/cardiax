@@ -52,7 +52,6 @@ void Eikonal::advance()
   }
 }
 
-
 void Eikonal::setup(std::string & b, std::string & c, std::string & m,
                            double dt, double T, double pr, double pa)
 {

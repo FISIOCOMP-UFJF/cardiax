@@ -4,6 +4,7 @@
 # [MODIFICADO] Lista de fontes da biblioteca (SEM o teste)
 add_library(Util
     command_line_args.cpp
+    expr_function.cpp
     interp.cpp
     input_file.cpp
     log.cpp

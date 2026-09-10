@@ -18,7 +18,7 @@
 // Useful macros
 // -----------------------------------------------------------------------------
 
-#define error(msg) print_error(__FILE__, __func__,msg);
+#define show_error(msg) print_error(__FILE__, __func__,msg);
 
 // -----------------------------------------------------------------------------
 // General useful functions 

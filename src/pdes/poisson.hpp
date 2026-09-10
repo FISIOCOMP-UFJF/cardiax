@@ -7,6 +7,13 @@
 #include "util/input_file.h"
 #include "linalg/linalg.h"
 
+#pragma push_macro("error")
+#undef error
+#include "util/toml.hpp"
+#pragma pop_macro("error")
+
+#include "util/expr_function.hpp"
+
 /*!
  * A simple class to solve Poisson problem given by:
  *
@@ -31,6 +38,9 @@ public:
   
   //! Read parameters (boundary conditions, coefficients) from file
   void config(std::string optFile);
+
+  //! Read parameters from an already-parsed TOML table
+  void config(const toml::table & tbl);
 
   //! Return reference to mesh
   const Mesh & get_mesh() const { return mesh; }
@@ -81,11 +91,13 @@ protected:
   petsc::Vector u,f;
 
   //! VTK output
-  //WriterVTK vtkout;
   WriterHDF5 writer;
 
   //! Input filename
   string filename;
+
+  //! Right-hand side source term f in -div(k grad u) = f
+  ScalarFunction<double> * rhs_func;
 
   //! Conductivity
   bool has_cond;
@@ -132,16 +144,28 @@ protected:
 
 // ------------------- inline and template functions --------------------------
 
+// inline Poisson::Poisson()
+//   : writer(&mesh), has_cond(false)
+// {
+//   //vtkout
+//   // do nothing
+// }
+
 inline Poisson::Poisson()
-  : writer(&mesh), has_cond(false)
+  : writer(&mesh), has_cond(false), rhs_func(nullptr)
 {
   //vtkout
   // do nothing
 }
 
+// inline Poisson::~Poisson()
+// {
+//   // do nothing
+// }
+
 inline Poisson::~Poisson()
 {
-  // do nothing
+  delete rhs_func;   // safe: delete nullptr is a no-op
 }
 
 // ------------------- Right hand side functions ------------------------------

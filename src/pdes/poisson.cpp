@@ -3,6 +3,26 @@
 
 namespace {
   const double penalty = 1.e+10;
+
+  // Read [[section]] entries of the form { marker = <int>, value = <double> }
+  // into an marker->value map. Missing section is simply left empty.
+  void read_toml_bc(const toml::table & tbl,
+                    const std::string & section,
+                    std::map<int,double> & out)
+  {
+    auto node = tbl.at_path(section);
+    const toml::array * arr = node.as_array();
+    if (!arr) return;
+
+    for (const auto & elem : *arr)
+    {
+      const toml::table * bc = elem.as_table();
+      if (!bc) continue;
+      int    idx = (*bc)["marker"].value_or(-1);
+      double val = (*bc)["value"].value_or(0.0);
+      if (idx >= 0) out[idx] = val;
+    }
+  }
 }
 
 void Poisson::assemble_system()
@@ -17,8 +37,14 @@ void Poisson::assemble_system()
   ZeroFunction<double> zerofunc;
 
   // Please select the RHS function here
-  RHSExample3D<double> rhsfunc;
+  // RHSExample3D<double> rhsfunc;
   //RHSExample0<double> rhsfunc;
+
+  // RHS source: from config() if a [physical].source string was given,
+  // otherwise the compile-time default below.
+  RHSExampleOne<double> default_rhs;   // f = 1, matches the old RHSExample3D
+  const ScalarFunction<double> & rhsfunc =
+      rhs_func ? *rhs_func : static_cast<const ScalarFunction<double>&>(default_rhs);
 
   // PETSC matrix and vector creation
   K.create(ndofs,ndofs,30);
@@ -104,6 +130,21 @@ void Poisson::config(std::string optfile)
     ifile.read_section("dirichlet", dirichlet_map);
     ifile.read_section("fix_node", fixed_nodes_map);
     ifile.close();
+  }
+}
+
+void Poisson::config(const toml::table & tbl)
+{
+  read_toml_bc(tbl, "physical.neumann",   neumann_map);
+  read_toml_bc(tbl, "physical.dirichlet", dirichlet_map);
+  read_toml_bc(tbl, "physical.fix_node",  fixed_nodes_map);
+
+  // Right-hand side source term. If [physical].source is a string, compile it;
+  // otherwise fall back to the built-in default (f = 1)
+  if (auto src = tbl.at_path("physical.source").value<std::string>())
+  {
+    delete rhs_func;
+    rhs_func = new ExprScalarFunction(*src);
   }
 }
 
@@ -369,7 +410,7 @@ double Poisson::coeff_robin_vec(int index)
 void Poisson::init()
 {
   if(!file_exists(filename))
-    error("mesh file does not exist");
+    show_error("mesh file does not exist");
 
   std::string fext = file_extension(filename);
   if(fext == "msh")
@@ -396,8 +437,6 @@ void Poisson::init()
 
 void Poisson::write_data(const string & filename)
 {
-  std::string vtuname = filename + ".vtu";
-
   // write output data
   writer.open(filename, 1, 1);
   writer.write_vm_step(0, solution.memptr());

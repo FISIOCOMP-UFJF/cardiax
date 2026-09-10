@@ -36,9 +36,9 @@ void Mesh::read(const std::string &filename)
   //
   // Check files
   //
-  if (!file_exists(ptsfile)) error(".pts file not found");
-  if (!file_exists(elefile)) error(".elem file not found");
-  if (!file_exists(axefile)) error(".fib file not found");
+  if (!file_exists(ptsfile)) show_error(".pts file not found");
+  if (!file_exists(elefile)) show_error(".elem file not found");
+  if (!file_exists(axefile)) show_error(".fib file not found");
 
   //
   // Read points
@@ -664,7 +664,7 @@ void Mesh::reserve_points(const uint num)
     points.reserve(num);
   }
   catch (std::bad_alloc &e) {
-    error("std::bad_alloc in Mesh::reserve_points()");
+    show_error("std::bad_alloc in Mesh::reserve_points()");
     exit(1);
   }
 }
@@ -675,7 +675,7 @@ void Mesh::reserve_elements(const uint num)
     elems.reserve(num);
   }
   catch (std::bad_alloc &e) {
-    error("std::bad_alloc in Mesh::reserve_elements()");
+    show_error("std::bad_alloc in Mesh::reserve_elements()");
     exit(1);
   }
 

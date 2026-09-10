@@ -188,6 +188,7 @@ endif()
 # --- Build Interface library --- 
 target_include_directories(ext_libs INTERFACE
     ${PROJECT_SOURCE_DIR}/src
+    ${PROJECT_SOURCE_DIR}/src/thirdparty          # <-- add this
     ${MPI_C_INCLUDE_DIRS}
     ${PETSC_INCLUDES}
     ${HDF5_INCLUDE_DIRS}
@@ -195,6 +196,7 @@ target_include_directories(ext_libs INTERFACE
     $ENV{ARMADILLO_ROOT}/include
     # ${EIGEN3_INCLUDE_DIR}
 )
+
 
 target_link_directories(ext_libs INTERFACE
     ${PETSC_LIBRARY_DIRS}

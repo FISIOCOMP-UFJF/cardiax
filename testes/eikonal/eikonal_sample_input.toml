@@ -3,57 +3,66 @@
 # ============================================================
 
 [problem]
-model       = "eikonal"          # selects the solver
-description = "Activation-time computation on a cable/tissue mesh"
-mesh        = "cable_10x_fiber.xml"
-dimension   = 3
+model = "eikonal"
+mesh  = "cable_10x_fiber.xml"
 
 # ------------------------------------------------------------
-#  Numerics: discretization + how activation times are computed
+#  Numerics  ->  setup(dt, T, print_rate, print_rate_apd)
 # ------------------------------------------------------------
 [numerics]
-timestep      = 0.1              # dt  [ms]   (kept for interface compatibility)
-total_time    = 1.0             # T   [ms]
-print_rate    = 0.1             # output cadence [ms]
-print_rate_apd = 0.1
-
-[numerics.eikonal]
-method        = "dijkstra"      # dijkstra | fast_marching | fim
-graph         = "edge"          # build costs on element edges
+timestep       = 0.1            # dt   (was hardcoded)
+total_time     = 1.0            # T    (was -t, default 10.0)
+print_rate     = 1.0            # tp   (was hardcoded 1.0)
+print_rate_apd = 1.0            # pa   (main passes tp for both)
 
 # ------------------------------------------------------------
-#  Physical parameters: conduction velocities + fiber model
+#  Cell model  ->  setup(c, m) ; used by init()/solve_odes()
 # ------------------------------------------------------------
-[physical]
-conductivity_type = "M_TRANSVERSE"   # S_ISOTROPIC | S_TRANSVERSE | M_ISOTROPIC | M_TRANSVERSE | M_ORTHOTROPIC
+[cell]
+model      = "Kerkoff2003"       # was -c ; CellModel::create(cell_name)
+ode_solver = "ExplicitEuler"     # was -m ; cellmodel->setup(odesolver, ...)
 
+# ------------------------------------------------------------
+#  Physical: default conduction velocities.
+#  NOTE: the mesh <eikonal vel_f=.. vel_s=.. vel_n=..> overrides these.
+# ------------------------------------------------------------
 [physical.velocity]
-vel_f = 1.0                     # along fiber        [mm/ms] or [m/s]
-vel_s = 1.0                     # transverse (sheet)
-vel_n = 1.0                     # normal
+vel_f = 1.0          
+vel_s = 1.0
+vel_n = 1.0
+
+[physical]
+conductivity_type = "M_TRANSVERSE"   # -> set_conductivity(enum)
 
 # ------------------------------------------------------------
-#  Activation sources (root nodes). Optional: if the mesh
-#  already carries <node lat=...>, prescribed LAT is used instead.
+#  LAT-driven stimulus for ionic models (apply_lat_stimulus)
+#  Only meaningful for ionic cells (e.g. ToRORdLand); the
+#  phenomenological Kerckhoffs model reads the LAT directly.
 # ------------------------------------------------------------
-[stimuli]
-source = "mesh"                 # mesh | file | inline
-                                #   mesh   -> read <root_node>/<node> from the xml
-                                #   inline -> use [[stimuli.root]] below
+[stimulus.lat]
+enabled   = false
+amplitude = 1.0
+duration  = 0.002                # solver time unit (2 ms if seconds)
+period    = 0.0                  # >0 repeats once per beat
 
-[[stimuli.root]]
+# ------------------------------------------------------------
+#  Activation source:
+# ------------------------------------------------------------
+[activation]
+source = "inline"  
+
+[[activation.root]]
 id   = 0
-time = 0.0                      # activation time at this root [ms]
+time = 0.0
 
-[[stimuli.root]]
-id   = 512
-time = 5.0
+# add more sites freely
+# [[activation.root]]
+# id   = 512
+# time = 5.0
 
 # ------------------------------------------------------------
 #  Output
 # ------------------------------------------------------------
 [output]
-directory   = "results/eikonal"
-format      = "hdf5"            # hdf5 (+xdmf) | txt | both
-write_lat   = true
-lat_txt     = "eikonal.txt"     # legacy per-node dump
+directory = "eikonal_sample_output"   # init() builds this from the mesh prefix
+write_lat = true                      # HDF5/XDMF + eikonal.txt dump

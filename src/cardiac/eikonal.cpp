@@ -33,7 +33,6 @@ Eikonal::Eikonal()
   parameters.add("vel_f", 0.006);
   parameters.add("vel_s", 0.0002);
   parameters.add("vel_n", 0.0002);
-
 }
 
 Eikonal::~Eikonal()

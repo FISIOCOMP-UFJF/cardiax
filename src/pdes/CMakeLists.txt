@@ -5,13 +5,12 @@ set(
   PDE_SRC 
   poisson.cpp 
   laplace.cpp 
-  ###mortarfem.cpp
   elasticity.cpp 
   mech_utils.cpp
   nonlinear_elasticity.cpp
   total_lagrangian.cpp
-  #total_lagrangian_snes.cpp
   updated_lagrangian.cpp 
+  eikonal.cpp
   materials/hyperelastic_material.cpp
   materials/incompressible_material.cpp
   materials/material_data.cpp

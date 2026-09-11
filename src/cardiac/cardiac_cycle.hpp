@@ -5,7 +5,7 @@
 #include "monodomain_deformation.hpp"
 #include "pdes/total_lagrangian.hpp"
 #include "pdes/updated_lagrangian.hpp"
-#include "eikonal.hpp"
+#include "eikonal_reactive.hpp"
 #include "regazzoni2020.hpp"
 #include <fstream>
 
@@ -19,7 +19,7 @@ public:
   void config(const string &basename);
 
   // MonodomainDeformation &ref() { return ephy; }
-  Eikonal &ref() { return ephy; }
+  EikonalReactive &ref() { return ephy; }
   
   void solve();
 
@@ -88,7 +88,7 @@ private:
   double P_o, part, pven, stroke_volume;
   string filename;
   // MonodomainDeformation ephy;
-  Eikonal ephy; 
+  EikonalReactive ephy; 
   UpdatedLagrangian elas;
   std::vector<arma::mat33 *> vec_stress;
   std::vector<arma::mat33 *> vec_fib;

@@ -8,7 +8,7 @@ set(CARDIAC_SRC
     monodomain.cpp
     monodomain_purkinje.cpp
     monodomain_deformation.cpp
-    eikonal.cpp
+    eikonal_reactive.cpp
     cardiac_cycle.cpp
     regazzoni2020.cpp
     coupled_electromechanic.cpp

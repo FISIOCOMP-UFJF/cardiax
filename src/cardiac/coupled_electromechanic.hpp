@@ -5,7 +5,7 @@
 #include "monodomain_deformation.hpp"
 #include "pdes/total_lagrangian.hpp"
 #include "pdes/updated_lagrangian.hpp"
-#include "eikonal.hpp"
+#include "eikonal_reactive.hpp"
 #include <fstream>
 
 class Electromechanic

@@ -74,6 +74,9 @@ public:
   //! Solve the problem with meshfile given
   void solve(const string &mshfile);
 
+  //! Read eikonal solution from file, for eikonal+reaction
+  void read_eikonal_solution(const string &mshfile);
+
   //! Dijkstra
   void solve_dijkstra(const std::vector<int>& root_nodes, 
                               const std::vector<double>& root_times,

@@ -193,7 +193,7 @@ void Eikonal::apply_lat_stimulus(double amplitude, double duration,
     stim_apply_nodes = true;
 }
 
-void Eikonal::solve(const string &mshfile)
+void Eikonal::read_eikonal_solution(const string &mshfile)
 {
   std::cout << " -- Initializing local activation time --" << std::endl; 
   pugi::xml_document doc;
@@ -203,184 +203,177 @@ void Eikonal::solve(const string &mshfile)
   // keep uninitialised memory.
   lat.zeros(ndofs);
 
-  pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
-  double begin_active_stress = 0.0;
-  // passive_time is given in MILLISECONDS in the mesh file, while the solver
-  // may work in seconds; ms_to_solver_time() does the conversion.
-  if(pvloop_data)
-    begin_active_stress = pvloop_data.attribute("passive_time").as_double() * ms_to_solver_time();
-
   pugi::xml_node eikonal_data = doc.child("mesh").child("eikonal");
 
-  bool loaded_lat = false;
-  bool has_root_nodes = false;
   int n_read = 0;
-  
-  std::vector<int> root_nodes;
-  std::vector<double> root_times;
-
-  if(eikonal_data)
+    
+  if (!eikonal_data.child("node"))
   {
-    // Verify if there is already lat for all nodes in the mesh
-    if (eikonal_data.child("node")) 
+    for(pugi::xml_node node = eikonal_data.child("node"); node; node = node.next_sibling("node"))
     {
-      loaded_lat = true;
-      for(pugi::xml_node node = eikonal_data.child("node"); node; node = node.next_sibling("node"))
-      {
         int index = node.attribute("id").as_int(); 
         if(index < 0 || index >= (int) ndofs)
         {
-          std::cout << " *** WARNING: <eikonal> node id " << index
-                    << " is outside [0," << ndofs << "); ignored." << std::endl;
-          continue;
+            std::cout << " *** WARNING: <eikonal> node id " << index
+                      << " is outside [0," << ndofs << "); ignored." << std::endl;
+            continue;
         }
         // The per-node LAT is given in MILLISECONDS.
         lat(index) = node.attribute("lat").as_double(); 
         n_read++;
-      }
-      if(n_read != (int) ndofs)
-      {
-        std::cout << " *** WARNING: prescribed LAT incomplete (" << n_read << " of " << ndofs << " nodes)." << std::endl;
-        std::cout << "     Falling back to Eikonal solving or uniform activation." << std::endl;
-        loaded_lat = false; 
-      }
     }
-    // Verify if there are root nodes for solving eikonal
-    if (eikonal_data.child("root_node") && !loaded_lat) 
-    {
-      has_root_nodes = true;
-      for(pugi::xml_node node = eikonal_data.child("root_node"); node; node = node.next_sibling("root_node"))
-      {
-        root_nodes.push_back(node.attribute("id").as_int());
-        root_times.push_back(node.attribute("time").as_double());
-      }
-    }
+
+  }
+  if(n_read != (int) ndofs)
+  {
+      pugi::xml_node pvloop_data = doc.child("mesh").child("pvloop");
+      double begin_active_stress = 0.0;
+      // passive_time is given in MILLISECONDS in the mesh file, while the solver
+      // may work in seconds; ms_to_solver_time() does the conversion.
+      if(pvloop_data)
+          begin_active_stress = pvloop_data.attribute("passive_time").as_double() * ms_to_solver_time();
+
+          
+      lat.fill(begin_active_stress); // if there isn't lat in the mesh file, we use the passive_time for all elements. 
+      std::cout << " No valid/complete per-node LAT found in the mesh." << std::endl;
+      std::cout << " Uniform activation at "
+                << begin_active_stress << " (solver time units, from passive_time)"
+                << std::endl;
+
   }
 
-  //If the lat is already precribed, don't solve eikonal just load the local activation time
-  if(loaded_lat)
-  {
-    // The per-node LAT from the mesh is used AS IT IS: the only operation is
-    // the conversion from ms to the solver time unit. There is no shift and
-    // no rescaling -- the activation sequence stored in the mesh is the
-    // activation sequence the cells see. passive_time is only a fallback for
-    // meshes without an <eikonal> section.
-    lat *= ms_to_solver_time();
+}
 
-    std::cout << " Local activation time (per node, from the mesh)" << std::endl;
-    std::cout << " Loaded LATs: " << n_read << " of " << ndofs << " nodes" << std::endl;
-    std::cout << " Earliest activation: " << lat.min()
-              << "  Latest activation: " << lat.max()
-              << "  (spread " << (lat.max() - lat.min())
-              << ", solver time units)" << std::endl;
-  }
-  else if (has_root_nodes)
-  {
-    std::cout << " -- Computing local activation time via Eikonal Solver --" << std::endl;
-    
-    double vf = parameters["vel_f"]; 
-    double vs = parameters["vel_s"];
-    double vn = parameters["vel_n"];
-    
-    if (eikonal_data.attribute("vel_f")) vf = eikonal_data.attribute("vel_f").as_double();
-    if (eikonal_data.attribute("vel_s")) vs = eikonal_data.attribute("vel_s").as_double();
-    if (eikonal_data.attribute("vel_n")) vn = eikonal_data.attribute("vel_n").as_double();
+void Eikonal::solve(const string &mshfile)
+{
+    std::cout << " -- Initializing local activation time --" << std::endl; 
+    pugi::xml_document doc;
+    pugi::xml_parse_result result = doc.load_file(mshfile.c_str());
 
-    // conductivity tensor squared
-    arma::mat33 g(arma::fill::zeros);
-    g(0,0) = vf * vf;
-    g(1,1) = vs * vs;
-    g(2,2) = vn * vn;
+    // zeros(), not set_size(): nodes missing from <eikonal> would otherwise
+    // keep uninitialised memory.
+    lat.zeros(ndofs);
 
-    std::vector<std::map<int, double>> edge_costs(ndofs);
+    pugi::xml_node eikonal_data = doc.child("mesh").child("eikonal");
 
-    int num_elements = mesh->get_n_elements();
-    for (int i = 0; i < num_elements; ++i) 
+    std::vector<int> root_nodes;
+    std::vector<double> root_times;
+
+    if(eikonal_data)
     {
-        const Element& el = mesh->get_element(i);
-        
-        std::vector<int> pnums;
-        mesh->get_element_pt_nums(i, pnums);
-
-        arma::vec3 f = el.get_fiber();
-        arma::vec3 s = el.get_trans();
-        arma::vec3 n = el.get_normal();
-
-        arma::mat33 fsn;
-        fsn.col(0) = f;
-        fsn.col(1) = s;
-        fsn.col(2) = n;
-
-        // conductivity tensor projected in the global system
-        arma::mat33 aux2 = fsn * g * fsn.t(); 
-        
-        // Em vez de resolver o sistema linear para cada aresta repetidamente, 
-        // inverte-se a matriz 3x3 uma única vez por elemento para otimização de CPU.
-        arma::mat33 aux2_inv;
-        bool is_invertible = arma::inv(aux2_inv, aux2); 
-
-        // Creating edges by permutating all nodes
-        for (size_t a = 0; a < pnums.size(); ++a) 
+        if (eikonal_data.child("root_node")) 
         {
-            for (size_t b = a + 1; b < pnums.size(); ++b) 
+            for(pugi::xml_node node = eikonal_data.child("root_node"); node; node = node.next_sibling("root_node"))
             {
-                int u = pnums[a];
-                int v = pnums[b];
-
-                arma::vec3 edge_vec = mesh->get_point(v) - mesh->get_point(u);
-                double cost = 0.0;
-
-                if (is_invertible) 
-                {
-                    // aux2*x = edge_vec is the same as x = aux2_inv * edge_vec
-                    arma::vec3 x = aux2_inv * edge_vec;
-                    double val = arma::dot(x, edge_vec);
-                    cost = (val > 0.0) ? std::sqrt(val) : 0.0;
-                }
-
-                if (edge_costs[u].find(v) == edge_costs[u].end() || cost < edge_costs[u][v]) 
-                {
-                    edge_costs[u][v] = cost;
-                    edge_costs[v][u] = cost;
-                }
+                root_nodes.push_back(node.attribute("id").as_int());
+                root_times.push_back(node.attribute("time").as_double());
             }
         }
     }
 
-    // adjacency list by node
-    std::vector<std::vector<std::pair<int, double>>> adj_cost(ndofs);
-    for (uint u = 0; u < ndofs; ++u) 
+    if (!root_nodes.empty())
     {
-        for (auto const& edge : edge_costs[u]) 
+        std::cout << " -- Computing local activation time via Eikonal Solver --" << std::endl;
+        
+        double vf = parameters["vel_f"]; 
+        double vs = parameters["vel_s"];
+        double vn = parameters["vel_n"];
+        
+        if (eikonal_data.attribute("vel_f")) vf = eikonal_data.attribute("vel_f").as_double();
+        if (eikonal_data.attribute("vel_s")) vs = eikonal_data.attribute("vel_s").as_double();
+        if (eikonal_data.attribute("vel_n")) vn = eikonal_data.attribute("vel_n").as_double();
+
+        // conductivity tensor squared
+        arma::mat33 g(arma::fill::zeros);
+        g(0,0) = vf * vf;
+        g(1,1) = vs * vs;
+        g(2,2) = vn * vn;
+
+        std::vector<std::map<int, double>> edge_costs(ndofs);
+
+        int num_elements = mesh->get_n_elements();
+        for (int i = 0; i < num_elements; ++i) 
         {
-            adj_cost[u].push_back({edge.first, edge.second});
+            const Element& el = mesh->get_element(i);
+            
+            std::vector<int> pnums;
+            mesh->get_element_pt_nums(i, pnums);
+
+            arma::vec3 f = el.get_fiber();
+            arma::vec3 s = el.get_trans();
+            arma::vec3 n = el.get_normal();
+
+            arma::mat33 fsn;
+            fsn.col(0) = f;
+            fsn.col(1) = s;
+            fsn.col(2) = n;
+
+            // conductivity tensor projected in the global system
+            arma::mat33 aux2 = fsn * g * fsn.t(); 
+            
+            // Em vez de resolver o sistema linear para cada aresta repetidamente, 
+            // inverte-se a matriz 3x3 uma única vez por elemento para otimização de CPU.
+            arma::mat33 aux2_inv;
+            bool is_invertible = arma::inv(aux2_inv, aux2); 
+
+            // Creating edges by permutating all nodes
+            for (size_t a = 0; a < pnums.size(); ++a) 
+            {
+                for (size_t b = a + 1; b < pnums.size(); ++b) 
+                {
+                    int u = pnums[a];
+                    int v = pnums[b];
+
+                    arma::vec3 edge_vec = mesh->get_point(v) - mesh->get_point(u);
+                    double cost = 0.0;
+
+                    if (is_invertible) 
+                    {
+                        // aux2*x = edge_vec is the same as x = aux2_inv * edge_vec
+                        arma::vec3 x = aux2_inv * edge_vec;
+                        double val = arma::dot(x, edge_vec);
+                        cost = (val > 0.0) ? std::sqrt(val) : 0.0;
+                    }
+
+                    if (edge_costs[u].find(v) == edge_costs[u].end() || cost < edge_costs[u][v]) 
+                    {
+                        edge_costs[u][v] = cost;
+                        edge_costs[v][u] = cost;
+                    }
+                }
+            }
         }
+
+        // adjacency list by node
+        std::vector<std::vector<std::pair<int, double>>> adj_cost(ndofs);
+        for (uint u = 0; u < ndofs; ++u) 
+        {
+            for (auto const& edge : edge_costs[u]) 
+            {
+                adj_cost[u].push_back({edge.first, edge.second});
+            }
+        }
+        
+        solve_dijkstra(root_nodes, root_times, adj_cost);
+        
+        std::cout << " Computed Earliest activation: " << lat.min() << "  Latest activation: " << lat.max() << std::endl;
+
+        WriterHDF5 writer(mesh);
+        writer.write_eikonal_lat(mshfile, lat.memptr());
+
+        std::ofstream arquivo("eikonal.txt");
+        for (uint u = 0; u<ndofs; u++)
+        {
+            arquivo << "<node id=\"" << u << "\" lat=\"" << lat[u] << "\" />\n"; 
+        }
+        std::cout << " -- LAT saved successfully to HDF5/XDMF format. --" << std::endl;
     }
-    
-    solve_dijkstra(root_nodes, root_times, adj_cost);
-    
-    std::cout << " Computed Earliest activation: " << lat.min() << "  Latest activation: " << lat.max() << std::endl;
-
-    WriterHDF5 writer(mesh);
-    writer.write_eikonal_lat(mshfile, lat.memptr());
-
-    std::ofstream arquivo("eikonal.txt");
-    for (uint u = 0; u<ndofs; u++)
+    else
     {
-      arquivo << "<node id=\"" <<u<<"\" lat=\"" <<lat[u]<<"\" />" <<endl; 
+      std::cout << "ERROR: invalid or missing root nodes information for eikonal" << endl;
+      exit(1);
     }
-    std::cout << " -- LAT saved successfully to HDF5/XDMF format. --" << std::endl;
-  }
-  else
-  {
-    lat.fill(begin_active_stress); // if there isn't lat in the mesh file, we use the passive_time for all elements. 
-    std::cout << " No valid/complete per-node LAT or root nodes found in the mesh." << std::endl;
-    std::cout << " Uniform activation at "
-              << begin_active_stress << " (solver time units, from passive_time)"
-              << std::endl;
-  }
 }
-
 
 void Eikonal::solve()
 {

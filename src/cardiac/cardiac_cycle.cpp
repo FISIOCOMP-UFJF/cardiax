@@ -550,7 +550,7 @@ void CardiacElectromechanic::config(const string &basename)
   }
 
   //"Solve" the eikonal, to discover the lat in each element
-  ephy.solve(basename);
+  ephy.read_eikonal_solution(basename);
 
   // Registro de procedencia da rodada: toda flag lida ate aqui, com o valor
   // resolvido e a marca [cli] ou [default]. Ligado por default de proposito

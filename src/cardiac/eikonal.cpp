@@ -207,7 +207,7 @@ void Eikonal::read_eikonal_solution(const string &mshfile)
 
   int n_read = 0;
     
-  if (!eikonal_data.child("node"))
+  if (eikonal_data.child("node"))
   {
     for(pugi::xml_node node = eikonal_data.child("node"); node; node = node.next_sibling("node"))
     {

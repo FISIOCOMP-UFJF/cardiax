@@ -12,15 +12,12 @@ class Electromechanic
 {
 public:
   Electromechanic(const std::string &epmodel);
-
   ~Electromechanic();
-
   void config(const string &basename);
-
-  CardiacProblem &ref() { return *ephy; }
-  
+  CardiacProblem &ref() { return *ephy; }  
   void solve();
- 
+  void set_checkpoint_interval(double interval) {checkpoint_interval = interval;};
+
 private:
   double dt_mech;
   string filename;
@@ -34,6 +31,7 @@ private:
   string cell_model; 
 
   arma::vec ta;
+  int checkpoint_interval; 
 
 };
 

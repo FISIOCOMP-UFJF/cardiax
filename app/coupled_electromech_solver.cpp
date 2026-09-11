@@ -20,6 +20,8 @@ void usage()
   cout << "    -m    <odesolver>  ODE solver (ExplicitEuler, ImplicitEuler)" << endl;
   cout << "    -cond <condtype>   conductivity type (0 1 ... 5)" << endl;
   cout << "    -ep   <EP model>   Monodomain or Bidomain (mono or bido)" << endl;
+  cout << "  -restore <restorefile>           Restore state file" <<endl; 
+  cout << "-save_state <checkpoint_interval>  Save state interval (ms)"<<endl;
   cout << endl;
   exit(0);
 }
@@ -27,7 +29,7 @@ void usage()
 int main(int argc, const char* argv[])
 {
   string basename, meshname, ep_model;
-  int condtype;
+  int condtype, checkpoint_rate;
 
   if (argc <= 1) usage();
 
@@ -35,7 +37,7 @@ int main(int argc, const char* argv[])
   basename = CommandLineArgs::read("-f","emptymesh");
   ep_model = CommandLineArgs::read("-ep","mono");
   condtype = CommandLineArgs::read("-cond",0);
-
+  checkpoint_rate = CommandLineArgs::read("-save_state", -1);
   // Old for GMSH
   //meshname = basename + ".msh";
 
@@ -72,6 +74,7 @@ int main(int argc, const char* argv[])
       MonodomainDeformation& monodef = static_cast<MonodomainDeformation&>(model.ref());
       monodef.set_conductivity(condtype);
     }
+    model.set_checkpoint_interval(checkpoint_rate);
     model.solve();
   }
   // end of PDE solver

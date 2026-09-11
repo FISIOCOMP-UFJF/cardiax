@@ -231,8 +231,7 @@ void Electromechanic::solve()
       ii += 1;
       timer.leave(); 
 
-      int checkpoint_rate = tip.it(); 
-      if(tip.it() % checkpoint_rate == 0 && checkpoint_rate > 0)
+      if(tip.it() % checkpoint_interval == 0 && checkpoint_interval > 0)
         {
           timer.enter("Save Checkpoint");
           cout << "Saving Coupled Checkpoint at t = " << tip.time() << " ms" << endl;

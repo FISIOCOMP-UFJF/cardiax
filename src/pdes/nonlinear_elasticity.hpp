@@ -20,6 +20,7 @@
 #include "materials/material_data.hpp"
 #include "materials/incompressible_material.hpp"
 #include "mech_utils.hpp"
+#include "omp.h"
 
 // #define USE_BFGS
 

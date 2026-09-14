@@ -8,8 +8,8 @@ set(PROGRAMS
     nonlinearelas
     monodomain
     bidomain
+    cardiac_cycle
     electromech
-    coupled_electromech
     eikonal
 )
 

@@ -11,7 +11,7 @@ set(CARDIAC_SRC
     eikonal_reactive.cpp
     cardiac_cycle.cpp
     regazzoni2020.cpp
-    coupled_electromechanic.cpp
+    electromechanic.cpp
     coupled_purkinje.cpp
 )
     

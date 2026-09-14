@@ -1,6 +1,6 @@
 #include <armadillo>
 #include "util/command_line_args.h"
-#include "coupled_electromechanic.hpp"
+#include "electromechanic.hpp"
 #include "util/pugixml.hpp"
 
 

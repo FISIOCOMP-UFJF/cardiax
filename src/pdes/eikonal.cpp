@@ -22,8 +22,8 @@ static int conductivity_from_string(const std::string & s)
 Eikonal::Eikonal() : condtype(M_TRANSVERSE), 
                      mesh(nullptr),
                      default_vf(1.0), 
-                     default_vs(1.0), 
-                     default_vn(1.0) {}
+                     default_vs(0.5), 
+                     default_vn(0.25) {}
 
 Eikonal::~Eikonal() { if (owns_mesh) delete mesh; }                
 
@@ -42,19 +42,63 @@ void Eikonal::setup(const toml::table & cfg)
     mesh = new Mesh();
     mesh->read_xml(*meshcfg);
 
-    double vf = cfg["physical"]["vel_f"].value_or(default_vf);
-    double vs = cfg["physical"]["vel_s"].value_or(default_vs);
-    double vn = cfg["physical"]["vel_n"].value_or(default_vn);
-    set_velocities(vf, vs, vn);
-
-    std::cout << " Conduction velocities [f, s, n]: "
-              << vf << ", " << vs << ", " << vn << std::endl;
-
+    // Primeiro, lê o tipo de condutividade
     if (auto c = cfg["physical"]["conductivity_type"].value<std::string>())
         set_conductivity(conductivity_from_string(*c));
 
+    // Lê as velocidades de acordo com o tipo de condutividade
+    switch (condtype) {
+
+        case M_ISOTROPIC:
+        {
+            // Lê apenas vf. O valor é usado em todas as direções.
+            double vf = cfg["physical"]["vel_f"].value_or(1.0);
+
+            set_velocities(vf, vf, vf);
+            break;
+        }
+
+        case M_TRANSVERSE:
+        {
+            // Lê vf e vs. A velocidade normal recebe o valor de vs.
+            double vf = cfg["physical"]["vel_f"].value_or(1.0);
+            double vs = cfg["physical"]["vel_s"].value_or(0.5);
+
+            set_velocities(vf, vs, vs);
+            break;
+        }
+
+        case M_ORTHOTROPIC:
+        {
+            // Lê as três velocidades, com os defaults especificados.
+            double vf = cfg["physical"]["vel_f"].value_or(1.0);
+            double vs = cfg["physical"]["vel_s"].value_or(0.5);
+            double vn = cfg["physical"]["vel_n"].value_or(0.25);
+
+            set_velocities(vf, vs, vn);
+            break;
+        }
+
+        default:
+        {
+            // Para os tipos S_*, mantém o comportamento anterior.
+            double vf = cfg["physical"]["vel_f"].value_or(default_vf);
+            double vs = cfg["physical"]["vel_s"].value_or(default_vs);
+            double vn = cfg["physical"]["vel_n"].value_or(default_vn);
+
+            set_velocities(vf, vs, vn);
+            break;
+        }
+    }
+
+    std::cout << "Conduction velocities [f, s, n]: "
+              << default_vf << ", "
+              << default_vs << ", "
+              << default_vn << std::endl;
+
     root_nodes.clear();
     root_times.clear();
+
     if (auto arr = cfg["activation"]["root"].as_array()) {
         for (auto & e : *arr) {
             if (auto t = e.as_table()) {
@@ -64,13 +108,14 @@ void Eikonal::setup(const toml::table & cfg)
         }
     }
 
-    output_filename = cfg["output"]["filename"].value_or(std::string("eikonal_output"));
+    output_filename =
+        cfg["output"]["filename"].value_or(
+            std::string("eikonal_output"));
 }
 
 void Eikonal::solve() {
 
     std::cout << "Computing activation time via Eikonal Solver" << std::endl;
-    uint ndofs = mesh->get_n_points();
     if (mesh == nullptr) {
         std::cerr << "ERROR: setup() was not called before solve()." << std::endl;
         return;
@@ -79,6 +124,8 @@ void Eikonal::solve() {
         std::cout << "No root nodes provided; skipping Eikonal solve." << std::endl;
         return;
     }
+
+    uint ndofs = mesh->get_n_points();
 
     lat.zeros(ndofs);
 
@@ -95,11 +142,28 @@ void Eikonal::solve() {
         std::vector<int> pnums;
         mesh->get_element_pt_nums(i, pnums);
 
-        arma::mat33 fsn;
-        fsn.col(0) = el.get_fiber();
-        fsn.col(1) = el.get_trans();
-        fsn.col(2) = el.get_normal();
+        // Sistema de coordenadas canônico
+        arma::mat33 fsn(arma::fill::eye);
 
+        arma::vec3 fiber = el.get_fiber();
+        arma::vec3 trans = el.get_trans();
+        arma::vec3 normal = el.get_normal();
+
+        double eps = 1e-12;
+
+        // Cada vetor é tratado separadamente
+        if (arma::norm(fiber) > eps) {
+            fsn.col(0) = fiber;
+        } 
+
+        if (arma::norm(trans) > eps) {
+            fsn.col(1) = trans;
+        } 
+         
+        if (arma::norm(normal) > eps) {
+            fsn.col(2) = normal;
+        } 
+    
         arma::mat33 aux2 = fsn * g * fsn.t(); 
         arma::mat33 aux2_inv;
         bool is_invertible = arma::inv(aux2_inv, aux2); 
@@ -114,6 +178,11 @@ void Eikonal::solve() {
                     double val = arma::dot(aux2_inv * edge_vec, edge_vec);
                     cost = (val > 0.0) ? std::sqrt(val) : 0.0;
                 }
+                else
+                {
+                    exit(42);
+                }
+
 
                 if (edge_costs[u].find(v) == edge_costs[u].end() || cost < edge_costs[u][v]) {
                     edge_costs[u][v] = cost;

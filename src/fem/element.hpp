@@ -29,7 +29,8 @@ public:
   //! Constructor (inlined) 
   Element(ElementType et, std::vector<int> pnums, int indx = 1, int aha = 0) 
     : eltype(et), pt_nums(pnums), index(indx), aha_num(aha),
-      fiber(), trans(), normal(), f_long(), f_circ(), f_rad() { }
+      fiber(arma::fill::zeros), trans(arma::fill::zeros),
+      normal(arma::fill::zeros), f_long(), f_circ(), f_rad() { }
 
   //! Constructor with fibers (inlined) 
   Element(ElementType et, std::vector<int> pnums, 

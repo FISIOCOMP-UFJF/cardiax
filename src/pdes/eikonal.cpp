@@ -47,7 +47,8 @@ void Eikonal::setup(const toml::table & cfg)
     double vn = cfg["physical"]["vel_n"].value_or(default_vn);
     set_velocities(vf, vs, vn);
 
-    cout << vf << " " << vs << " " << vn << endl;
+    std::cout << " Conduction velocities [f, s, n]: "
+              << vf << ", " << vs << ", " << vn << std::endl;
 
     if (auto c = cfg["physical"]["conductivity_type"].value<std::string>())
         set_conductivity(conductivity_from_string(*c));

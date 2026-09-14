@@ -84,6 +84,8 @@ void usage()
   note("ExplicitEuler",  "Forward Euler");
   note("ImplicitEuler",  "Backward Euler");
   note("RungeKutta4",    "4th order Runge-Kutta");
+  note("LSODA",          "Livermore Solver for Ordinary Differential equations");
+  note("     ",          "with Automatic method switching for stiff and nonstiff problems");
   cout << "\n";
   cout << "    Note: models with gating variables (e.g. TNNP, TT2, TT2Ta, LR1,\n";
   cout << "    RiceTT2, ToRORdLand) use Rush-Larsen for those gates automatically\n";

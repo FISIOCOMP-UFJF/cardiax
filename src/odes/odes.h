@@ -6,6 +6,7 @@
 #include "explicit_euler.hpp"
 #include "runge_kutta4.hpp"
 #include "implicit_euler.hpp"
+#include "lsoda.hpp"
 #include "timestepper.h"
 
 // Models

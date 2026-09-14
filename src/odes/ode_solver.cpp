@@ -3,6 +3,7 @@
 #include "runge_kutta4.hpp"
 #include "explicit_euler.hpp"
 #include "implicit_euler.hpp"
+#include "lsoda.hpp"
 
 ODESolver * ODESolver::create(std::string method, CellModel *cell)
 {
@@ -14,6 +15,8 @@ ODESolver * ODESolver::create(std::string method, CellModel *cell)
     ptr = new RungeKutta4(cell);
   else if (method == "ImplicitEuler")
     ptr = new ImplicitEuler(cell);
+    else if (method == "LSODA")
+    ptr = new LSODA(cell);
   else
     throw std::invalid_argument("ode_solver::Unknown ODESolver.");
 

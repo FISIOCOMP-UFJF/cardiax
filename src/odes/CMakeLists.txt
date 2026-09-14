@@ -11,6 +11,7 @@ add_library(ODE
   runge_kutta4.cpp
   implicit_ode_solver.cpp
   implicit_euler.cpp
+  lsoda.cpp
   simple_ode.cpp 
   fitz_hugh_nagumo.cpp
   nash_panfilov.cpp 

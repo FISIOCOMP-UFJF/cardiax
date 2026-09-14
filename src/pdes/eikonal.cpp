@@ -1,12 +1,31 @@
 #include "eikonal.hpp"
 #include "mesh/writer_hdf5.hpp"
-#include "util/pugixml.hpp"
 #include <queue>
 #include <iostream>
 #include <fstream>
 #include <cmath>
 
-Eikonal::Eikonal() : default_vf(0.006), default_vs(0.0002), default_vn(0.0002) {}
+static int conductivity_from_string(const std::string & s)
+{
+  if (s == "S_ISOTROPIC")   return S_ISOTROPIC;
+  if (s == "S_TRANSVERSE")  return S_TRANSVERSE;
+  if (s == "S_ORTHOTROPIC") return S_ORTHOTROPIC;
+  if (s == "M_ISOTROPIC")   return M_ISOTROPIC;
+  if (s == "M_TRANSVERSE")  return M_TRANSVERSE;
+  if (s == "M_ORTHOTROPIC") return M_ORTHOTROPIC;
+
+  cout << " *** WARNING: unknown conductivity_type '" << s
+       << "', using M_TRANSVERSE." << endl;
+  return M_TRANSVERSE;
+}
+
+Eikonal::Eikonal() : condtype(M_TRANSVERSE), 
+                     mesh(nullptr),
+                     default_vf(1.0), 
+                     default_vs(1.0), 
+                     default_vn(1.0) {}
+
+Eikonal::~Eikonal() { if (owns_mesh) delete mesh; }                
 
 void Eikonal::set_velocities(double vf, double vs, double vn) {
     default_vf = vf;
@@ -14,37 +33,58 @@ void Eikonal::set_velocities(double vf, double vs, double vn) {
     default_vn = vn;
 }
 
-void Eikonal::solve(Mesh* mesh, const std::string &mshfile) {
-    std::cout << " -- Computing local activation time via Eikonal Solver --" << std::endl;
-    uint ndofs = mesh->get_n_points();
-    pugi::xml_document doc;
-    doc.load_file(mshfile.c_str());
+void Eikonal::setup(const toml::table & cfg)
+{
+    auto meshcfg = cfg["problem"]["mesh"].value<std::string>();
+    if (!meshcfg)
+        throw std::runtime_error("Missing mandatory config: problem.mesh");
 
-    lat.zeros(ndofs);
-    pugi::xml_node eikonal_data = doc.child("mesh").child("eikonal");
+    mesh = new Mesh();
+    mesh->read_xml(*meshcfg);
 
-    std::vector<int> root_nodes;
-    std::vector<double> root_times;
+    double vf = cfg["physical"]["vel_f"].value_or(default_vf);
+    double vs = cfg["physical"]["vel_s"].value_or(default_vs);
+    double vn = cfg["physical"]["vel_n"].value_or(default_vn);
+    set_velocities(vf, vs, vn);
 
-    if(eikonal_data && eikonal_data.child("root_node")) {
-        for(pugi::xml_node node = eikonal_data.child("root_node"); node; node = node.next_sibling("root_node")) {
-            root_nodes.push_back(node.attribute("id").as_int());
-            root_times.push_back(node.attribute("time").as_double());
+    cout << vf << " " << vs << " " << vn << endl;
+
+    if (auto c = cfg["physical"]["conductivity_type"].value<std::string>())
+        set_conductivity(conductivity_from_string(*c));
+
+    root_nodes.clear();
+    root_times.clear();
+    if (auto arr = cfg["activation"]["root"].as_array()) {
+        for (auto & e : *arr) {
+            if (auto t = e.as_table()) {
+                root_nodes.push_back((*t)["id"].value_or(-1));
+                root_times.push_back((*t)["time"].value_or(0.0));
+            }
         }
     }
 
+    output_filename = cfg["output"]["filename"].value_or(std::string("eikonal_output"));
+}
+
+void Eikonal::solve() {
+
+    std::cout << "Computing activation time via Eikonal Solver" << std::endl;
+    uint ndofs = mesh->get_n_points();
+    if (mesh == nullptr) {
+        std::cerr << "ERROR: setup() was not called before solve()." << std::endl;
+        return;
+    }
     if (root_nodes.empty()) {
-        std::cerr << "ERROR: invalid or missing root nodes information for eikonal" << std::endl;
-        exit(1);
+        std::cout << "No root nodes provided; skipping Eikonal solve." << std::endl;
+        return;
     }
 
-    double vf = default_vf, vs = default_vs, vn = default_vn;
-    if (eikonal_data.attribute("vel_f")) vf = eikonal_data.attribute("vel_f").as_double();
-    if (eikonal_data.attribute("vel_s")) vs = eikonal_data.attribute("vel_s").as_double();
-    if (eikonal_data.attribute("vel_n")) vn = eikonal_data.attribute("vel_n").as_double();
+    lat.zeros(ndofs);
 
     arma::mat33 g(arma::fill::zeros);
-    g(0,0) = vf * vf; g(1,1) = vs * vs; g(2,2) = vn * vn;
+    g(0,0) = default_vf*default_vf;
+    g(1,1) = default_vs*default_vs;
+    g(2,2) = default_vn*default_vn;
 
     std::vector<std::map<int, double>> edge_costs(ndofs);
     int num_elements = mesh->get_n_elements();
@@ -91,16 +131,18 @@ void Eikonal::solve(Mesh* mesh, const std::string &mshfile) {
     
     solve_dijkstra(ndofs, root_nodes, root_times, adj_cost);
     
-    std::cout << " Computed Earliest activation: " << lat.min() << "  Latest activation: " << lat.max() << std::endl;
+    std::cout << " Earliest activation (min): " << lat.min() << std::endl;
+    std::cout << " Latest activation (max): " << lat.max() << std::endl;
 
     WriterHDF5 writer(mesh);
-    writer.write_eikonal_lat(mshfile, lat.memptr());
+    writer.write_eikonal_lat(output_filename, lat.memptr());
 
-    std::ofstream arquivo("eikonal.txt");
-    for (uint u = 0; u<ndofs; u++) {
-        arquivo << "<node id=\"" << u << "\" lat=\"" << lat[u] << "\" />\n"; 
+    std::ofstream arquivo(output_filename + ".txt");
+    for (uint u = 0; u < ndofs; u++) {
+        arquivo << "<node id=\"" << u << "\" lat=\"" << lat[u] << "\" />\n";
     }
-    std::cout << " -- LAT saved successfully. --" << std::endl;
+    
+    std::cout << "Output saved successfully." << std::endl;
 }
 
 void Eikonal::solve_dijkstra(int ndofs, const std::vector<int>& root_nodes, const std::vector<double>& root_times, const std::vector<std::vector<std::pair<int, double>>>& adj_cost) {

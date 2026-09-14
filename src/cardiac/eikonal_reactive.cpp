@@ -52,12 +52,36 @@ void EikonalReactive::init() {
     int nsteps = tip.get_size(); 
     writer->open(output, nsteps+1, timestep);
 
-    eikonal_solver.set_velocities(parameters["vel_f"], parameters["vel_s"], parameters["vel_n"]);
-    
-    eikonal_solver.solve(mesh, mesh_filename);
-    
-    
+    //
+    // setup eikonal solver manually
+    //
+
+    // read root nodes from the mesh XML (kept on pugixml here)
+    root_nodes.clear();
+    root_times.clear();
+    {
+        pugi::xml_document doc;
+        doc.load_file(mesh_filename.c_str());
+        pugi::xml_node eik = doc.child("mesh").child("eikonal");
+        if (eik) {
+            for (pugi::xml_node n = eik.child("root_node"); n; n = n.next_sibling("root_node")) {
+                root_nodes.push_back(n.attribute("id").as_int());
+                root_times.push_back(n.attribute("time").as_double());
+            }
+        }
+    }
+
+    eikonal_solver.set_mesh(mesh);                    // share the already-loaded mesh
+    eikonal_solver.set_velocities(parameters["vel_f"],
+                                  parameters["vel_s"],
+                                  parameters["vel_n"]);
+    eikonal_solver.set_root_nodes(root_nodes, root_times);
+    eikonal_solver.solve();
     lat = eikonal_solver.get_lat();
+
+    // eikonal_solver.set_velocities(parameters["vel_f"], parameters["vel_s"], parameters["vel_n"]);
+    // eikonal_solver.solve(mesh_filename);
+    // lat = eikonal_solver.get_lat();
 
     cellmodel = CellModel::create(cell_name);
     cellmodel->setup(odesolver, timestep, totaltime, 1.0);

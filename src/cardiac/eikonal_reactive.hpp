@@ -24,6 +24,9 @@ private:
     CondTensorType condtype;
     H1FESpace fespace;
 
+    std::vector<int>    root_nodes;
+    std::vector<double> root_times;
+
     void solve_odes();
 
 public:

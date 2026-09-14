@@ -7,43 +7,15 @@ model = "eikonal"
 mesh  = "cable_10x_fiber.xml"
 
 # ------------------------------------------------------------
-#  Numerics  ->  setup(dt, T, print_rate, print_rate_apd)
-# ------------------------------------------------------------
-[numerics]
-timestep       = 0.1            # dt   (was hardcoded)
-total_time     = 1.0            # T    (was -t, default 10.0)
-print_rate     = 1.0            # tp   (was hardcoded 1.0)
-print_rate_apd = 1.0            # pa   (main passes tp for both)
-
-# ------------------------------------------------------------
-#  Cell model  ->  setup(c, m) ; used by init()/solve_odes()
-# ------------------------------------------------------------
-[cell]
-model      = "Kerkoff2003"       # was -c ; CellModel::create(cell_name)
-ode_solver = "ExplicitEuler"     # was -m ; cellmodel->setup(odesolver, ...)
-
-# ------------------------------------------------------------
 #  Physical: default conduction velocities.
 #  NOTE: the mesh <eikonal vel_f=.. vel_s=.. vel_n=..> overrides these.
 # ------------------------------------------------------------
-[physical.velocity]
+[physical]
+conductivity_type = "M_ISOTROPIC" 
+
 vel_f = 1.0          
 vel_s = 1.0
 vel_n = 1.0
-
-[physical]
-conductivity_type = "M_TRANSVERSE"   # -> set_conductivity(enum)
-
-# ------------------------------------------------------------
-#  LAT-driven stimulus for ionic models (apply_lat_stimulus)
-#  Only meaningful for ionic cells (e.g. ToRORdLand); the
-#  phenomenological Kerckhoffs model reads the LAT directly.
-# ------------------------------------------------------------
-[stimulus.lat]
-enabled   = false
-amplitude = 1.0
-duration  = 0.002                # solver time unit (2 ms if seconds)
-period    = 0.0                  # >0 repeats once per beat
 
 # ------------------------------------------------------------
 #  Activation source:
@@ -64,5 +36,5 @@ time = 0.0
 #  Output
 # ------------------------------------------------------------
 [output]
-directory = "eikonal_sample_output"   # init() builds this from the mesh prefix
+filename = "eikonal_sample_output"   # init() builds this from the mesh prefix
 write_lat = true                      # HDF5/XDMF + eikonal.txt dump

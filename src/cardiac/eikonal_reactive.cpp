@@ -90,7 +90,7 @@ void EikonalReactive::init() {
 }
 
 void EikonalReactive::read_eikonal_solution(const std::string &mshfile) {
-    std::cout << " -- Initializing local activation time (Reading from file) --" << std::endl; 
+    std::cout << "\n\n -- Initializing local activation time (Reading from file) --" << std::endl; 
     
     pugi::xml_document doc;
     doc.load_file(mshfile.c_str());
@@ -122,6 +122,9 @@ void EikonalReactive::read_eikonal_solution(const std::string &mshfile) {
         std::cout << " No valid/complete per-node LAT found. Using uniform activation: " 
                   << begin_active_stress << std::endl;
     }
+
+    std::cout << "\n\n -- Finishing local activation time (Reading from file) --" << std::endl; 
+
 }
 
 void EikonalReactive::initial_conditions() {

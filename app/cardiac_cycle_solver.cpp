@@ -58,6 +58,7 @@ void usage()
   cout << " Nem toda flag lida esta listada acima. Para o inventario completo" << endl;
   cout << " de uma rodada, com valor resolvido e marca [cli]/[default], veja o" << endl;
   cout << " bloco \"flags desta rodada\" impresso no fim da configuracao." << endl;
+  cout << "-num_threads\t number of OpenMP threads " << endl;
   cout << endl;
   exit(0);
 }
@@ -65,7 +66,7 @@ void usage()
 int main(int argc, const char* argv[])
 {
   string basename, meshname, ep_model;
-  int condtype, use_circ, num_beats;
+  int condtype, use_circ, num_beats, num_threads;
   double dt_circ;
 
   if (argc <= 1) usage();
@@ -78,6 +79,8 @@ int main(int argc, const char* argv[])
   use_circ = CommandLineArgs::read("-circ",0);
   num_beats = CommandLineArgs::read("-beats",1);
   dt_circ  = CommandLineArgs::read("-dtc",1.0e-3);
+  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() / 2 > 0 ? omp_get_max_threads() / 2 : 1);
+
 
   // check and clean output directory
  if ( fs::exists("output") ) 
@@ -99,6 +102,9 @@ int main(int argc, const char* argv[])
   ierr = MPI_Comm_size(PETSC_COMM_WORLD,&size); CHKERRQ(ierr);
 
   // start PDE solver
+  omp_set_num_threads(num_threads); 
+  std::cout << "Solving Mechanical problem with: " << num_threads << " OpenMP threads." << std::endl;
+
   {
     CardiacElectromechanic model(ep_model);
     model.config(basename);

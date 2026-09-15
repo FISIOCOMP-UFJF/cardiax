@@ -2601,10 +2601,8 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
 
   double xlamb = lc.load();
   
-  timer.enter("Residual: setting r"); 
   for(int i = 0; i < fespace.get_ndofs(); i++)
     r.set(i, fext0(i) + xlamb * fext(i));
-  timer.leave(); 
 
   // set tload (external loads incl. pressure) to current fext (external loads)
   tload = fext;
@@ -2612,29 +2610,22 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   //
   // assemble residual vector r
   //
-  
-  // 2. Inicia a região paralela principal
-  #pragma omp parallel
+    #pragma omp parallel
   {
-    // 3. ISOLAMENTO CRÍTICO: Vetores e instâncias instanciados DENTRO do escopo
-    // para que cada thread tenha a sua própria cópia
+
     arma::vec Re(n_dofs);
     std::vector<int> dnums;
     MxFE * local_fe = fespace.createFE();
     Quadrature * local_qd = Quadrature::create(0, local_fe->get_type());
 
-    // 4. Distribuição da carga de elementos
     #pragma omp for schedule(dynamic)
     for(int i = 0; i < n_elem; i++)
     {
-      // A carga pesada da física computada em paralelo
       elem_resid(i, local_fe, local_qd, Re);
       fespace.get_element_dofs_u(i, dnums);
 
-      // 5. PROTEÇÃO DE ESCRITA: Inserção síncrona nos vetores globais
       #pragma omp critical
       {
-        timer.enter("Residual: critical zone");
         for(int k = 0; k < n_dofs; k++)
         {
           if (ldgof[dnums[k]])
@@ -2646,27 +2637,22 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
             react.add(dnums[k], Re(k));
           }
         }
-        timer.leave(); 
-      } // Fim do critical
-    } // Fim do for
+      }
+    }
 
-    // Limpa a memória das instâncias da thread
     delete local_qd;
     delete local_fe;
-  } // Fim da região paralela
+  } 
 
   //
   // pressure forces contribution
   //
-  timer.enter("Residual: pressure forces");
   MixedFiniteElement * bfe = fespace.create_boundary_FE();
   if (bfe != NULL && (pressure_map.size() > 0 || spring_map.size() > 0))
   {
     int nu  = bfe->get_ndofs_u();
     int nb = msh.get_n_boundary_elements();
-    
-    // Novamente, se 'nb' for pequeno, serial é suficiente. 
-    // Se for grande, a mesma lógica do loop acima pode ser aplicada aqui.
+
     arma::vec belvec(nu);
     std::vector<int> bdof;
 
@@ -2703,7 +2689,6 @@ void NonlinearElasticity::evaluate(petsc::Vector & resid)
   // copy from r to resid
   resid.copy_values(r.size(), r);
   resid.assemble();
-  timer.leave(); 
   timer.leave();
 }
 
@@ -2737,17 +2722,13 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
       
       #pragma omp critical
       {
-        timer.enter("Stiffness: critical");
         Kstiff.add(n_dofs, n_dofs, pidx, pidx, Ke.memptr());
-        timer.leave(); 
       }
 #endif
 
 #ifdef USE_BFGS
       #pragma omp critical
       {
-        timer.enter("Stiffness: critical");
-
         for(int j=0; j<n_dofs; j++)
         {
           for(int k=0; k<n_dofs; k++)
@@ -2757,7 +2738,6 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
             if(J >= I) Kstiff.add(I, J, Ke(j,k));
           }
         }
-        timer.leave(); 
       }
 #endif
     }
@@ -2769,7 +2749,6 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
   //
   // *** PRESSURE COMPONENT DA MATRIZ DE RIGIDEZ ***
   //
-  timer.enter("Stiffness: Pressure component");
   MxFE * bfe = fespace.create_boundary_FE();
   if (bfe != NULL && (pressure_map.size() > 0 || spring_map.size()>0))
   {
@@ -2794,7 +2773,6 @@ void NonlinearElasticity::jacobian(petsc::Matrix & Kstiff)
 
   Kstiff.assemble();
   apply_boundary(Kstiff);
-  timer.leave(); 
 
   timer.leave();
 }

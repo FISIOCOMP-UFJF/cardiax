@@ -3,7 +3,6 @@
 #include "util/util.hpp"
 #include "util/command_line_args.h"
 #include "pdes/total_lagrangian.hpp"
-//#include "pdes/total_lagrangian_snes.hpp"
 #include "pdes/updated_lagrangian.hpp"
 
 static char help[] = "Non-Linear Elasticity Finite Element Solver.\n\n";
@@ -21,6 +20,7 @@ void usage()
   cout << "         \t    ul : Updated Lagrangian" << endl;
   cout << "    -restore \t restore state file" <<endl; 
   cout << "-save_state \t save checkpoint (0 or 1)" << endl; 
+  cout << "-num_threads\t number of OpenMP threads " << endl;
   cout << endl;
   exit(0);
 }
@@ -29,6 +29,7 @@ int main(int argc, const char* argv[])
 {
   std::string smethod, mshfile, parfile, outdir, extension, restorefile;
   bool save_checkpoint = false; 
+  int num_threads = 1; 
   // Parse command line options
   if (argc <= 1) usage();
 
@@ -39,6 +40,7 @@ int main(int argc, const char* argv[])
   smethod = CommandLineArgs::read("-s","ul");
   restorefile = CommandLineArgs::read("-restore", "");
   save_checkpoint = CommandLineArgs::read("-save_state", 0) == 0 ? 0 : 1;
+  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() / 2 > 0 ? omp_get_max_threads() / 2 : 1);
 
   extension = file_extension(mshfile);
   if(extension == "xml")
@@ -60,6 +62,9 @@ int main(int argc, const char* argv[])
   ierr = MPI_Comm_size(PETSC_COMM_WORLD,&size); CHKERRQ(ierr);
 
   cout << "Nonlinear Elasticity FEM Solver" << endl;
+
+  omp_set_num_threads(num_threads); 
+  std::cout << "Solving Mechanical problem with: " << num_threads << " OpenMP threads." << std::endl;
 
   // Start PDE solver
   {

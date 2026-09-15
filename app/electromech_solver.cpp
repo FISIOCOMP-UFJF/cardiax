@@ -22,6 +22,7 @@ void usage()
   cout << "    -ep   <EP model>   Monodomain or Bidomain (mono or bido)" << endl;
   cout << "  -restore <restorefile>           Restore state file" <<endl; 
   cout << "-save_state <checkpoint_interval>  Save state interval (ms)"<<endl;
+  cout << "-num_threads\t number of OpenMP threads " << endl;
   cout << endl;
   exit(0);
 }
@@ -29,7 +30,7 @@ void usage()
 int main(int argc, const char* argv[])
 {
   string basename, meshname, ep_model;
-  int condtype, checkpoint_rate;
+  int condtype, checkpoint_rate, num_threads;
 
   if (argc <= 1) usage();
 
@@ -38,6 +39,8 @@ int main(int argc, const char* argv[])
   ep_model = CommandLineArgs::read("-ep","mono");
   condtype = CommandLineArgs::read("-cond",0);
   checkpoint_rate = CommandLineArgs::read("-save_state", -1);
+  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() / 2 > 0 ? omp_get_max_threads() / 2 : 1);
+
   // Old for GMSH
   //meshname = basename + ".msh";
 
@@ -66,6 +69,9 @@ int main(int argc, const char* argv[])
   ierr = MPI_Comm_size(PETSC_COMM_WORLD,&size); CHKERRQ(ierr);
 
   // start PDE solver
+  omp_set_num_threads(num_threads); 
+  std::cout << "Solving Mechanical problem with: " << num_threads << " OpenMP threads." << std::endl;
+
   {
     Electromechanic model(ep_model);
     model.config(basename);

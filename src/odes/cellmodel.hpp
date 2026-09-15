@@ -150,7 +150,6 @@ class CellModel
   double dt_solver = 0.0;
 
  protected:
-
   //! Number of state variables (equations)
   const int num_state_vars;
 

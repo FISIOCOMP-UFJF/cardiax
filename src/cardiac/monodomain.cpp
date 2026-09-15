@@ -384,12 +384,13 @@ void Monodomain::init(bool is_restart)
     writer->open(output, nsteps, timestep, false, is_restart);
   }
   
-
   // setup model and cells
-  cellmodel = CellModel::create(cell_name);
-  cellmodel->setup(odesolver, timestep, totaltime, 1.0);
-  cells = new Cells(ndofs,cellmodel);
-  
+  // cellmodel = CellModel::create(cell_name);
+  // cellmodel->setup(odesolver, timestep, totaltime, 1.0);
+  // cells = new Cells(ndofs,cellmodel);
+  cells = new Cells(ndofs, cell_name, odesolver, timestep, totaltime, 1.0);
+  cellmodel = &cells->get_model(); 
+
   set_solver_time_unit_ms(1); // ms
 
   vm.resize(ndofs);
@@ -498,12 +499,8 @@ void Monodomain::solve_odes()
   stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
   
   cells->set_solver_time_unit_ms(1.0);
-  if (stim_apply)
-  {
-    cells->advance(tip.time(), timestep, stim_val, stim_nodes);
-    stim_nodes.clear();
-  }
-  else if(stim_apply_nodes)
+  
+  if(stim_apply_nodes)
   {
     cout << "Aplicando estimulos " << tip.time() << endl;
     cells->advance(tip.time(), timestep, stim_values);
@@ -512,8 +509,10 @@ void Monodomain::solve_odes()
   }
   else
   {
-    cells->advance(tip.time(), timestep);
+    cells->advance(tip.time(), timestep, stim_val, stim_nodes);
+    stim_nodes.clear();
   }
+  
 
   cells->get_var(0, v0);  
   v0.assemble();

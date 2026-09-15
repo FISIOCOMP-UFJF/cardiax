@@ -27,6 +27,7 @@ void usage()
   cout << "    -fp    <pkmesh>                Purkinje mesh" << endl;
   cout << "  -restore <restorefile>           Restore state file" <<endl; 
   cout << "-save_state <checkpoint_interval>  Save state interval (ms)"<<endl; 
+  cout << "-num_threads\t number of OpenMP threads " << endl;
   cout << endl;
   exit(0);
 }
@@ -36,7 +37,7 @@ int main(int argc, const char *argv[])
   double dt, T, tp, checkpoint_interval;
   string mshname, pkmshname, cellmodel, odesolver, typefile, restfilename;
 	string model;
-
+  int num_threads = 1; 
   if (argc < 7) usage();
 
   // Parse command line options
@@ -52,6 +53,7 @@ int main(int argc, const char *argv[])
   restfilename = CommandLineArgs::read("-restore", "");
   checkpoint_interval = CommandLineArgs::read("-save_state", -1.0);
 	typefile  = mshname + ".typ";
+  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() / 2 > 0 ? omp_get_max_threads() / 2 : 1);
 
   // Start PETSc
   PetscMPIInt rank;
@@ -66,6 +68,9 @@ int main(int argc, const char *argv[])
 	{
 		// Start PDE solver for Monodomain model
 		cout << "Monodomain solver\n";
+
+    omp_set_num_threads(num_threads); 
+    std::cout << "Solving Monodomain problem with: " << num_threads << " OpenMP threads." << std::endl;
 		{
 			Monodomain monodomain;
       msg("Reading parameters file");

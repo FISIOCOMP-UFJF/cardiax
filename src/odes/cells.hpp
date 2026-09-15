@@ -7,6 +7,7 @@
 #include "linalg/petsc_vector.hpp"
 #include "odes/cellmodel.hpp"
 #include <armadillo>
+#include <omp.h>
 
 using namespace std;
 
@@ -30,14 +31,16 @@ class Cells
   double get_solver_time_unit_ms() const { return solver_time_unit_ms; }
 
   //! The underlying cell model
-  const CellModel & get_model() const { return *ode; }
+  CellModel & get_model() const { return *ode[0]; }
 
   //! Factor converting solver time into the cell model's own time
   double time_factor() const
-  { return solver_time_unit_ms / ode->native_time_unit_ms(); }
+  { return solver_time_unit_ms / ode[0]->native_time_unit_ms(); }
 
   //! Default constructor
   Cells (uint n, CellModel * c); 
+  Cells (uint n, string cell_model_name, string ode_solver, double dt, double totaltime, double tp);
+
   
   //! Default destructor
   ~Cells();
@@ -73,10 +76,10 @@ class Cells
   inline double * get_state_vars() const { return states; }
 
   //! Return the number of state variables of the ODE
-  inline uint get_ode_size() const { return ode->get_num_state_vars(); }
+  inline uint get_ode_size() const { return ode[0]->get_num_state_vars(); }
 
   //! Return the size = number of systems of ODE * number of state vars
-  inline uint get_size() const { return num_systems*ode->get_num_state_vars(); }
+  inline uint get_size() const { return num_systems*ode[0]->get_num_state_vars(); }
 
   //! Return an array with all the values of a given variable
   void get_var(int vindex, double * varray) const;
@@ -140,7 +143,7 @@ class Cells
   uint num_systems;
 
   //! The ODE system describing the cell model
-  CellModel* ode;  
+  CellModel** ode;  
 
   //! Timing step
   TimeStepper * ts;

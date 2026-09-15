@@ -688,6 +688,77 @@ std::pair<PetscInt, PetscReal> LinearSolver::solve(petsc::Matrix &A,
     return std::make_pair((PetscInt)its, (PetscReal)rnorm);
 }
 
+std::pair<PetscInt, PetscReal>
+LinearSolver::solve_constant_matrix(petsc::Matrix &A,
+                    petsc::Vector &x,
+                    petsc::Vector &b,
+                    const double tol)
+{
+    int its = 0;
+    double rnorm = 0.0;
+
+    /*
+     * A matriz é enviada e o solver é configurado
+     * somente na primeira chamada.
+     */
+    if (!_matrix_uploaded)
+    {
+        int n = A.size();
+        int nnz = A.get_nnz();
+
+        int *row_ptrs = new int[n + 1];
+        int *col_indices = new int[nnz];
+        double *values = new double[nnz];
+
+        A.get_CSR(&n,row_ptrs,col_indices,values);
+
+        // Conversão de índices de 1-based para 0-based
+        for (int i = 0; i < n + 1; i++)
+            row_ptrs[i] -= 1;
+
+        for (int i = 0; i < nnz; i++)
+            col_indices[i] -= 1;
+
+        AMGX_SAFE_CALL(AMGX_matrix_upload_all(_amgx_A,n,nnz,1,1,row_ptrs,col_indices,values,NULL));
+
+        AMGX_SAFE_CALL(AMGX_solver_setup(_amgx_solver,_amgx_A));
+
+        _matrix_uploaded = true;
+
+        delete[] row_ptrs;
+        delete[] col_indices;
+        delete[] values;
+    }
+
+    /*
+     * Em todas as chamadas, atualiza somente os vetores.
+     */
+    double *b_values = b.get_array();
+    double *x_values = x.get_array();
+
+    AMGX_SAFE_CALL(AMGX_vector_upload(_amgx_b,b.size(),1,b_values));
+
+    AMGX_SAFE_CALL(AMGX_vector_upload(_amgx_x,x.size(),1,x_values));
+
+    AMGX_SAFE_CALL(AMGX_solver_solve(_amgx_solver,_amgx_b,_amgx_x));
+
+    double *data = new double[x.size()];
+
+    AMGX_SAFE_CALL(AMGX_vector_download(_amgx_x,data));
+
+    x.set_data(data);
+
+    delete[] data;
+
+    AMGX_SAFE_CALL(AMGX_solver_get_iterations_number(_amgx_solver,&its));
+
+    AMGX_SAFE_CALL(AMGX_solver_get_iteration_residual(_amgx_solver,its,0,&rnorm));
+
+    return std::make_pair(
+        static_cast<PetscInt>(its),
+        static_cast<PetscReal>(rnorm)
+    );
+}
 #endif
 
 #ifdef PETSC_SOLVER
@@ -749,6 +820,14 @@ std::pair<PetscInt, PetscReal> LinearSolver::solve (petsc::Matrix & A,
   return ir;
 }
 
+std::pair<PetscInt, PetscReal>
+LinearSolver::solve_constant_matrix(petsc::Matrix &A,
+                    petsc::Vector &x,
+                    petsc::Vector &b,
+                    const double tol)
+{
+	solve((A, x, b, tol); 
+}
 #endif
 
    

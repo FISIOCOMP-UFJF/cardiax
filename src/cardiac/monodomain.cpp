@@ -555,7 +555,7 @@ void Monodomain::solve_parabolic()
   }
 #endif
   
-  ir = solver.solve(Ai, v1, f, pcgtol);
+  ir = solver.solve_constant_matrix(Ai, v1, f, pcgtol);
   
   if (tip.time2print())
     cout << " num its " << ir.first << " rnorm " << ir.second << endl;

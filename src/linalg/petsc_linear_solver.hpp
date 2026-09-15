@@ -116,6 +116,12 @@ public:
                                         petsc::Vector & x,
                                         petsc::Vector & b,
                                         const double tol=1.0e-16);
+  
+  std::pair<PetscInt, PetscReal> solve_constant_matrix (petsc::Matrix & A,
+                                        petsc::Vector & x,
+                                        petsc::Vector & b,
+                                        const double tol=1.0e-16);
+
   std::pair<PetscInt, PetscReal> solveFieldSplit (petsc::Matrix & A,
                                           petsc::Vector & x,
                                           petsc::Vector & b,
@@ -148,7 +154,8 @@ private:
       AMGX_vector_handle    _amgx_b       = nullptr;
       AMGX_vector_handle    _amgx_x       = nullptr;
       AMGX_solver_handle    _amgx_solver  = nullptr;
-
+      bool _matrix_uploaded = false;
+      
       //! True once init() has built the AMGX objects of THIS instance.
       bool _amgx_ready = false;
 

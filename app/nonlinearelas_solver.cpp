@@ -40,7 +40,7 @@ int main(int argc, const char* argv[])
   smethod = CommandLineArgs::read("-s","ul");
   restorefile = CommandLineArgs::read("-restore", "");
   save_checkpoint = CommandLineArgs::read("-save_state", 0) == 0 ? 0 : 1;
-  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() / 2 > 0 ? omp_get_max_threads() / 2 : 1);
+  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() > 0 ? omp_get_max_threads() : 1);
 
   extension = file_extension(mshfile);
   if(extension == "xml")

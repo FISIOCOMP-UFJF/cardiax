@@ -79,7 +79,7 @@ int main(int argc, const char* argv[])
   use_circ = CommandLineArgs::read("-circ",0);
   num_beats = CommandLineArgs::read("-beats",1);
   dt_circ  = CommandLineArgs::read("-dtc",1.0e-3);
-  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() / 2 > 0 ? omp_get_max_threads() / 2 : 1);
+  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() > 0 ? omp_get_max_threads() : 1);
 
 
   // check and clean output directory

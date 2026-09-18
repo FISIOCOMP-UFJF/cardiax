@@ -39,7 +39,7 @@ int main(int argc, const char* argv[])
   ep_model = CommandLineArgs::read("-ep","mono");
   condtype = CommandLineArgs::read("-cond",0);
   checkpoint_rate = CommandLineArgs::read("-save_state", -1);
-  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() / 2 > 0 ? omp_get_max_threads() / 2 : 1);
+  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() > 0 ? omp_get_max_threads() : 1);
 
   // Old for GMSH
   //meshname = basename + ".msh";

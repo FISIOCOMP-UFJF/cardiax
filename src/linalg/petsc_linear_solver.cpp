@@ -826,7 +826,7 @@ LinearSolver::solve_constant_matrix(petsc::Matrix &A,
                     petsc::Vector &b,
                     const double tol)
 {
-	solve((A, x, b, tol); 
+  return solve(A, x, b, tol);
 }
 #endif
 

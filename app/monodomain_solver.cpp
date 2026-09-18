@@ -53,7 +53,7 @@ int main(int argc, const char *argv[])
   restfilename = CommandLineArgs::read("-restore", "");
   checkpoint_interval = CommandLineArgs::read("-save_state", -1.0);
 	typefile  = mshname + ".typ";
-  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() / 2 > 0 ? omp_get_max_threads() / 2 : 1);
+  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() > 0 ? omp_get_max_threads() : 1);
 
   // Start PETSc
   PetscMPIInt rank;

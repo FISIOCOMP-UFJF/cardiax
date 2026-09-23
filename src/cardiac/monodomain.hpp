@@ -60,7 +60,12 @@ protected:
   bool stim_apply;
 
   //! Nodal stimulus control
-  bool stim_apply_nodes;
+  // bool stim_apply_nodes;
+
+
+
+
+  bool stimuli_from_toml = false;
 
   //! Nodes to apply stimulus
   std::set<uint> stim_nodes;
@@ -74,8 +79,14 @@ protected:
   //! Vector current transmembrane potential
   arma::vec vm;
 
-  //! Nodal stimuli values
+  //! External nodal currents (PMJ coupling); zero when not coupled
+  arma::vec i_pmj;
+
+  //! Total nodal current applied to the cells in this step (i_ext + stimuli)
   arma::vec stim_values;
+
+  //! Nodal stimuli values
+  // arma::vec stim_values;
    
   //! Assembled global mass matrix
   petsc::Matrix Mi;

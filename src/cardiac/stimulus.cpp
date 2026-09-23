@@ -222,10 +222,15 @@ void Stimuli::read_xml(const string & filename)
 
 }
 
-
 int Stimuli::read_toml(const toml::table & cfg, const std::string & key)
 {
-  const toml::array * regions = cfg.at_path(key + ".regions").as_array();
+  // key = "stimuli.tissue" or "stimuli.purkinje"  ->  cfg["stimuli"]["tissue"]
+  const toml::array * regions = nullptr;
+  const auto dot = key.find('.');
+  if (dot == std::string::npos)
+    regions = cfg[key].as_array();
+  else
+    regions = cfg[key.substr(0, dot)][key.substr(dot + 1)].as_array();
 
   if (!regions || regions->empty())
   {
@@ -239,7 +244,7 @@ int Stimuli::read_toml(const toml::table & cfg, const std::string & key)
   for (const toml::node & node : *regions)
   {
     i++;
-    const std::string where = key + ".regions entry " + std::to_string(i);
+    const std::string where = key + " entry " + std::to_string(i);
 
     const toml::table * t = node.as_table();
     if (!t)
@@ -272,20 +277,21 @@ int Stimuli::read_toml(const toml::table & cfg, const std::string & key)
 
     if (duration <= 0.0)
       throw std::runtime_error(where + ": 'duration' must be > 0");
+
+    // min/max are two opposite corners: order each component
     for (int d = 0; d < 3; d++)
-      if (lo[d] > hi[d])
-        throw std::runtime_error(where + ": min > max in component " + std::to_string(d));
+      if (lo[d] > hi[d]) std::swap(lo[d], hi[d]);
 
     svec.push_back(new Stimulus(start, duration, value,
                                 lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]));
 
-    cout << " Stimulus " << i << ": [" << start << "," << start + duration
+    cout << "Stimulus " << i << ": [" << start << "," << start + duration
          << "] value " << value
          << "  box [" << lo[0] << "," << hi[0] << "]x[" << lo[1] << "," << hi[1]
          << "]x[" << lo[2] << "," << hi[2] << "]" << endl;
   }
 
   num_stimuli = (int) svec.size();
-  cout << "Number of stimuli (TOML " << key << "): " << i << endl;
+  // cout << "Number of stimuli (TOML " << key << "): " << i << endl;
   return i;
 }

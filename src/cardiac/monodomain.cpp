@@ -12,10 +12,7 @@
 
 //#define MONO_ISOTROPIC
 
-Monodomain::Monodomain()
-  : CardiacProblem(),
-    //sigma_l(0.0001334), sigma_t(0.0000176),  sigma_n(0.0000176),
-    stim_apply_nodes(false)
+Monodomain::Monodomain() : CardiacProblem()
 {
   mesh = new Mesh();
   writer = new WriterHDF5(mesh);
@@ -58,6 +55,16 @@ void Monodomain::set_parameters(const toml::table & cfg)
                  cfg["physical"]["conductivity_type"].value_or("isotropic")));
 
   cond.set_default({ parameters["sigma_l"],parameters["sigma_t"],parameters["sigma_n"] });
+
+  // Stimuli
+  // stimuli: [stim_key] with regions = [ {start, duration, value, min, max}, ... ]
+  stimuli_from_toml = stimuli.read_toml(cfg, "stimuli.tissue") > 0;
+
+  if (stimuli_from_toml)
+    cout << "Tissue stimuli from TOML [stimuli.tissue]" << endl;
+  else
+    cout << "Tissue stimuli: none in TOML [stimuli.tissue], using " << stimuli_filename << endl;
+
 }
 
 void Monodomain::advance()
@@ -78,7 +85,7 @@ void Monodomain::advance()
     timer.leave();
 
     //write_data_text(vm, &step_apd);
-    //write_data(vm, "vm", &step);
+    write_data(vm, "vm", &step);
   }
 }
 
@@ -348,7 +355,7 @@ void Monodomain::init(bool is_restart)
   if(extension == "xml")
   {
     mesh->read_xml(mesh_filename);
-    stimuli.read_xml(stimuli_filename);
+    // stimuli.read_xml(stimuli_filename);
     std::size_t pos = mesh_filename.find(".xml");
     std::string mesh_name = mesh_filename.substr(0,pos);
     output = mesh_name + "_output";
@@ -356,11 +363,13 @@ void Monodomain::init(bool is_restart)
   else
   {
     mesh->read(mesh_filename);
-    stimuli.read(stimuli_filename);
+    // stimuli.read(stimuli_filename);
   }
 
   // stimulus initialization
-  stim_values.resize(mesh->get_n_points());
+  stim_values.zeros(mesh->get_n_points());
+  i_pmj.zeros(mesh->get_n_points());
+
   stim_values.fill(0.0);
   
   fespace.set_mesh(mesh);
@@ -428,10 +437,15 @@ void Monodomain::initial_conditions()
   cells->get_var(0,v1);
 }
 
+// void Monodomain::set_stimulus_value(int index, double val)
+// {
+//   stim_apply_nodes = true;
+//   stim_values(index) = val;
+// }
+
 void Monodomain::set_stimulus_value(int index, double val)
 {
-  stim_apply_nodes = true;
-  stim_values(index) = val;
+  i_pmj(index) = val;
 }
 
 void Monodomain::solve()
@@ -504,26 +518,77 @@ void Monodomain::solve()
 void Monodomain::solve_odes()
 {
   stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
-  
-  cells->set_solver_time_unit_ms(1.0);
-  
-  if(stim_apply_nodes)
-  {
-    // cout << "Aplicando estimulos " << tip.time() << endl;
-    cells->advance(tip.time(), timestep, stim_values);
-    stim_values.fill(0);
-    stim_apply_nodes = false;
-  }
-  else
-  {
-    cells->advance(tip.time(), timestep, stim_val, stim_nodes);
-    stim_nodes.clear();
-  }
-  
 
-  cells->get_var(0, v0);  
+  // --- debug: region actually stimulated -----------------------------
+  // if (stim_apply)
+  // {
+  //   cout << "\n  [stim] t=" << tip.time() << "  value=" << stim_val
+  //        << "  nodes=" << stim_nodes.size();
+
+  //   if (!stim_nodes.empty())
+  //   {
+  //     arma::vec3 lo, hi;
+  //     lo.fill( std::numeric_limits<double>::max());
+  //     hi.fill(-std::numeric_limits<double>::max());
+
+  //     for (uint n : stim_nodes)
+  //     {
+  //       const arma::vec3 p = mesh->get_point(n);
+  //       lo = arma::min(lo, p);
+  //       hi = arma::max(hi, p);
+  //     }
+
+  //     cout << "  bbox x[" << lo(0) << "," << hi(0) << "]"
+  //          <<      " y[" << lo(1) << "," << hi(1) << "]"
+  //          <<      " z[" << lo(2) << "," << hi(2) << "]";
+  //   }
+  //   cout << endl;
+  // }
+  // -------------------------------------------------------------------
+
+  // total nodal current = external (PMJ) + active stimuli
+  stim_values = i_pmj;
+  if (stim_apply)
+  {
+    for (uint n : stim_nodes)
+      stim_values(n) += stim_val;
+
+    if (tip.time2print())
+      cout << " - Stimulating tissue -";
+  }
+  stim_nodes.clear();
+
+  cells->set_solver_time_unit_ms(1.0);
+  cells->advance(tip.time(), timestep, stim_values);
+
+  cells->get_var(0, v0);
   v0.assemble();
 }
+
+// void Monodomain::solve_odes()
+// {
+//   stimuli.check(tip.time(), *mesh, stim_nodes, &stim_val, &stim_apply);
+  
+//   cells->set_solver_time_unit_ms(1.0);
+  
+//   if(stim_apply_nodes)
+//   {
+//     if(tip.time2print())
+//       cout << "- Stimulating tissue - " << endl;
+//     cells->advance(tip.time(), timestep, stim_values);
+//     stim_values.fill(0);
+//     stim_apply_nodes = false;
+//   }
+//   else
+//   {
+//     cells->advance(tip.time(), timestep, stim_val, stim_nodes);
+//     stim_nodes.clear();
+//   }
+  
+
+//   cells->get_var(0, v0);  
+//   v0.assemble();
+// }
 
 void Monodomain::solve_parabolic()
 {

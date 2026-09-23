@@ -256,19 +256,17 @@ void MonodomainPurkinje::initial_conditions()
   cells->get_var(0,v1);
 }
 
-void MonodomainPurkinje::set_parameters(const toml::table & cfg,
-                                        const std::string & stim_key)
+void MonodomainPurkinje::set_parameters(const toml::table & cfg)
 {
-  cout << "SET PARAMS PK" << endl;
+  // cout << "SET PARAMS PK" << endl;
   
   // stimuli: [stim_key] with regions = [ {start, duration, value, min, max}, ... ]
-  stimuli_from_toml = stimuli.read_toml(cfg, stim_key) > 0;
+  stimuli_from_toml = stimuli.read_toml(cfg, "stimuli.purkinje") > 0;
 
   if (stimuli_from_toml)
-    cout << "Purkinje stimuli from TOML [" << stim_key << "]" << endl;
+    cout << "Purkinje stimuli from TOML [stimuli.purkinje]" << endl;
   else
-    cout << "Purkinje stimuli: none in TOML [" << stim_key
-         << "], using " << stimuli_filename << endl;
+    cout << "Purkinje stimuli: none in TOML [stimuli.purkinje], using " << stimuli_filename << endl;
 }
 
 void MonodomainPurkinje::solve()
@@ -319,7 +317,7 @@ void MonodomainPurkinje::solve_odes()
   if (apply)
   {
     if(tip.time2print())
-      cout << " - Stimulating Purkinje - ";
+      cout << " - Stimulating Purkinje -";
     cells->advance(tip.time(), timestep, value, stim_nodes);
     // cells->advance(tip.time(), timestep, stim_values);
     stim_nodes.clear();

@@ -37,9 +37,7 @@ public:
   void solve();
 
   //! Config params
-    void set_parameters(const toml::table & cfg,
-                        const std::string & stim_key = "stimuli");
-
+    void set_parameters(const toml::table & cfg);
 protected:
 
   //! Number of degrees of freedom 

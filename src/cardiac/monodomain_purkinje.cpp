@@ -207,8 +207,14 @@ void MonodomainPurkinje::init()
 {
   tip = TimeParameters(timestep, totaltime, printrate);
 
-  mesh->read(mesh_filename);
-  stimuli.read(stimuli_filename);
+  // mesh->read(mesh_filename);
+  // stimuli.read(stimuli_filename);
+  
+  mesh->read_xml(mesh_filename);
+  cout << *mesh << endl;
+
+  //stimuli.read_xml(stimuli_filename);
+  // stimuli.read_toml(stimuli_filename);l
 
   pk_fespace.set_mesh(mesh);
 	pk_fespace.config();
@@ -250,6 +256,21 @@ void MonodomainPurkinje::initial_conditions()
   cells->get_var(0,v1);
 }
 
+void MonodomainPurkinje::set_parameters(const toml::table & cfg,
+                                        const std::string & stim_key)
+{
+  cout << "SET PARAMS PK" << endl;
+  
+  // stimuli: [stim_key] with regions = [ {start, duration, value, min, max}, ... ]
+  stimuli_from_toml = stimuli.read_toml(cfg, stim_key) > 0;
+
+  if (stimuli_from_toml)
+    cout << "Purkinje stimuli from TOML [" << stim_key << "]" << endl;
+  else
+    cout << "Purkinje stimuli: none in TOML [" << stim_key
+         << "], using " << stimuli_filename << endl;
+}
+
 void MonodomainPurkinje::solve()
 {
   cout << "\nSimulating" << endl << endl << flush;
@@ -287,20 +308,31 @@ void MonodomainPurkinje::solve_odes()
   bool apply;
   double value;
 
+  arma::vec stim_values;
+  stim_values.resize(mesh->get_n_points());
+  stim_values.fill(0.0);
+
   stimuli.check(tip.time(), *mesh, stim_nodes, &value, &apply);
+  
+  cells->set_solver_time_unit_ms(1.0);
   
   if (apply)
   {
+    if(tip.time2print())
+      cout << " - Stimulating Purkinje - ";
     cells->advance(tip.time(), timestep, value, stim_nodes);
+    // cells->advance(tip.time(), timestep, stim_values);
     stim_nodes.clear();
   }
   else
   {
-    cells->advance(tip.time(), timestep);
+    // cells->advance(tip.time(), timestep);
+    cells->advance(tip.time(), timestep, stim_values);
   }
 
   cells->get_var(0, v0);  
   v0.assemble();
+
 }
 
 void MonodomainPurkinje::solve_parabolic()

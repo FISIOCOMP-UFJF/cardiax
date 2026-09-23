@@ -28,8 +28,10 @@ public:
   //! An iterator for the bifurcation nodes container
   typedef std::map<int, std::vector<int> >::iterator BifucartionIterator;
   typedef std::map<int, std::vector<int> >::const_iterator const_BifucartionIterator;
+
   BifucartionIterator begin() { return bifurcation_nodes.begin(); }
   const_BifucartionIterator begin() const { return bifurcation_nodes.begin(); }
+  
   BifucartionIterator end() { return bifurcation_nodes.end(); }
   const_BifucartionIterator end() const { return bifurcation_nodes.end(); }
 

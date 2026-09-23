@@ -119,7 +119,11 @@ void CoupledPurkinje::inject_pmj_current(double time, double step)
     // compute v_pk - v_cm to impose I_pmj = 1/R_pmj (v_pk - v_cm)
     double v_pk = pktree->get_cells().get_state(it->first, 0);
     double v_cm = tissue->get_cells().get_state(it->second, 0);
-    double i_pmj = (1.0/pmj_coupling_resistance) * (v_pk - v_cm);
+    
+    // double i_pmj = (1.0/pmj_coupling_resistance) * (v_pk - v_cm);
+    
+    double i_pmj = (v_cm - v_pk) / pmj_coupling_resistance;
+
 
     // impose current to myocardial tissue
     tissue->set_stimulus_value(it->second, i_pmj);
@@ -134,19 +138,62 @@ void CoupledPurkinje::setup(std::string & mshname,
                             double pr, double pa)
 {
   cout << "Setup of coupled (Purkinje/Tissue) cardiac problem" << endl;
-
-  cout << "\nCardiac tissue" << endl;
   tissue->setup(mshname, cellmodel, odesolver, dt, T, pr, pa);
+  pktree->setup(pkmshname, cellmodel, odesolver, dt, T, pr, pa);
+}
+
+void CoupledPurkinje::init()
+{
+  cout << "\nCardiac tissue" << endl;
   tissue->init();
 
   cout << "\nPurkinje system" << endl;
-  pktree->setup(pkmshname, cellmodel, odesolver, dt, T, pr, pa);
   pktree->init();
 
   cout << "\nConnecting PMJ nodes" << endl;
   create_pmj_map();
-
 }
+
+// void CoupledPurkinje::setup(std::string & mshname,
+//                             std::string & pkmshname,
+//                             std::string & cellmodel,
+//                             std::string & odesolver,
+//                             double dt, double T,
+//                             double pr, double pa)
+// {
+//   cout << "Setup of coupled (Purkinje/Tissue) cardiac problem" << endl;
+
+//   cout << "\nCardiac tissue" << endl;
+//   tissue->setup(mshname, cellmodel, odesolver, dt, T, pr, pa);
+//   tissue->init();
+//   //tissue.set_parameters(cfg);
+//   //tissue.init(restfilename != "");
+
+//   // if(!file_exists(typefile))
+//   //   cout << "Cells: all cells are of the same type\n";
+//   // else
+//   //   monodomain.setup_types(typefile);
+
+//   tissue->initial_conditions();
+//       // monodomain.set_checkpoint_interval(checkpoint_interval);
+//       // if(restfilename != "")
+//       // {
+//       //   monodomain.restore_checkpoint(restfilename);
+//       // }
+
+//       // monodomain.solve();
+
+
+
+
+//   cout << "\nPurkinje system" << endl;
+//   pktree->setup(pkmshname, cellmodel, odesolver, dt, T, pr, pa);
+//   pktree->init();
+
+//   cout << "\nConnecting PMJ nodes" << endl;
+//   create_pmj_map();
+
+// }
 
 void CoupledPurkinje::solve()
 {

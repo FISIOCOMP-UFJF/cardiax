@@ -36,6 +36,10 @@ public:
   //! Solve the problem
   void solve();
 
+  //! Config params
+    void set_parameters(const toml::table & cfg,
+                        const std::string & stim_key = "stimuli");
+
 protected:
 
   //! Number of degrees of freedom 
@@ -46,6 +50,9 @@ protected:
 
   //! Purkinje fiber radius (um: micrometer)
   double radius;
+
+  //! Stimuli was read?
+  bool stimuli_from_toml = false;
 
   //! Nodes to apply stimulus
   std::set<uint> stim_nodes;
@@ -58,6 +65,9 @@ protected:
 
   //! Vector of the transmembrane potential at current time
   arma::vec vm;
+
+  //! Vector of stimuli
+  arma::vec stim_values;
    
   //! Assembled global mass and stiffness matrices
   petsc::Matrix Mi, Ai;

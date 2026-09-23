@@ -1,3 +1,4 @@
+#include <stdexcept>
 #include "stimulus.hpp"
 #include "util/pugixml.hpp"
 
@@ -18,10 +19,7 @@ void Stimuli::clear()
   svec.clear();
 }
 
-
-
 // Check and apply for Monodomain model
-
 void Stimuli::check(const double time, const Mesh &msh,
                     std::set<uint> & snodes, double * sval, bool * apply)
 {
@@ -224,3 +222,70 @@ void Stimuli::read_xml(const string & filename)
 
 }
 
+
+int Stimuli::read_toml(const toml::table & cfg, const std::string & key)
+{
+  const toml::array * regions = cfg.at_path(key + ".regions").as_array();
+
+  if (!regions || regions->empty())
+  {
+    cout << "Number of stimuli (TOML " << key << "): 0" << endl;
+    return 0;
+  }
+
+  svec.reserve(svec.size() + regions->size());
+
+  int i = 0;
+  for (const toml::node & node : *regions)
+  {
+    i++;
+    const std::string where = key + ".regions entry " + std::to_string(i);
+
+    const toml::table * t = node.as_table();
+    if (!t)
+      throw std::runtime_error(where + ": must be an inline table { ... }");
+
+    auto scalar = [&](const char * name) -> double {
+      auto v = (*t)[name].value<double>();          // also accepts integers
+      if (!v) throw std::runtime_error(where + ": missing or invalid '" + name + "'");
+      return *v;
+    };
+
+    auto vec3 = [&](const char * name, double out[3]) {
+      const toml::array * a = (*t)[name].as_array();
+      if (!a || a->size() != 3)
+        throw std::runtime_error(where + ": '" + name + "' must be [x, y, z]");
+      for (int d = 0; d < 3; d++)
+      {
+        auto v = (*a)[d].value<double>();
+        if (!v) throw std::runtime_error(where + ": non-numeric value in '" + name + "'");
+        out[d] = *v;
+      }
+    };
+
+    const double start    = scalar("start");
+    const double duration = scalar("duration");
+    const double value    = scalar("value");
+    double lo[3], hi[3];
+    vec3("min", lo);
+    vec3("max", hi);
+
+    if (duration <= 0.0)
+      throw std::runtime_error(where + ": 'duration' must be > 0");
+    for (int d = 0; d < 3; d++)
+      if (lo[d] > hi[d])
+        throw std::runtime_error(where + ": min > max in component " + std::to_string(d));
+
+    svec.push_back(new Stimulus(start, duration, value,
+                                lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]));
+
+    cout << " Stimulus " << i << ": [" << start << "," << start + duration
+         << "] value " << value
+         << "  box [" << lo[0] << "," << hi[0] << "]x[" << lo[1] << "," << hi[1]
+         << "]x[" << lo[2] << "," << hi[2] << "]" << endl;
+  }
+
+  num_stimuli = (int) svec.size();
+  cout << "Number of stimuli (TOML " << key << "): " << i << endl;
+  return i;
+}

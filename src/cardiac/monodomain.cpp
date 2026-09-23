@@ -168,9 +168,10 @@ void Monodomain::assemble_matrices()
 void Monodomain::calc_cond_tensor(const int index, const int ndim,
                                   arma::mat & sigma)
 {
-  const double sigma_l = parameters["sigma_l"];
-  const double sigma_t = parameters["sigma_t"];
-  const double sigma_n = parameters["sigma_n"];
+  // const double sigma_l = parameters["sigma_l"];
+  // const double sigma_t = parameters["sigma_t"];
+  // const double sigma_n = parameters["sigma_n"];
+  // cout << sigma_l << "  " << sigma_t << endl;
 
   const arma::vec3 f = get_fiber(index);
   const arma::vec3 s = get_trans(index);
@@ -508,7 +509,7 @@ void Monodomain::solve_odes()
   
   if(stim_apply_nodes)
   {
-    cout << "Aplicando estimulos " << tip.time() << endl;
+    // cout << "Aplicando estimulos " << tip.time() << endl;
     cells->advance(tip.time(), timestep, stim_values);
     stim_values.fill(0);
     stim_apply_nodes = false;

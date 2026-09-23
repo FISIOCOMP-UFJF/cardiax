@@ -6,6 +6,7 @@
 #include <vector>
 #include <armadillo>
 #include "mesh/mesh.hpp"
+#include "util/toml.hpp"
 
 /** Stimulus file format:
       num_stimuli
@@ -75,6 +76,9 @@ public:
 
   //! Read data from .xml file
   void read_xml(const std::string & filename);
+
+  //! Read data from .toml file
+  int read_toml(const toml::table & cfg, const std::string & key = "stimuli");
 
 private:
 

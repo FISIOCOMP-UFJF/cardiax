@@ -27,7 +27,7 @@ void usage()
   cout << "    -c       <cellmodel>              string that identifies the ionic model" << endl;
   cout << "    -m       <odesolver>              ODE solver (ExplicitEuler, Implicit, ...)" << endl;
   cout << "    -ep      <model>                  monodomain | purkinje | coupled_purkinje" << endl;
-  cout << "    -fp      <pkmesh>                 Purkinje mesh" << endl;
+  // cout << "    -fp      <pkmesh>                 Purkinje mesh" << endl;
   cout << "    -restore <restorefile>            Restore state file" << endl;
   cout << "    -save_state <interval>            Save state interval (ms)" << endl;
   cout << "    -num_threads <n>                  number of OpenMP threads" << endl;
@@ -138,7 +138,6 @@ int main(int argc, const char *argv[])
   override_double(T,                   "-t");
   override_double(tp,                  "-pr");
   override_str   (mshname,             "-f_mesh");   // see note below
-  override_str   (pkmshname,           "-fp");
   override_str   (cellmodel,           "-c");
   override_str   (odesolver,           "-m");
   override_str   (model,               "-ep");
@@ -187,10 +186,11 @@ int main(int argc, const char *argv[])
   }
   else if(model == "purkinje")
   {
-    cout << "Monodomain-Purkinje Solver\n";
+    cout << "Purkinje Network (Monodomain) Solver\n";
     {
       MonodomainPurkinje mp;
       mp.setup(mshname, cellmodel, odesolver, dt, T, tp, tp);
+      mp.set_parameters(cfg);
       mp.init();
       mp.solve();
     }
@@ -206,9 +206,16 @@ int main(int argc, const char *argv[])
         exit(1);
       }
       cp.setup(mshname, pkmshname, cellmodel, odesolver, dt, T, tp, tp);
+              
+      cp.get_monodomain()->set_parameters(cfg);
+      
+      cp.get_purkinje()->set_parameters(cfg);
+
+      cp.init();                                  // <-- lê malhas, monta matrizes, cria PMJs
       cp.solve();
     }
   }
+
   else
   {
     cout << "Cardiac PDE Model " << model << " does not exist." << endl;

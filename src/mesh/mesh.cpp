@@ -1,7 +1,6 @@
 #include "mesh.hpp"
 #include "fem/fe.hpp"
 #include "util/pugixml.hpp"
-
 #include <algorithm>
 
 void Mesh::update_point(const int i, const arma::vec3 &pt)
@@ -60,17 +59,17 @@ void Mesh::read(const std::string &filename)
   ine >> n_elements;
   inf >> fibcode;
 
-  cout << "Fiber model: ";
-  if (fibcode == 0)
-  {
-    cout << "orthotropic" << endl;
-    proptype = ORTHOTROPIC;
-  }
-  else
-  {
-    cout << "transversely isotropic" << endl;
-    proptype = TRANSVERSELY_ISOTROPIC;
-  }
+  // cout << "Fiber model: ";
+  // if (fibcode == 0)
+  // {
+  //   cout << "orthotropic" << endl;
+  //   proptype = ORTHOTROPIC;
+  // }
+  // else
+  // {
+  //   cout << "transversely isotropic" << endl;
+  //   proptype = TRANSVERSELY_ISOTROPIC;
+  // }
 
   for (int i = 0; i < n_elements; i++) {
     int index;
@@ -298,10 +297,10 @@ void Mesh::read_xml(const std::string &filename)
   if (fibers)
   {
     std::string fiber_model = fibers.attribute("type").value();
-    cout << "Fiber model: " << fiber_model << endl;
+    // cout << "Fiber model: " << fiber_model << endl;
     if (fiber_model == "fiber_transversely_isotropic")
     {
-      proptype = TRANSVERSELY_ISOTROPIC;
+      // proptype = TRANSVERSELY_ISOTROPIC;
 
       for (pugi::xml_node elem = fibers.child("element"); elem;
            elem = elem.next_sibling("element"))
@@ -341,7 +340,7 @@ void Mesh::read_xml(const std::string &filename)
     }
     else if (fiber_model == "fiber_orthotropic")
     {
-      proptype = ORTHOTROPIC;
+      // proptype = ORTHOTROPIC;
 
       for (pugi::xml_node elem = fibers.child("element"); elem;
            elem = elem.next_sibling("element"))
@@ -363,7 +362,7 @@ void Mesh::read_xml(const std::string &filename)
     //else if (fiber_model == "fiber_isotropic") // isotropic
     else
     {
-      proptype = ISOTROPIC;
+      // proptype = ISOTROPIC;
       for (size_t i = 0; i < elems.size(); i++)
       {
         int index;
@@ -389,7 +388,7 @@ void Mesh::read_xml(const std::string &filename)
   if (fibers)
   {
     std::string fiber_model = fibers.attribute("type").value();
-    cout << "Fiber model: " << fiber_model << endl;
+    // cout << "Fiber model: " << fiber_model << endl;
     if (fiber_model == "fiber_orthotropic")
     {
 

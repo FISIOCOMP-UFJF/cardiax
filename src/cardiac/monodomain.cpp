@@ -33,6 +33,33 @@ Monodomain::~Monodomain()
   delete cells;
   delete cellmodel;
 }
+
+void Monodomain::set_parameters(const toml::table & cfg)
+{
+  auto set_double = [&](const std::string & pkey, std::string_view path) {
+    if (auto v = cfg.at_path(path).value<double>())
+      parameters[pkey] = *v;
+  };
+  auto set_int = [&](const std::string & pkey, std::string_view path) {
+    if (auto v = cfg.at_path(path).value<int>())
+      parameters[pkey] = *v;
+  };
+
+  set_double("surface_to_volume", "physical.surface_to_volume");
+  set_double("theta_method",      "numerics.theta");
+  set_double("pcgtol",            "numerics.rel_tol");
+  set_int   ("maxnz",             "numerics.maxnz");
+  set_double("sigma_l", "physical.sigma_f");
+  set_double("sigma_t", "physical.sigma_s");
+  set_double("sigma_n", "physical.sigma_n");
+
+  // Conductivity
+  cond.set_type(ConductivityModel::from_string(
+                 cfg["physical"]["conductivity_type"].value_or("isotropic")));
+
+  cond.set_default({ parameters["sigma_l"],parameters["sigma_t"],parameters["sigma_n"] });
+}
+
 void Monodomain::advance()
 {
   static int step = 0;
@@ -51,7 +78,7 @@ void Monodomain::advance()
     timer.leave();
 
     //write_data_text(vm, &step_apd);
-    // write_data(vm, "vm", &step);
+    //write_data(vm, "vm", &step);
   }
 }
 
@@ -144,36 +171,15 @@ void Monodomain::calc_cond_tensor(const int index, const int ndim,
   const double sigma_l = parameters["sigma_l"];
   const double sigma_t = parameters["sigma_t"];
   const double sigma_n = parameters["sigma_n"];
+
   const arma::vec3 f = get_fiber(index);
   const arma::vec3 s = get_trans(index);
   const arma::vec3 n = get_normal(index);
-  arma::mat tmp;
-  arma::mat33 I = arma::eye(3,3);
-  sigma = I;
 
-  if(mesh->get_prop_type() == ISOTROPIC)
-  {
-    int nr = sigma.n_rows;
-    for(int i=0; i<nr; i++)
-      sigma(i,i) = sigma_l;
-  }
-  else if (mesh->get_prop_type() == TRANSVERSELY_ISOTROPIC)
-  {
-    tmp = sigma_t*I + (sigma_l-sigma_t) * (f * f.t());
-    for(int i=0; i<ndim; i++)
-      for(int j=0; j<ndim; j++)
-        sigma(i,j) = tmp(i,j);
-  }
-  else if (mesh->get_prop_type() == ORTHOTROPIC)
-  {
-    for(int k=0; k<ndim; k++)
-      for(int i=0; i<ndim; i++)
-        sigma(k,i) = sigma_l*f[k]*f[i] + sigma_t*s[k]*s[i] + sigma_n*n[k]*n[i];
-  }
+  sigma = cond.at(index, ndim, f, s, n);
 }
 
-void Monodomain::calc_elmat_stiff(const int eindex,
-				  const FiniteElement & fe,
+void Monodomain::calc_elmat_stiff(const int eindex, const FiniteElement & fe,
                                   arma::mat & elmat)
 {
   int ndim = fe.get_ndim();
@@ -206,7 +212,7 @@ void Monodomain::calc_elmat_stiff(const int eindex,
 }
 
 void Monodomain::calc_elmat_mass(const int eindex,
-				 const FiniteElement & fe, 
+                                 const FiniteElement & fe,
                                  arma::mat & elmat)
 {
   double detJxW;

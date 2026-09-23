@@ -20,6 +20,26 @@ CardiacProblem::~CardiacProblem()
   delete warmup;
 }
 
+void CardiacProblem::set_parameters(const toml::table & cfg)
+{
+  auto set_double = [&](const std::string & pkey, std::string_view path) {
+    if (auto v = cfg.at_path(path).value<double>())
+      parameters[pkey] = *v;
+  };
+  auto set_int = [&](const std::string & pkey, std::string_view path) {
+    if (auto v = cfg.at_path(path).value<int>())
+      parameters[pkey] = *v;
+  };
+
+  set_double("surface_to_volume", "physical.surface_to_volume");
+  set_double("theta_method",      "numerics.theta");
+  set_double("pcgtol",            "numerics.rel_tol");
+  set_int   ("maxnz",             "numerics.maxnz");
+  set_double("sigma_l", "physical.sigma_f");
+  set_double("sigma_t", "physical.sigma_s");
+  set_double("sigma_n", "physical.sigma_n");
+}
+
 void CardiacProblem::setup(std::string & b, std::string & c, std::string & m,
                            double dt, double T, double pr, double pa)
 {

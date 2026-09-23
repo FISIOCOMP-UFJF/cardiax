@@ -1,11 +1,13 @@
 #ifndef CARDIAC_PROBLEM_HPP
 #define CARDIAC_PROBLEM_HPP
 
+#include "conductivity.hpp"
 #include "stimulus.hpp"
 #include "linalg/linalg.h"
 #include "odes/odes.h"
 #include "mesh/writer_hdf5.hpp"
 #include "util/parameters.hpp"
+#include "util/toml.hpp"
 
 typedef std::vector<arma::mat33*> ArrayMat33;
 
@@ -93,6 +95,9 @@ public:
   //! input files (passive_time, activation window) are converted with it.
   void set_solver_time_unit_ms(double ms)
   { solver_time_unit_ms = ms; if (cells) cells->set_solver_time_unit_ms(ms); }
+
+  // Config params
+  virtual void set_parameters(const toml::table & cfg);
 
   //! Factor converting a value given in ms into the solver time unit
   double ms_to_solver_time() const { return 1.0 / solver_time_unit_ms; }
@@ -207,6 +212,7 @@ protected:
   TimeParameters tip;
   Cells * cells;
   CellModel * cellmodel;
+  ConductivityModel cond;
 
   //! Pre-condicionamento do modelo celular (nullptr = desligado)
   CellWarmup * warmup = nullptr;

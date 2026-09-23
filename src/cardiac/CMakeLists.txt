@@ -1,6 +1,7 @@
 # Lista de fontes (Isto está perfeito)
 set(CARDIAC_SRC
     cardiacproblem.cpp
+    conductivity.cpp
     stimulus.cpp
     bidomain.cpp
     bidomain_bath.cpp

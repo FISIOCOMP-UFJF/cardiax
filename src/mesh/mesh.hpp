@@ -4,6 +4,9 @@
 #include <iostream>
 #include <vector>
 #include <map>
+#include <string>
+#include <unordered_map>
+#include <stdexcept>
 #include "fem/element.hpp"
 #include "fem/mapping.hpp"
 
@@ -13,15 +16,7 @@ enum MappingType
     MAPPING_ISOPARAMETRIC=2,
 };
 
-enum PropertyType
-{
-    ISOTROPIC,
-    TRANSVERSELY_ISOTROPIC,
-    ORTHOTROPIC
-};
-
 // Forward declaration
-
 class Mapping;
 class Mapping;
 class SurfaceMapping;
@@ -139,7 +134,7 @@ public:
   int get_element_index(int i) const { return elems[i].get_index(); }
 
   //! Get property type
-  PropertyType get_prop_type() const { return proptype; }
+  // PropertyType get_prop_type() const { return proptype; }
 
   //! Read mesh files given basename
   void read(const std::string & filename);
@@ -239,8 +234,8 @@ protected:
   //! Constrained nodes
   std::map<int, double> bnodes_map;
 
-  //! Type of element fiber
-  PropertyType proptype;
+  // //! Type of element fiber
+  // PropertyType proptype;
 
 };
 

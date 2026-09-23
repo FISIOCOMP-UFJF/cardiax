@@ -34,6 +34,9 @@ public:
   //! Set cell state variable value
   void set_stimulus_value(int index, double val);
 
+  //! Config params
+  void set_parameters(const toml::table & cfg) override;
+
   //! Solve the problem
   void solve();
 

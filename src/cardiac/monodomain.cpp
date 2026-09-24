@@ -65,6 +65,57 @@ void Monodomain::set_parameters(const toml::table & cfg)
   else
     cout << "Tissue stimuli: none in TOML [stimuli.tissue], using " << stimuli_filename << endl;
 
+
+  //
+  // pseudo-ECG setup
+  //
+  // [ecg]
+  //   calc_rate = 1
+  //   sigma_b   = 20.0
+  //   leads = [ { x = ..., y = ..., z = ... [, name = "..."] }, ... ]   (um, outside tissue)
+  // int    ecg_calc_rate = 1;
+  // ecg_calc_rate = cfg.at_path("ecg.calc_rate").value_or(ecg_calc_rate);
+  // parameters.add("ecg_calc_rate", 1);
+  
+  double sigma_b = 20.0;
+  sigma_b = cfg.at_path("ecg.sigma_b").value_or(sigma_b);
+  parameters.add("sigma_b", sigma_b);
+
+  ecg_electrodes.clear();
+  std::vector<std::string> ecg_names;
+
+  if (auto leads = cfg.at_path("ecg.leads").as_array())
+  {
+    for (size_t k = 0; k < leads->size(); k++)
+    {
+      const auto * lead = (*leads)[k].as_table();
+      if (!lead)
+        throw std::runtime_error("[ecg] leads[" + std::to_string(k) +
+                                 "] must be { x = ..., y = ..., z = ... }");
+
+      auto x = (*lead)["x"].value<double>();
+      auto y = (*lead)["y"].value<double>();
+      auto z = (*lead)["z"].value<double>();
+      if (!x || !y || !z)
+        throw std::runtime_error("[ecg] leads[" + std::to_string(k) +
+                                 "] is missing x, y or z");
+
+      ecg_electrodes.push_back(arma::vec3({ *x, *y, *z }));
+      ecg_names.push_back((*lead)["name"].value_or("elec" + std::to_string(k)));
+    }
+  }
+  if(!ecg_electrodes.empty())
+  {
+    cout << "Pseudo-ECG from TOML [ecg]: " << ecg_electrodes.size() << " lead(s)" << endl;
+    for (size_t p = 0; p < ecg_electrodes.size(); p++)
+      cout << "  " << ecg_names[p] << " = ("
+           << ecg_electrodes[p](0) << ", "
+           << ecg_electrodes[p](1) << ", "
+           << ecg_electrodes[p](2) << ")" << endl;
+
+    ecg_file.open("output_ecg.dat");
+  }
+
 }
 
 void Monodomain::advance()
@@ -254,7 +305,15 @@ void Monodomain::compute_pseudo_ecg()
   const int nelec = ecg_electrodes.size();
   std::vector<double> phi(nelec, 0.0);
 
-  const double inv4pi = 1.0 / (4.0 * M_PI);
+  // const double inv4pi = 1.0 / (4.0 * M_PI);
+  // Bulk (torso) conductivity, isotropic scalar
+  
+  const double sigma_b = parameters["sigma_b"];
+  if(sigma_b <= 0.0)
+    throw std::runtime_error("[ecg] sigma_b must be > 0");
+
+  // phi(x') = -1/(4*pi*sigma_b) * sum  (sigma*grad Vm) . (x - x') / |x - x'|^3 * detJxW
+  const double coef = -1.0 / (4.0 * M_PI * sigma_b);
 
   FiniteElement & fe = fespace.createFE(0);
   const int ndim = fe.get_ndim();
@@ -325,7 +384,8 @@ void Monodomain::compute_pseudo_ecg()
         for(int d = 0; d < ndim; d++)
           dotp += sgradVm(d) * r(d);
 
-        phi[p] += -inv4pi * dotp * inv_r3 * detJxW;
+        // phi[p] += -inv4pi * dotp * inv_r3 * detJxW;
+        phi[p] += coef * dotp * inv_r3 * detJxW;
       }
     }
 
@@ -410,19 +470,6 @@ void Monodomain::init(bool is_restart)
   set_solver_time_unit_ms(1); // ms
 
   vm.resize(ndofs);
-
-  // pseudo-ECG setup
-  ecg_electrodes.clear();
-  ecg_electrodes.push_back(arma::vec3({ 20000.0, 0.0, 0.0 })); // in um, outside tissue
-
-  if(!ecg_electrodes.empty())
-  {
-    ecg_file.open("output_ecg.dat");
-    ecg_file << "# time";
-    for(size_t p = 0; p < ecg_electrodes.size(); p++)
-      ecg_file << " elec" << p;
-    ecg_file << "\n";
-  }
 
   timer.enter("Assemble");
   assemble_matrices();

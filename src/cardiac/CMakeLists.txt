@@ -31,7 +31,7 @@ target_link_libraries(Cardiac PUBLIC
     NLS
     LinAlg
     PDE
-
+    kdtree
     # Dependências Externas (agrupadas)
     ext_libs
 )

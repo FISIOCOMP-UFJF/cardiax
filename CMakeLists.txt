@@ -68,6 +68,7 @@ find_package(HDF5 REQUIRED)
 
 # --- thirdparty/highfive ---
 add_subdirectory(src/thirdparty/highfive)
+add_subdirectory(src/thirdparty/kdtree)
 
 if(TARGET HighFive::HighFive)
   message(STATUS "HighFive found (vendored):")

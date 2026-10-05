@@ -5,13 +5,13 @@ add_library(Mesh
     mesh.cpp
     box_mesh.cpp
     purkinje_mesh.cpp
-    reader_hdf5.cpp
     writer.cpp
     writer_vtk.cpp
     writer_hdf5.cpp
     gmshio.cpp
     graph_coloring.cpp
 )
+
 
 # [NOVO] Exporta os headers do Mesh
 target_include_directories(Mesh PRIVATE
@@ -61,3 +61,12 @@ target_link_libraries(testVTK PRIVATE mesh_test_deps)
 # --- REMOVIDO ---
 # As 4 chamadas target_link_libraries(...) longas e repetitivas
 # foram substituídas pela abordagem acima.
+
+
+
+### READER HDF5
+add_library(ReaderHDF5 STATIC reader_hdf5.cpp)
+target_include_directories(ReaderHDF5 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(ReaderHDF5 PUBLIC HighFive)
+
+target_link_libraries(Mesh PUBLIC ReaderHDF5)   # Mesh uses it in mesh_hdf5.cpp

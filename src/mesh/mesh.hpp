@@ -142,6 +142,11 @@ public:
   //! Read mesh files given basename
   void read_xml(const std::string & filename);
 
+  //! Read mesh from an HDF5 file written by WriterHDF5
+  //! ("name", "name.h5" or "name.xmf"). ndim disambiguates nn=4
+  //! (2 = quad, 3 = tet). Throws std::runtime_error on failure.
+  void read_hdf5(const std::string & filename, int ndim = 3);
+
   //! Read the 3 vectors for fiber orientation
   void read_fiber(istream & in, int code,
                   arma::vec3 & f,

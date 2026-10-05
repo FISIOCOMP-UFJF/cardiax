@@ -1,4 +1,5 @@
 #include "mesh.hpp"
+#include "reader_hdf5.hpp"
 #include "fem/fe.hpp"
 #include "util/pugixml.hpp"
 #include <algorithm>
@@ -524,6 +525,47 @@ void Mesh::read_xml(const std::string &filename)
     }
   }
 
+}
+
+void Mesh::read_hdf5(const std::string & filename, int ndim)
+{
+  ReaderHDF5 r;
+  if (!r.open(filename))
+    throw std::runtime_error("Mesh::read_hdf5: cannot read '" + filename + "'");
+
+  const int np = r.get_n_points();
+  const int ne = r.get_n_elements();
+  const int nn = r.get_nen();
+
+  // element type from (nn, ndim), same logic as WriterHDF5::write_xdmf
+  ElementType etype;
+  if      (nn == 2)               etype = ELEM_SEGM;
+  else if (nn == 3)               etype = ELEM_TRIG;
+  else if (nn == 4 && ndim == 2)  etype = ELEM_QUAD;
+  else if (nn == 4 && ndim == 3)  etype = ELEM_TETRA;
+  else if (nn == 8)               etype = ELEM_HEXA;
+  else throw std::runtime_error("Mesh::read_hdf5: unsupported element (nn=" +
+                                std::to_string(nn) + ")");
+
+  set_ndim(ndim);
+  set_nen(nn);
+  set_npoints(np);
+  set_nel(ne);
+  reserve_points(np);
+  reserve_elements(ne);
+
+  const std::vector<double> & x = r.get_coordinates();
+  for (int i = 0; i < np; ++i)
+    add_point(arma::vec3{x[3 * i], x[3 * i + 1], x[3 * i + 2]});
+
+  // marker/aha default to 0 (not stored in the base mesh datasets)
+  const std::vector<int> & c = r.get_connectivity();
+  for (int e = 0; e < ne; ++e)
+  {
+    std::vector<int> pn(c.begin() + (size_t) nn * e,
+                        c.begin() + (size_t) nn * (e + 1));
+    add_elem(Element(etype, pn, 0, 0));
+  }
 }
 
 inline void Mesh::read_fiber(istream &in, int code,

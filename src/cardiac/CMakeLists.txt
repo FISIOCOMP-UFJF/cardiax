@@ -15,8 +15,12 @@ set(CARDIAC_SRC
     electromechanic.cpp
     coupled_purkinje.cpp
 )
-    
+
+add_subdirectory(uvc)
+
 add_library(Cardiac ${CARDIAC_SRC})
+
+
 
 target_include_directories(Cardiac PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

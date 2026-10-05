@@ -94,9 +94,8 @@ int main()
   cout << "TEST 4" << endl;
   cout << "Creating a mesh from a HDF5 file" << endl;
 
-  ReaderHDF5 rh5;
   Mesh * mesh;
-  mesh = rh5.read_mesh("../../../testes/monodomain/benchmark_slab_0p5mm_output.h5");
+  mesh->read_hdf5("../../../testes/monodomain/benchmark_slab_0p5mm_output.h5");
   cout << *mesh;
    
   return 0;

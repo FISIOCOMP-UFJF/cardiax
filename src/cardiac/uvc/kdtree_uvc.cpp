@@ -6,7 +6,7 @@
 #include <iomanip>
 #include <iostream>
 
-#include "kdtree.hpp"      // cdalitz/kdtree-cpp, sem modificacoes
+#include "kdtree.hpp"      // cdalitz/kdtree-cpp, unmodified
 
 using std::cerr;
 using std::cout;
@@ -15,362 +15,365 @@ using std::string;
 using std::vector;
 
 // =============================================================================
-//  Auxiliares locais (namespace anonimo: nao vazam para o resto do projeto,
-//  nem colidem com os homonimos do busca_uvc.cpp)
+//  Local helpers (anonymous namespace: they do not leak to the rest of the
+//  project)
 // =============================================================================
 
 namespace
 {
   const double PI_     = 3.1415926535897932384626433832795;
-  const double DOIS_PI = 2.0 * PI_;
-  const double NAO_NUM = 0.0 / 0.0;
+  const double TWO_PI  = 2.0 * PI_;
+  const double NOT_NUM = 0.0 / 0.0;
 
-  //! true se o valor nao e NaN nem infinito (sem depender do C++11)
-  bool eh_finito(double v)
+  //! true if the value is neither NaN nor infinite
+  bool is_finite(double v)
   {
     return (v == v) && (v > -1e300) && (v < 1e300);
   }
 
-  //! Embedding cilindrico de um no: E = [ab*w_ab, tm*w_tm,
-  //!                                     ab*cos(rt)*w_rt, ab*sin(rt)*w_rt]
-  //! O cos/sin resolve a costura +-pi sem copias-fantasma, e o raio ab -> 0
-  //! faz o rt deixar de pesar no apice, onde ele degenera.
-  void embutir(double ab, double tm, double rt, const OpcoesUVC & o,
-               double e[4])
+  //! Cylindrical embedding of one node: E = [ab*w_ab, tm*w_tm,
+  //!                                         ab*cos(rt)*w_rt, ab*sin(rt)*w_rt]
+  //! cos/sin handle the +-pi seam without ghost copies, and the radius
+  //! ab -> 0 makes rt stop mattering at the apex, where it degenerates.
+  void embed(double ab, double tm, double rt, const UVCParameters & p,
+             double e[4])
   {
     double cx = ab * std::cos(rt);
     double cy = ab * std::sin(rt);
-    if (!eh_finito(cx) || !eh_finito(cy)) { cx = 0.0; cy = 0.0; }  // rt NaN
+    if (!is_finite(cx) || !is_finite(cy)) { cx = 0.0; cy = 0.0; }  // rt NaN
 
-    e[0] = ab * o.w_ab;
-    e[1] = tm * o.w_tm;
-    e[2] = cx * o.w_rt;
-    e[3] = cy * o.w_rt;
+    e[0] = ab * p.w_ab;
+    e[1] = tm * p.w_tm;
+    e[2] = cx * p.w_rt;
+    e[3] = cy * p.w_rt;
   }
 
-  //! Vizinho mais proximo de q numa nuvem de pontos de dimensao dim.
-  //! Devolve a posicao do ponto na lista, ou -1.
-  int mais_proximo(Kdtree::KdTree & arvore, const double * q, int dim)
+  //! Nearest neighbour of q in a point cloud of dimension dim.
+  //! Returns the position of the point in the list, or -1.
+  int nearest(Kdtree::KdTree & tree, const double * q, int dim)
   {
-    Kdtree::KdNodeVector viz;
-    arvore.k_nearest_neighbors(Kdtree::CoordPoint(q, q + dim), 1, &viz);
-    if (viz.empty()) return -1;
-    return viz[0].index;
+    Kdtree::KdNodeVector nb;
+    tree.k_nearest_neighbors(Kdtree::CoordPoint(q, q + dim), 1, &nb);
+    if (nb.empty()) return -1;
+    return nb[0].index;
   }
 
-}  // namespace anonimo
+}  // anonymous namespace
 
 // =============================================================================
-//  Leitura
+//  Reading
 // =============================================================================
 
-bool ler_campo_cru_uvc(ReaderHDF5 & r, const string & nome,
-                       vector<double> & val, bool & por_celula,
-                       string & nome_real)
+bool read_field_uvc(ReaderHDF5 & reader, const string & name,
+                    vector<double> & values, bool & cell_data,
+                    string & path)
 {
-  // nome pode ser so o nome ("tecido") ou o caminho ("vertex_field/tecido")
-  const int idx = r.find_field(nome);
+  // name may be just the name ("tecido") or the path ("vertex_field/tecido")
+  const int idx = reader.find_field(name);
   if (idx < 0) return false;
 
-  const FieldInfo & f = r.get_field(idx);
+  const FieldInfo & f = reader.get_field(idx);
   if (f.n_comp != 1)
   {
-    cerr << "[ERRO] campo '" << f.name << "' tem " << f.n_comp
-         << " componentes; esperado escalar." << endl;
+    cerr << "[ERROR] field '" << f.name << "' has " << f.n_comp
+         << " components; expected a scalar." << endl;
     return false;
   }
 
-  if (!r.read_field_step(f.path, 0, val)) return false;
+  if (!reader.read_field_step(f.path, 0, values)) return false;
 
-  por_celula = f.cell_centered;
-  nome_real  = f.path;          // caminho: chave unica para as proximas leituras
+  cell_data = f.cell_centered;
+  path      = f.path;           // path: unique key for later reads
   return true;
 }
 
 // -----------------------------------------------------------------------------
 
-bool carregar_malha_uvc(ReaderHDF5 & leitor, const string & arquivo,
-                        const string & rotulo, MalhaTransf & m,
-                        const string & n_ab, const string & n_tm,
-                        const string & n_rt, const string & n_tv)
+bool load_uvc_mesh(ReaderHDF5 & reader, const string & filename,
+                   const string & label, UVCDataTransfer & m,
+                   const string & n_ab, const string & n_tm,
+                   const string & n_rt, const string & n_tv)
 {
-  if (!leitor.open(arquivo))
+  if (!reader.open(filename))
   {
-    cerr << "[ERRO] falha ao abrir '" << arquivo << "'" << endl;
+    cerr << "[ERROR] cannot open '" << filename << "'" << endl;
     return false;
   }
 
-  m.rotulo     = rotulo;
-  m.n_points   = leitor.get_n_points();
-  m.n_elements = leitor.get_n_elements();
-  m.nen        = leitor.get_nen();
-  m.xyz        = leitor.get_coordinates();
-  m.tets       = leitor.get_connectivity();
+  m.label      = label;
+  m.n_points   = reader.get_n_points();
+  m.n_elements = reader.get_n_elements();
+  m.nen        = reader.get_nen();
+  m.xyz        = reader.get_coordinates();
+  m.tets       = reader.get_connectivity();
 
-  const string nomes[4] = { n_ab, n_tm, n_rt, n_tv };
-  vector<double> * destino[4] = { &m.ab, &m.tm, &m.rt, &m.tv };
-  string faltando;
+  const string names[4] = { n_ab, n_tm, n_rt, n_tv };
+  vector<double> * dest[4] = { &m.ab, &m.tm, &m.rt, &m.tv };
+  string missing;
 
   for (int c = 0; c < 4; c++)
   {
-    bool por_celula = false;
-    string nome_real;
+    bool cell_data = false;
+    string path;
     vector<double> v;
 
-    if (!ler_campo_cru_uvc(leitor, nomes[c], v, por_celula, nome_real))
+    if (!read_field_uvc(reader, names[c], v, cell_data, path))
     {
-      faltando += (faltando.empty() ? "" : ", ") + nomes[c];
+      missing += (missing.empty() ? "" : ", ") + names[c];
       continue;
     }
 
-    if (por_celula)
+    if (cell_data)
     {
-      cout << "  [AVISO] UVC '" << nomes[c] << "' esta por ELEMENTO; "
-           << "convertida para os nos por media." << endl;
-      v = celula_para_no(m, v, false);
+      cout << "  [WARNING] UVC '" << names[c] << "' is per ELEMENT; "
+           << "converted to nodes by averaging." << endl;
+      v = cell_to_node_uvc(m, v, false);
     }
-    *destino[c] = v;
+    *dest[c] = v;
   }
 
-  if (!faltando.empty())
+  if (!missing.empty())
   {
-    cerr << "[ERRO] campos UVC ausentes em '" << arquivo << "': "
-         << faltando << endl;
-    cerr << "       campos disponiveis:";
-    for (int i = 0; i < leitor.get_n_fields(); i++)
-      cerr << " " << leitor.get_field(i).name;
+    cerr << "[ERROR] UVC fields missing in '" << filename << "': "
+         << missing << endl;
+    cerr << "        available fields:";
+    for (int i = 0; i < reader.get_n_fields(); i++)
+      cerr << " " << reader.get_field(i).name;
     cerr << endl;
     return false;
   }
 
-  // ------------------------------------------------------- unidade do rt
-  // O embedding usa cos(rt)/sin(rt): rt precisa estar em RADIANOS.
+  // ------------------------------------------------------------- rt unit
+  // The embedding uses cos(rt)/sin(rt): rt must be in RADIANS.
   double lo = 1e300, hi = -1e300;
   for (int i = 0; i < m.n_points; i++)
   {
-    if (!eh_finito(m.rt[(size_t) i])) continue;
+    if (!is_finite(m.rt[(size_t) i])) continue;
     if (m.rt[(size_t) i] < lo) lo = m.rt[(size_t) i];
     if (m.rt[(size_t) i] > hi) hi = m.rt[(size_t) i];
   }
 
   if (!(hi > 1.6 || lo < -1.6))
   {
-    cout << "  [INFO] " << rotulo << ": rt parece estar em voltas ["
-         << lo << ", " << hi << "]; convertendo para radianos (rt * 2*pi)."
-         << endl;
+    cout << "  [INFO] " << label << ": rt seems to be in turns [" << lo
+         << ", " << hi << "]; converting to radians (rt * 2*pi)." << endl;
     for (int i = 0; i < m.n_points; i++)
-      if (eh_finito(m.rt[(size_t) i])) m.rt[(size_t) i] *= DOIS_PI;
+      if (is_finite(m.rt[(size_t) i])) m.rt[(size_t) i] *= TWO_PI;
   }
 
-  cout << "  " << rotulo << " : " << m.n_points << " nos, "
-       << m.n_elements << " celulas (" << m.nen << " nos cada)"
-       << endl;
+  cout << "  " << label << " : " << m.n_points << " nodes, "
+       << m.n_elements << " cells (" << m.nen << " nodes each)" << endl;
 
   return true;
 }
 
 // =============================================================================
-//  Montagem -- CHAMADA UMA VEZ
+//  Build -- CALLED ONCE
 // =============================================================================
 
-bool kdtree_uvc_build(const MalhaTransf & fonte, const MalhaTransf & alvo,
-                      const OpcoesUVC & o, KdtreeUVC & est)
+bool kdtree_uvc_build(const UVCDataTransfer & source,
+                      const UVCDataTransfer & target,
+                      const UVCParameters & p, KdtreeUVC & kd)
 {
-  const int nf = fonte.n_points;
-  const int na = alvo.n_points;
+  const int ns = source.n_points;
+  const int nt = target.n_points;
 
-  if (nf <= 0 || na <= 0)
+  if (ns <= 0 || nt <= 0)
   {
-    cerr << "[ERRO] kdtree_uvc_build: malha vazia (fonte " << nf
-         << " nos, alvo " << na << " nos)." << endl;
+    cerr << "[ERROR] kdtree_uvc_build: empty mesh (source " << ns
+         << " nodes, target " << nt << " nodes)." << endl;
     return false;
   }
 
-  if ((int) fonte.ab.size() != nf || (int) fonte.tm.size() != nf ||
-      (int) fonte.rt.size() != nf || (int) fonte.tv.size() != nf ||
-      (int) alvo.ab.size()  != na || (int) alvo.tm.size()  != na ||
-      (int) alvo.rt.size()  != na || (int) alvo.tv.size()  != na)
+  if ((int) source.ab.size() != ns || (int) source.tm.size() != ns ||
+      (int) source.rt.size() != ns || (int) source.tv.size() != ns ||
+      (int) target.ab.size() != nt || (int) target.tm.size() != nt ||
+      (int) target.rt.size() != nt || (int) target.tv.size() != nt)
   {
-    cerr << "[ERRO] kdtree_uvc_build: UVC com tamanho diferente do numero "
-         << "de nos." << endl;
+    cerr << "[ERROR] kdtree_uvc_build: UVC size differs from the number "
+         << "of nodes." << endl;
     return false;
   }
 
-  if (o.k < 1)
+  if (p.k < 1)
   {
-    cerr << "[ERRO] kdtree_uvc_build: k deve ser >= 1." << endl;
+    cerr << "[ERROR] kdtree_uvc_build: k must be >= 1." << endl;
     return false;
   }
-  if (o.peso != "gauss" && o.peso != "idw")
+  if (p.weight != "gauss" && p.weight != "idw")
   {
-    cerr << "[ERRO] kdtree_uvc_build: peso deve ser 'gauss' ou 'idw'." << endl;
+    cerr << "[ERROR] kdtree_uvc_build: weight must be 'gauss' or 'idw'."
+         << endl;
     return false;
   }
 
-  est.n_fonte = nf;
-  est.n_alvo  = na;
+  kd.n_source = ns;
+  kd.n_target = nt;
 
-  // ------------------------------------------------------------ 1) mascaras
-  // Repare que o campo NAO entra aqui: a validade e so das UVC. Vizinhos com
-  // valor nao-finito sao descartados depois, em kdtree_uvc_transf().
-  vector<char> ok_s((size_t) nf, 0);
-  vector<char> ok_t((size_t) na, 0);
+  // --------------------------------------------------------------- 1) masks
+  // Note that the field does NOT enter here: validity depends only on the
+  // UVC. Neighbours with non-finite values are skipped later, in
+  // kdtree_uvc_transfer().
+  vector<char> ok_s((size_t) ns, 0);
+  vector<char> ok_t((size_t) nt, 0);
   int n_ok_s = 0, n_ok_t = 0;
 
-  for (int i = 0; i < nf; i++)
+  for (int i = 0; i < ns; i++)
   {
-    ok_s[(size_t) i] = (char) (eh_finito(fonte.ab[(size_t) i]) &&
-                               eh_finito(fonte.tm[(size_t) i]) &&
-                               eh_finito(fonte.tv[(size_t) i]));
+    ok_s[(size_t) i] = (char) (is_finite(source.ab[(size_t) i]) &&
+                               is_finite(source.tm[(size_t) i]) &&
+                               is_finite(source.tv[(size_t) i]));
     n_ok_s += ok_s[(size_t) i];
   }
-  for (int i = 0; i < na; i++)
+  for (int i = 0; i < nt; i++)
   {
-    ok_t[(size_t) i] = (char) (eh_finito(alvo.ab[(size_t) i]) &&
-                               eh_finito(alvo.tm[(size_t) i]) &&
-                               eh_finito(alvo.tv[(size_t) i]));
+    ok_t[(size_t) i] = (char) (is_finite(target.ab[(size_t) i]) &&
+                               is_finite(target.tm[(size_t) i]) &&
+                               is_finite(target.tv[(size_t) i]));
     n_ok_t += ok_t[(size_t) i];
   }
 
   if (n_ok_s == 0)
   {
-    cerr << "[ERRO] kdtree_uvc_build: nenhum no valido na fonte." << endl;
+    cerr << "[ERROR] kdtree_uvc_build: no valid node in the source." << endl;
     return false;
   }
 
-  if (!o.silencioso)
-    cout << "  nos fonte validos: " << n_ok_s << "/" << nf
-         << " | alvo validos: " << n_ok_t << "/" << na << endl;
+  if (!p.quiet)
+    cout << "  valid source nodes: " << n_ok_s << "/" << ns
+         << " | valid target nodes: " << n_ok_t << "/" << nt << endl;
 
   // ----------------------------------------------------------- 2) tv_split
-  if (o.tem_tv_split) est.tv_split = o.tv_split;
+  if (p.has_tv_split) kd.tv_split = p.tv_split;
   else
   {
     double lo = 1e300, hi = -1e300;
-    for (int i = 0; i < nf; i++)
-      if (eh_finito(fonte.tv[(size_t) i]))
+    for (int i = 0; i < ns; i++)
+      if (is_finite(source.tv[(size_t) i]))
       {
-        if (fonte.tv[(size_t) i] < lo) lo = fonte.tv[(size_t) i];
-        if (fonte.tv[(size_t) i] > hi) hi = fonte.tv[(size_t) i];
+        if (source.tv[(size_t) i] < lo) lo = source.tv[(size_t) i];
+        if (source.tv[(size_t) i] > hi) hi = source.tv[(size_t) i];
       }
-    for (int i = 0; i < na; i++)
-      if (eh_finito(alvo.tv[(size_t) i]))
+    for (int i = 0; i < nt; i++)
+      if (is_finite(target.tv[(size_t) i]))
       {
-        if (alvo.tv[(size_t) i] < lo) lo = alvo.tv[(size_t) i];
-        if (alvo.tv[(size_t) i] > hi) hi = alvo.tv[(size_t) i];
+        if (target.tv[(size_t) i] < lo) lo = target.tv[(size_t) i];
+        if (target.tv[(size_t) i] > hi) hi = target.tv[(size_t) i];
       }
-    est.tv_split = (lo > hi) ? 0.5 : 0.5 * (lo + hi);
+    kd.tv_split = (lo > hi) ? 0.5 : 0.5 * (lo + hi);
   }
-  const double tv_split = est.tv_split;
+  const double tv_split = kd.tv_split;
 
-  if (!o.silencioso)
-    cout << "  TV_SPLIT = " << tv_split << "  (VE: tv<split, VD: tv>=split)"
+  if (!p.quiet)
+    cout << "  TV_SPLIT = " << tv_split << "  (LV: tv<split, RV: tv>=split)"
          << endl;
 
-  // ------------------------------------------------- 3) clamp do ab do alvo
-  vector<double> ab_t = alvo.ab;
-  if (!o.sem_clamp_ab)
+  // ------------------------------------------------ 3) clamp of target ab
+  vector<double> ab_t = target.ab;
+  if (!p.no_clamp_ab)
   {
     double lo = 1e300, hi = -1e300;
-    for (int i = 0; i < nf; i++)
+    for (int i = 0; i < ns; i++)
       if (ok_s[(size_t) i])
       {
-        if (fonte.ab[(size_t) i] < lo) lo = fonte.ab[(size_t) i];
-        if (fonte.ab[(size_t) i] > hi) hi = fonte.ab[(size_t) i];
+        if (source.ab[(size_t) i] < lo) lo = source.ab[(size_t) i];
+        if (source.ab[(size_t) i] > hi) hi = source.ab[(size_t) i];
       }
 
-    for (int i = 0; i < na; i++)
-      if (eh_finito(ab_t[(size_t) i]))
+    for (int i = 0; i < nt; i++)
+      if (is_finite(ab_t[(size_t) i]))
       {
         if (ab_t[(size_t) i] < lo) ab_t[(size_t) i] = lo;
         if (ab_t[(size_t) i] > hi) ab_t[(size_t) i] = hi;
       }
 
-    if (!o.silencioso)
-      cout << "  ab do alvo clampado a [" << lo << ", " << hi << "]." << endl;
+    if (!p.quiet)
+      cout << "  target ab clamped to [" << lo << ", " << hi << "]." << endl;
   }
 
-  // ------------------------------------------------ 4) embedding cilindrico
-  vector<double> E_s((size_t) 4 * nf, 0.0);
-  vector<double> E_t((size_t) 4 * na, 0.0);
+  // --------------------------------------------- 4) cylindrical embedding
+  vector<double> E_s((size_t) 4 * ns, 0.0);
+  vector<double> E_t((size_t) 4 * nt, 0.0);
 
-  for (int i = 0; i < nf; i++)
-    embutir(fonte.ab[(size_t) i], fonte.tm[(size_t) i], fonte.rt[(size_t) i],
-            o, &E_s[(size_t) 4 * i]);
+  for (int i = 0; i < ns; i++)
+    embed(source.ab[(size_t) i], source.tm[(size_t) i], source.rt[(size_t) i],
+          p, &E_s[(size_t) 4 * i]);
 
-  for (int i = 0; i < na; i++)
-    embutir(ab_t[(size_t) i], alvo.tm[(size_t) i], alvo.rt[(size_t) i],
-            o, &E_t[(size_t) 4 * i]);
+  for (int i = 0; i < nt; i++)
+    embed(ab_t[(size_t) i], target.tm[(size_t) i], target.rt[(size_t) i],
+          p, &E_t[(size_t) 4 * i]);
 
-  // --------------------------------- 5) quantos nos da fonte por ventriculo
-  // Precisa vir antes de alocar as linhas: k_max e o maior k efetivo dos
-  // dois ventriculos.
+  // ------------------------------- 5) number of source nodes per ventricle
+  // Must come before allocating the rows: k_max is the largest effective k
+  // of the two ventricles.
   int n_src[2] = { 0, 0 };
-  for (int i = 0; i < nf; i++)
+  for (int i = 0; i < ns; i++)
   {
     if (!ok_s[(size_t) i]) continue;
-    n_src[(fonte.tv[(size_t) i] < tv_split) ? 0 : 1]++;
+    n_src[(source.tv[(size_t) i] < tv_split) ? 0 : 1]++;
   }
 
   int kk[2];
   for (int v = 0; v < 2; v++)
-    kk[v] = (o.k < n_src[v]) ? o.k : n_src[v];
+    kk[v] = (p.k < n_src[v]) ? p.k : n_src[v];
 
-  est.k_max = (kk[0] > kk[1]) ? kk[0] : kk[1];
-  if (est.k_max < 1)
+  kd.k_max = (kk[0] > kk[1]) ? kk[0] : kk[1];
+  if (kd.k_max < 1)
   {
-    cerr << "[ERRO] kdtree_uvc_build: nenhum ventriculo com nos na fonte."
+    cerr << "[ERROR] kdtree_uvc_build: no ventricle with source nodes."
          << endl;
     return false;
   }
 
-  est.viz.assign((size_t) est.k_max * na, -1);
-  est.pesos.assign((size_t) est.k_max * na, 0.0);
-  est.n_viz.assign((size_t) na, 0);
+  kd.neighbors.assign((size_t) kd.k_max * nt, -1);
+  kd.weights.assign((size_t) kd.k_max * nt, 0.0);
+  kd.n_neighbors.assign((size_t) nt, 0);
 
-  // ------------------------------------------------- 6) k-NN por ventriculo
+  const bool gauss = (p.weight == "gauss");
+
+  // ----------------------------------------------- 6) k-NN per ventricle
   for (int vent = 0; vent < 2; vent++)
   {
-    const string nome = vent ? "VD" : "VE";
+    const string vname = vent ? "RV" : "LV";
 
-    // --- nos da fonte deste ventriculo (KdNode::index = posicao em id_s) ---
+    // --- source nodes of this ventricle (KdNode::index = position in id_s)
     Kdtree::KdNodeVector pts;
     vector<int> id_s;
-    for (int i = 0; i < nf; i++)
+    for (int i = 0; i < ns; i++)
     {
       if (!ok_s[(size_t) i]) continue;
-      const bool ve = (fonte.tv[(size_t) i] < tv_split);
-      if (ve == (vent == 1)) continue;
+      const bool lv = (source.tv[(size_t) i] < tv_split);
+      if (lv == (vent == 1)) continue;
       const double * e = &E_s[(size_t) 4 * i];
       pts.push_back(Kdtree::KdNode(Kdtree::CoordPoint(e, e + 4), NULL,
                                    (int) id_s.size()));
       id_s.push_back(i);
     }
 
-    // --- nos do alvo deste ventriculo ---
+    // --- target nodes of this ventricle ---
     vector<int> id_t;
-    for (int i = 0; i < na; i++)
+    for (int i = 0; i < nt; i++)
     {
       if (!ok_t[(size_t) i]) continue;
-      const bool ve = (alvo.tv[(size_t) i] < tv_split);
-      if (ve == (vent == 1)) continue;
+      const bool lv = (target.tv[(size_t) i] < tv_split);
+      if (lv == (vent == 1)) continue;
       id_t.push_back(i);
     }
 
     if (id_s.empty() || id_t.empty())
     {
-      if (!o.silencioso)
-        cout << "  " << nome << ": sem nos validos, pulando." << endl;
+      if (!p.quiet)
+        cout << "  " << vname << ": no valid nodes, skipping." << endl;
       continue;
     }
 
-    // id_s nao esta vazio: a Kdtree::KdTree aceita a lista
-    Kdtree::KdTree arvore(&pts);
-    Kdtree::KdNodeVector().swap(pts);   // a arvore guarda a propria copia
+    // id_s is not empty: Kdtree::KdTree accepts the list
+    Kdtree::KdTree tree(&pts);
+    Kdtree::KdNodeVector().swap(pts);   // the tree keeps its own copy
 
     const int k = kk[vent];
     Kdtree::CoordPoint   q(4);
-    Kdtree::KdNodeVector viz;           // em ordem crescente de distancia
+    Kdtree::KdNodeVector nb;            // in increasing distance order
     vector<double> d((size_t) k, 0.0);
     vector<double> w((size_t) k, 0.0);
 
@@ -379,30 +382,30 @@ bool kdtree_uvc_build(const MalhaTransf & fonte, const MalhaTransf & alvo,
       const int i = id_t[t];
       for (int c = 0; c < 4; c++) q[(size_t) c] = E_t[(size_t) 4 * i + c];
 
-      arvore.k_nearest_neighbors(q, (size_t) k, &viz);
-      const int nv = (int) viz.size();
+      tree.k_nearest_neighbors(q, (size_t) k, &nb);
+      const int nv = (int) nb.size();
       if (nv == 0) continue;
 
-      // a kdtree-cpp nao devolve as distancias: recalcula a partir do ponto
+      // kdtree-cpp does not return distances: recompute them from the point
       for (int j = 0; j < nv; j++)
       {
-        const Kdtree::CoordPoint & p = viz[(size_t) j].point;
+        const Kdtree::CoordPoint & pt = nb[(size_t) j].point;
         double s2 = 0.0;
         for (int c = 0; c < 4; c++)
         {
-          const double dc = q[(size_t) c] - p[(size_t) c];
+          const double dc = q[(size_t) c] - pt[(size_t) c];
           s2 += dc * dc;
         }
         d[(size_t) j] = std::sqrt(s2);
       }
 
-      // --- pesos ---
-      if (o.peso == "gauss")
+      // --- weights ---
+      if (gauss)
       {
-        double media = 0.0;
-        for (int j = 0; j < nv; j++) media += d[(size_t) j];
-        media /= (double) nv;
-        const double h = (media > 1e-9) ? media : 1e-9;
+        double mean = 0.0;
+        for (int j = 0; j < nv; j++) mean += d[(size_t) j];
+        mean /= (double) nv;
+        const double h = (mean > 1e-9) ? mean : 1e-9;
         for (int j = 0; j < nv; j++)
         {
           const double z = d[(size_t) j] / h;
@@ -414,208 +417,209 @@ bool kdtree_uvc_build(const MalhaTransf & fonte, const MalhaTransf & alvo,
         for (int j = 0; j < nv; j++)
         {
           const double dd = (d[(size_t) j] > 1e-12) ? d[(size_t) j] : 1e-12;
-          w[(size_t) j] = 1.0 / std::pow(dd, o.pot_idw);
+          w[(size_t) j] = 1.0 / std::pow(dd, p.idw_power);
         }
       }
 
-      // coincidencia exata: so o primeiro vizinho conta
+      // exact coincidence: only the first neighbour counts
       if (d[0] < 1e-12)
       {
         for (int j = 0; j < nv; j++) w[(size_t) j] = 0.0;
         w[0] = 1.0;
       }
 
-      double soma = 0.0;
-      for (int j = 0; j < nv; j++) soma += w[(size_t) j];
-      if (soma <= 0.0) { w[0] = 1.0; soma = 1.0; }
+      double sum = 0.0;
+      for (int j = 0; j < nv; j++) sum += w[(size_t) j];
+      if (sum <= 0.0) { w[0] = 1.0; sum = 1.0; }
 
-      // --- guarda a linha ja normalizada ---
-      const size_t base = (size_t) est.k_max * i;
+      // --- store the row already normalized ---
+      const size_t base = (size_t) kd.k_max * i;
       for (int j = 0; j < nv; j++)
       {
-        est.viz[base + j]   = id_s[(size_t) viz[(size_t) j].index];
-        est.pesos[base + j] = w[(size_t) j] / soma;
+        kd.neighbors[base + j] = id_s[(size_t) nb[(size_t) j].index];
+        kd.weights[base + j]   = w[(size_t) j] / sum;
       }
-      est.n_viz[(size_t) i] = nv;
+      kd.n_neighbors[(size_t) i] = nv;
     }
 
-    if (!o.silencioso)
-      cout << "  " << nome << ": " << id_t.size() << " nos do alvo (k="
+    if (!p.quiet)
+      cout << "  " << vname << ": " << id_t.size() << " target nodes (k="
            << k << ")." << endl;
   }
 
-  // --------------------------- 7) nos do alvo sem vizinho: copia de um par
-  // Mesmo papel do "preenche NaN por vizinho UVC" do script original, so que
-  // resolvido aqui: quem copia de quem depende so da geometria.
-  est.copia_destino.clear();
-  est.copia_origem.clear();
-  est.n_sem_valor = 0;
+  // ------------------- 7) target nodes without neighbours: copy from a peer
+  // Who copies from whom depends only on the geometry, so it is decided here
+  // and applied in every transfer.
+  kd.copy_to.clear();
+  kd.copy_from.clear();
+  kd.n_unfilled = 0;
 
   {
-    Kdtree::KdNodeVector pts_e;       // com valor, no espaco do embedding
-    Kdtree::KdNodeVector pts_x;       // os mesmos, no espaco fisico
-    vector<int> com_valor;
-    vector<int> sem_valor;
+    Kdtree::KdNodeVector pts_e;       // filled nodes, in embedding space
+    Kdtree::KdNodeVector pts_x;       // the same nodes, in physical space
+    vector<int> filled;
+    vector<int> unfilled;
 
-    for (int i = 0; i < na; i++)
+    for (int i = 0; i < nt; i++)
     {
-      if (est.n_viz[(size_t) i] > 0)
+      if (kd.n_neighbors[(size_t) i] > 0)
       {
         const double * e = &E_t[(size_t) 4 * i];
-        const double * x = &alvo.xyz[(size_t) 3 * i];
+        const double * x = &target.xyz[(size_t) 3 * i];
         pts_e.push_back(Kdtree::KdNode(Kdtree::CoordPoint(e, e + 4), NULL,
-                                       (int) com_valor.size()));
+                                       (int) filled.size()));
         pts_x.push_back(Kdtree::KdNode(Kdtree::CoordPoint(x, x + 3), NULL,
-                                       (int) com_valor.size()));
-        com_valor.push_back(i);
+                                       (int) filled.size()));
+        filled.push_back(i);
       }
-      else sem_valor.push_back(i);
+      else unfilled.push_back(i);
     }
 
-    if (!sem_valor.empty() && !com_valor.empty())
+    if (!unfilled.empty() && !filled.empty())
     {
-      Kdtree::KdTree arv_e(&pts_e);
+      Kdtree::KdTree tree_e(&pts_e);
 
-      // A arvore fisica so e montada se algum no orfao tiver embedding
-      // nao-finito (ab ou tm NaN): consultar a arvore do embedding com NaN
-      // devolveria lixo.
-      Kdtree::KdTree * arv_x = 0;
+      // The physical tree is built only if some orphan node has a
+      // non-finite embedding (ab or tm NaN): querying the embedding tree
+      // with NaN would return garbage.
+      Kdtree::KdTree * tree_x = 0;
 
-      for (size_t t = 0; t < sem_valor.size(); t++)
+      for (size_t t = 0; t < unfilled.size(); t++)
       {
-        const int i = sem_valor[t];
+        const int i = unfilled[t];
         const double * e = &E_t[(size_t) 4 * i];
 
         bool e_ok = true;
-        for (int c = 0; c < 4; c++) if (!eh_finito(e[c])) e_ok = false;
+        for (int c = 0; c < 4; c++) if (!is_finite(e[c])) e_ok = false;
 
         int pos = -1;
         if (e_ok)
         {
-          pos = mais_proximo(arv_e, e, 4);
+          pos = nearest(tree_e, e, 4);
         }
         else
         {
-          if (arv_x == 0) arv_x = new Kdtree::KdTree(&pts_x);
-          pos = mais_proximo(*arv_x, &alvo.xyz[(size_t) 3 * i], 3);
+          if (tree_x == 0) tree_x = new Kdtree::KdTree(&pts_x);
+          pos = nearest(*tree_x, &target.xyz[(size_t) 3 * i], 3);
         }
 
-        if (pos < 0) { est.n_sem_valor++; continue; }
+        if (pos < 0) { kd.n_unfilled++; continue; }
 
-        est.copia_destino.push_back(i);
-        est.copia_origem.push_back(com_valor[(size_t) pos]);
+        kd.copy_to.push_back(i);
+        kd.copy_from.push_back(filled[(size_t) pos]);
       }
 
-      delete arv_x;
+      delete tree_x;
 
-      if (!o.silencioso)
-        cout << "  " << est.copia_destino.size()
-             << " nos do alvo preenchidos por vizinho UVC." << endl;
+      if (!p.quiet)
+        cout << "  " << kd.copy_to.size()
+             << " target nodes filled from a UVC neighbour." << endl;
     }
-    else est.n_sem_valor = (int) sem_valor.size();
+    else kd.n_unfilled = (int) unfilled.size();
   }
 
   return true;
 }
 
 // =============================================================================
-//  Transferencia -- CHAMADA EM LOOP
+//  Transfer -- CALLED IN A LOOP
 // =============================================================================
 
-bool kdtree_uvc_transf(const KdtreeUVC & est,
-                       const vector<double> & campo_fonte,
-                       bool categorico,
-                       vector<double> & campo_alvo)
+bool kdtree_uvc_transfer(const KdtreeUVC & kd,
+                         const vector<double> & source_field,
+                         bool categorical,
+                         vector<double> & target_field)
 {
-  if ((int) campo_fonte.size() != est.n_fonte)
+  if ((int) source_field.size() != kd.n_source)
   {
-    cerr << "[ERRO] kdtree_uvc_transf: campo com " << campo_fonte.size()
-         << " valores; a fonte tem " << est.n_fonte << " nos." << endl;
+    cerr << "[ERROR] kdtree_uvc_transfer: field has " << source_field.size()
+         << " values; the source has " << kd.n_source << " nodes." << endl;
     return false;
   }
-  if (est.k_max < 1 || (int) est.n_viz.size() != est.n_alvo)
+  if (kd.k_max < 1 || (int) kd.n_neighbors.size() != kd.n_target)
   {
-    cerr << "[ERRO] kdtree_uvc_transf: estrutura nao montada "
-         << "(chame kdtree_uvc_build antes)." << endl;
+    cerr << "[ERROR] kdtree_uvc_transfer: structure not built "
+         << "(call kdtree_uvc_build first)." << endl;
     return false;
   }
 
-  campo_alvo.assign((size_t) est.n_alvo, NAO_NUM);
+  target_field.assign((size_t) kd.n_target, NOT_NUM);
 
-  const int kmax = est.k_max;
+  const int kmax = kd.k_max;
 
-  for (int i = 0; i < est.n_alvo; i++)
+  for (int i = 0; i < kd.n_target; i++)
   {
-    const int nv = est.n_viz[(size_t) i];
+    const int nv = kd.n_neighbors[(size_t) i];
     if (nv <= 0) continue;
 
     const size_t base = (size_t) kmax * i;
 
-    // ----------------------------------------------------------- continuo
-    if (!categorico)
+    // ---------------------------------------------------------- continuous
+    if (!categorical)
     {
-      double v = 0.0, soma = 0.0;
+      double v = 0.0, sum = 0.0;
       for (int j = 0; j < nv; j++)
       {
-        const double val = campo_fonte[(size_t) est.viz[base + j]];
-        if (!eh_finito(val)) continue;          // vizinho sem valor: descarta
-        v    += est.pesos[base + j] * val;
-        soma += est.pesos[base + j];
+        const double val = source_field[(size_t) kd.neighbors[base + j]];
+        if (!is_finite(val)) continue;          // neighbour without value
+        v   += kd.weights[base + j] * val;
+        sum += kd.weights[base + j];
       }
-      if (soma > 0.0) campo_alvo[(size_t) i] = v / soma;   // renormaliza
+      if (sum > 0.0) target_field[(size_t) i] = v / sum;   // renormalize
       continue;
     }
 
-    // --------------------------------------------------------- categorico
-    // Voto ponderado sobre os valores que aparecem entre os vizinhos. Como
-    // nv e pequeno (k ~ 12), varrer as repeticoes sai mais barato do que
-    // manter a lista global de classes -- e dispensa passa-la a funcao.
-    // Empate vai para o rotulo MENOR, como no script Python.
-    double melhor_w = -1.0;
-    double melhor_v = NAO_NUM;
+    // --------------------------------------------------------- categorical
+    // Weighted vote over the values present among the neighbours. Since nv
+    // is small (k ~ 12), scanning for repeats is cheaper than keeping a
+    // global class list -- and avoids passing it to this function.
+    // Ties go to the SMALLER label.
+    double best_w = -1.0;
+    double best_v = NOT_NUM;
 
     for (int j = 0; j < nv; j++)
     {
-      const double val = campo_fonte[(size_t) est.viz[base + j]];
-      if (!eh_finito(val)) continue;
+      const double val = source_field[(size_t) kd.neighbors[base + j]];
+      if (!is_finite(val)) continue;
 
-      bool repetido = false;
-      for (int j2 = 0; j2 < j && !repetido; j2++)
-        if (campo_fonte[(size_t) est.viz[base + j2]] == val) repetido = true;
-      if (repetido) continue;
+      bool repeated = false;
+      for (int j2 = 0; j2 < j && !repeated; j2++)
+        if (source_field[(size_t) kd.neighbors[base + j2]] == val)
+          repeated = true;
+      if (repeated) continue;
 
       double sw = 0.0;
       for (int j2 = 0; j2 < nv; j2++)
-        if (campo_fonte[(size_t) est.viz[base + j2]] == val)
-          sw += est.pesos[base + j2];
+        if (source_field[(size_t) kd.neighbors[base + j2]] == val)
+          sw += kd.weights[base + j2];
 
-      if (sw > melhor_w || (sw == melhor_w && val < melhor_v))
+      if (sw > best_w || (sw == best_w && val < best_v))
       {
-        melhor_w = sw;
-        melhor_v = val;
+        best_w = sw;
+        best_v = val;
       }
     }
 
-    if (melhor_w >= 0.0) campo_alvo[(size_t) i] = melhor_v;
+    if (best_w >= 0.0) target_field[(size_t) i] = best_v;
   }
 
-  // ------------------------------------- copias (nos do alvo sem vizinho)
-  for (size_t t = 0; t < est.copia_destino.size(); t++)
-    campo_alvo[(size_t) est.copia_destino[t]] =
-        campo_alvo[(size_t) est.copia_origem[t]];
+  // ------------------------------- copies (target nodes without neighbours)
+  for (size_t t = 0; t < kd.copy_to.size(); t++)
+    target_field[(size_t) kd.copy_to[t]] =
+        target_field[(size_t) kd.copy_from[t]];
 
   return true;
 }
 
 // =============================================================================
-//  Conversao PointData <-> CellData
+//  PointData <-> CellData conversion
 // =============================================================================
 
-vector<double> classes_de_uvc(const vector<double> & v)
+vector<double> distinct_values_uvc(const vector<double> & v)
 {
   vector<double> c;
   for (size_t i = 0; i < v.size(); i++)
-    if (eh_finito(v[i])) c.push_back(v[i]);
+    if (is_finite(v[i])) c.push_back(v[i]);
 
   std::sort(c.begin(), c.end());
   c.erase(std::unique(c.begin(), c.end()), c.end());
@@ -624,183 +628,184 @@ vector<double> classes_de_uvc(const vector<double> & v)
 
 // -----------------------------------------------------------------------------
 
-vector<double> celula_para_no(const MalhaTransf & m,
-                              const vector<double> & vals_cell,
-                              bool categorico)
+vector<double> cell_to_node_uvc(const UVCDataTransfer & m,
+                                const vector<double> & cell_values,
+                                bool categorical)
 {
   const int np  = m.n_points;
   const int ne  = m.n_elements;
   const int nen = m.nen;
 
-  const vector<double> classes = classes_de_uvc(vals_cell);
+  const vector<double> classes = distinct_values_uvc(cell_values);
 
-  // ------------------------------------------------------------- continuo
-  if (!categorico)
+  // ---------------------------------------------------------- continuous
+  if (!categorical)
   {
-    vector<double> soma((size_t) np, 0.0);
-    vector<double> cont((size_t) np, 0.0);
+    vector<double> sum((size_t) np, 0.0);
+    vector<double> cnt((size_t) np, 0.0);
 
     for (int e = 0; e < ne; e++)
       for (int j = 0; j < nen; j++)
       {
-        const int no = m.tets[(size_t) nen * e + j];
-        soma[(size_t) no] += vals_cell[(size_t) e];
-        cont[(size_t) no] += 1.0;
+        const int node = m.tets[(size_t) nen * e + j];
+        sum[(size_t) node] += cell_values[(size_t) e];
+        cnt[(size_t) node] += 1.0;
       }
 
     for (int i = 0; i < np; i++)
-      if (cont[(size_t) i] > 0.0) soma[(size_t) i] /= cont[(size_t) i];
-    return soma;
+      if (cnt[(size_t) i] > 0.0) sum[(size_t) i] /= cnt[(size_t) i];
+    return sum;
   }
 
-  // --------------------------------------------------- categorico binario
+  // -------------------------------------------------- categorical binary
   if (classes.size() <= 2)
   {
-    const double menor = classes.empty() ? 0.0 : classes.front();
-    const double maior = (classes.size() == 2) ? classes.back() : menor;
+    const double low  = classes.empty() ? 0.0 : classes.front();
+    const double high = (classes.size() == 2) ? classes.back() : low;
 
-    vector<double> soma((size_t) np, 0.0);
-    vector<double> cont((size_t) np, 0.0);
+    vector<double> sum((size_t) np, 0.0);
+    vector<double> cnt((size_t) np, 0.0);
 
     for (int e = 0; e < ne; e++)
     {
-      const double b = (classes.size() == 2 && vals_cell[(size_t) e] > menor)
+      const double b = (classes.size() == 2 && cell_values[(size_t) e] > low)
                        ? 1.0 : 0.0;
       for (int j = 0; j < nen; j++)
       {
-        const int no = m.tets[(size_t) nen * e + j];
-        soma[(size_t) no] += b;
-        cont[(size_t) no] += 1.0;
+        const int node = m.tets[(size_t) nen * e + j];
+        sum[(size_t) node] += b;
+        cnt[(size_t) node] += 1.0;
       }
     }
 
-    vector<double> out((size_t) np, menor);
+    vector<double> out((size_t) np, low);
     for (int i = 0; i < np; i++)
     {
-      const double f = cont[(size_t) i] ? soma[(size_t) i] / cont[(size_t) i]
-                                        : 0.0;
-      // Mesmo criterio do np.round do script Python: empate exato (f = 0.5)
-      // vai para a classe MENOR, porque o numpy arredonda 0.5 para o par.
-      out[(size_t) i] = (f > 0.5) ? maior : menor;
+      const double f = cnt[(size_t) i] ? sum[(size_t) i] / cnt[(size_t) i]
+                                       : 0.0;
+      // Exact tie (f = 0.5) goes to the SMALLER class, matching numpy's
+      // round-half-to-even used by the original Python script.
+      out[(size_t) i] = (f > 0.5) ? high : low;
     }
     return out;
   }
 
-  // ----------------------------------------------- categorico multiclasse
+  // ---------------------------------------------- categorical multiclass
   const size_t nc = classes.size();
-  vector<double> contagem((size_t) np * nc, 0.0);
+  vector<double> count((size_t) np * nc, 0.0);
 
   for (int e = 0; e < ne; e++)
   {
     const size_t c = (size_t) (std::lower_bound(classes.begin(), classes.end(),
-                                                vals_cell[(size_t) e])
+                                                cell_values[(size_t) e])
                                - classes.begin());
     if (c >= nc) continue;
     for (int j = 0; j < nen; j++)
-      contagem[(size_t) m.tets[(size_t) nen * e + j] * nc + c] += 1.0;
+      count[(size_t) m.tets[(size_t) nen * e + j] * nc + c] += 1.0;
   }
 
   vector<double> out((size_t) np, classes[0]);
   for (int i = 0; i < np; i++)
   {
-    size_t melhor = 0;
+    size_t best = 0;
     for (size_t c = 1; c < nc; c++)
-      if (contagem[(size_t) i * nc + c] > contagem[(size_t) i * nc + melhor])
-        melhor = c;
-    out[(size_t) i] = classes[melhor];
+      if (count[(size_t) i * nc + c] > count[(size_t) i * nc + best])
+        best = c;
+    out[(size_t) i] = classes[best];
   }
   return out;
 }
 
 // -----------------------------------------------------------------------------
 
-vector<double> no_para_celula(const MalhaTransf & m,
-                              const vector<double> & vals_no,
-                              bool categorico, double frac)
+vector<double> node_to_cell_uvc(const UVCDataTransfer & m,
+                                const vector<double> & node_values,
+                                bool categorical, double frac)
 {
   const int ne  = m.n_elements;
   const int nen = m.nen;
 
   vector<double> out((size_t) ne, 0.0);
 
-  // ------------------------------------------------------------- continuo
-  if (!categorico)
+  // ---------------------------------------------------------- continuous
+  if (!categorical)
   {
     for (int e = 0; e < ne; e++)
     {
-      double soma = 0.0;
-      int    n    = 0;
+      double sum = 0.0;
+      int    n   = 0;
       for (int j = 0; j < nen; j++)
       {
-        const double v = vals_no[(size_t) m.tets[(size_t) nen * e + j]];
-        if (!eh_finito(v)) continue;
-        soma += v;
+        const double v = node_values[(size_t) m.tets[(size_t) nen * e + j]];
+        if (!is_finite(v)) continue;
+        sum += v;
         n++;
       }
-      out[(size_t) e] = n ? soma / (double) n : NAO_NUM;
+      out[(size_t) e] = n ? sum / (double) n : NOT_NUM;
     }
     return out;
   }
 
-  const vector<double> classes = classes_de_uvc(vals_no);
+  const vector<double> classes = distinct_values_uvc(node_values);
 
-  // ----- binario com zero como classe negativa: fracao de nos positivos ---
-  const bool binario = (classes.size() <= 2 && !classes.empty() &&
-                        classes.front() == 0.0);
+  // ---- binary with zero as the negative class: fraction of positive nodes
+  const bool binary = (classes.size() <= 2 && !classes.empty() &&
+                       classes.front() == 0.0);
 
-  if (binario)
+  if (binary)
   {
-    const double cls_pos = (classes.size() == 2) ? classes.back() : 1.0;
+    const double positive = (classes.size() == 2) ? classes.back() : 1.0;
 
     for (int e = 0; e < ne; e++)
     {
       int pos = 0;
       for (int j = 0; j < nen; j++)
-        if (vals_no[(size_t) m.tets[(size_t) nen * e + j]] == cls_pos) pos++;
+        if (node_values[(size_t) m.tets[(size_t) nen * e + j]] == positive)
+          pos++;
       const double f = (double) pos / (double) nen;
-      out[(size_t) e] = (f >= frac) ? cls_pos : 0.0;
+      out[(size_t) e] = (f >= frac) ? positive : 0.0;
     }
     return out;
   }
 
-  // -------------------------------------------- multiclasse: moda dos nos
+  // ------------------------------------------- multiclass: mode of the nodes
   for (int e = 0; e < ne; e++)
   {
-    double melhor   = vals_no[(size_t) m.tets[(size_t) nen * e]];
-    int    melhor_n = 0;
+    double best   = node_values[(size_t) m.tets[(size_t) nen * e]];
+    int    best_n = 0;
 
     for (int j = 0; j < nen; j++)
     {
-      const double v = vals_no[(size_t) m.tets[(size_t) nen * e + j]];
+      const double v = node_values[(size_t) m.tets[(size_t) nen * e + j]];
       int n = 0;
       for (int j2 = 0; j2 < nen; j2++)
-        if (vals_no[(size_t) m.tets[(size_t) nen * e + j2]] == v) n++;
-      if (n > melhor_n) { melhor_n = n; melhor = v; }
+        if (node_values[(size_t) m.tets[(size_t) nen * e + j2]] == v) n++;
+      if (n > best_n) { best_n = n; best = v; }
     }
-    out[(size_t) e] = melhor;
+    out[(size_t) e] = best;
   }
   return out;
 }
 
 // =============================================================================
-//  Escrita da malha alvo em .vtu (ASCII, escrito a mao -- sem VTK)
+//  Writing the target mesh to .vtu (ASCII, hand-written -- no VTK)
 // =============================================================================
 
-bool salvar_vtu_uvc(const string & caminho, const MalhaTransf & m,
-                    const vector<CampoSaida> & campos)
+bool save_vtu_uvc(const string & filename, const UVCDataTransfer & m,
+                  const vector<OutputField> & fields)
 {
-  std::ofstream f(caminho.c_str());
+  std::ofstream f(filename.c_str());
   if (!f)
   {
-    cerr << "[ERRO] nao foi possivel gravar '" << caminho << "'" << endl;
+    cerr << "[ERROR] cannot write '" << filename << "'" << endl;
     return false;
   }
 
-  // tipo de celula do VTK a partir do numero de nos por elemento
-  int vtk_tipo = 10;                       // VTK_TETRA
-  if      (m.nen == 3) vtk_tipo = 5;       // VTK_TRIANGLE
-  else if (m.nen == 8) vtk_tipo = 12;      // VTK_HEXAHEDRON
-  else if (m.nen == 2) vtk_tipo = 3;       // VTK_LINE
+  // VTK cell type from the number of nodes per element
+  int vtk_type = 10;                       // VTK_TETRA
+  if      (m.nen == 3) vtk_type = 5;       // VTK_TRIANGLE
+  else if (m.nen == 8) vtk_type = 12;      // VTK_HEXAHEDRON
+  else if (m.nen == 2) vtk_type = 3;       // VTK_LINE
 
   f << std::setprecision(10);
   f << "<?xml version=\"1.0\"?>\n";
@@ -810,7 +815,7 @@ bool salvar_vtu_uvc(const string & caminho, const MalhaTransf & m,
   f << "    <Piece NumberOfPoints=\"" << m.n_points
     << "\" NumberOfCells=\"" << m.n_elements << "\">\n";
 
-  // ----------------------------------------------------------- pontos
+  // ------------------------------------------------------------- points
   f << "      <Points>\n";
   f << "        <DataArray type=\"Float64\" NumberOfComponents=\"3\" "
     << "format=\"ascii\">\n";
@@ -819,7 +824,7 @@ bool salvar_vtu_uvc(const string & caminho, const MalhaTransf & m,
       << m.xyz[(size_t) 3 * i + 1] << " " << m.xyz[(size_t) 3 * i + 2] << "\n";
   f << "        </DataArray>\n      </Points>\n";
 
-  // ----------------------------------------------------------- celulas
+  // -------------------------------------------------------------- cells
   f << "      <Cells>\n";
   f << "        <DataArray type=\"Int32\" Name=\"connectivity\" "
     << "format=\"ascii\">\n";
@@ -838,30 +843,30 @@ bool salvar_vtu_uvc(const string & caminho, const MalhaTransf & m,
 
   f << "        <DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">\n"
     << "          ";
-  for (int e = 0; e < m.n_elements; e++) f << vtk_tipo << " ";
+  for (int e = 0; e < m.n_elements; e++) f << vtk_type << " ";
   f << "\n        </DataArray>\n      </Cells>\n";
 
-  // ------------------------------------------------------------ campos
+  // ------------------------------------------------------------- fields
   f << "      <PointData>\n";
-  for (size_t c = 0; c < campos.size(); c++)
+  for (size_t c = 0; c < fields.size(); c++)
   {
-    if (campos[c].por_celula) continue;
-    f << "        <DataArray type=\"Float64\" Name=\"" << campos[c].nome
+    if (fields[c].cell_data) continue;
+    f << "        <DataArray type=\"Float64\" Name=\"" << fields[c].name
       << "\" NumberOfComponents=\"1\" format=\"ascii\">\n          ";
-    for (size_t i = 0; i < campos[c].val.size(); i++)
-      f << campos[c].val[i] << " ";
+    for (size_t i = 0; i < fields[c].values.size(); i++)
+      f << fields[c].values[i] << " ";
     f << "\n        </DataArray>\n";
   }
   f << "      </PointData>\n";
 
   f << "      <CellData>\n";
-  for (size_t c = 0; c < campos.size(); c++)
+  for (size_t c = 0; c < fields.size(); c++)
   {
-    if (!campos[c].por_celula) continue;
-    f << "        <DataArray type=\"Float64\" Name=\"" << campos[c].nome
+    if (!fields[c].cell_data) continue;
+    f << "        <DataArray type=\"Float64\" Name=\"" << fields[c].name
       << "\" NumberOfComponents=\"1\" format=\"ascii\">\n          ";
-    for (size_t i = 0; i < campos[c].val.size(); i++)
-      f << campos[c].val[i] << " ";
+    for (size_t i = 0; i < fields[c].values.size(); i++)
+      f << fields[c].values[i] << " ";
     f << "\n        </DataArray>\n";
   }
   f << "      </CellData>\n";

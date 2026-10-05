@@ -1,16 +1,3 @@
-# =============================================================================
-#  src/cardiac/uvc/CMakeLists.txt
-#
-#  kdtree_uvc       : UVC field transfer (build once + transf in loop)
-#  teste_kdtree_uvc : loop test
-#
-#  Files are read through ReaderHDF5 (src/mesh), which does not depend on
-#  Mesh. Nothing here links Mesh/FEM/LinAlg.
-#
-#  Add to src/cardiac/CMakeLists.txt:
-#      add_subdirectory(uvc)
-# =============================================================================
-
 option(UVC_BUILD_TESTS "Build teste_kdtree_uvc" ON)
 
 add_library(kdtree_uvc STATIC

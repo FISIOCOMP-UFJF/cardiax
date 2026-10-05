@@ -1,21 +1,22 @@
 // =============================================================================
-//  teste_kdtree_uvc.cpp
+//  test_kdtree_uvc.cpp
 //
-//  Teste em loop pequeno da interface de kdtree_uvc.hpp: monta a estrutura
-//  UMA vez (kdtree_uvc_build) e transfere o campo VARIAS vezes
-//  (kdtree_uvc_transf), cronometrando as duas partes separadamente.
+//  Small loop test of the kdtree_uvc.hpp interface: builds the structure ONCE
+//  (kdtree_uvc_build) and transfers the field SEVERAL times
+//  (kdtree_uvc_transfer), timing the two parts separately.
 //
-//  E a prova do que a separacao vale: o build paga o k-NN uma vez e cada
-//  passo do loop vira uma media ponderada sobre listas prontas.
+//  It shows what the split is worth: the build pays for the k-NN once and
+//  every step of the loop becomes a weighted mean over ready-made lists.
 //
-//  Se o campo for uma serie temporal, cada iteracao le um passo diferente do
-//  HDF5 (passo % n_steps). Se for estatico, o mesmo vetor e reaproveitado --
-//  o custo medido continua sendo o da transferencia.
+//  If the field is a time series, each iteration reads a different step of
+//  the HDF5 file (step % n_steps). If it is static, the same vector is
+//  reused -- the measured cost is still that of the transfer.
 //
-//  Uso:
-//      ./teste_kdtree_uvc Paciente_1 Paciente_2 --campo lat --passos 20
-//      ./teste_kdtree_uvc P1 P2 --campo fecido --tipo categorico --passos 5
-//      ./teste_kdtree_uvc P1 P2 --campo lat --saida alvo_lat.vtu --nos 783,5510
+//  Usage:
+//      ./test_kdtree_uvc Patient_1 Patient_2 --field lat --steps 20
+//      ./test_kdtree_uvc P1 P2 --field tecido --type categorical --steps 5
+//      ./test_kdtree_uvc P1 P2 --field cell_field/tecido --type categorical
+//      ./test_kdtree_uvc P1 P2 --field lat --output target_lat.vtu --nodes 783,5510
 // =============================================================================
 
 #include <cstdlib>
@@ -34,100 +35,100 @@ using std::string;
 using std::vector;
 
 // =============================================================================
-//  Linha de comando
+//  Command line
 // =============================================================================
 
-struct Opcoes
+struct Options
 {
-  string fonte;
-  string alvo;
-  string campo;
-  string tipo;
-  string saida;
-  string nos;           //!< ids do alvo a imprimir, separados por virgula
-  int    passos;
-  OpcoesUVC uvc;
+  string source;
+  string target;
+  string field;
+  string type;
+  string output;
+  string nodes;         //!< target ids to print, comma separated
+  int    steps;
+  UVCParameters uvc;
 
-  Opcoes() : fonte(), alvo(), campo(), tipo("continuo"), saida(), nos(),
-             passos(10), uvc() {}
+  Options() : source(), target(), field(), type("continuous"), output(),
+              nodes(), steps(10), uvc() {}
 };
 
-static void ajuda(const char * prog)
+static void help(const char * prog)
 {
   cout
-    << "uso: " << prog << " <fonte> <alvo> --campo NOME [opcoes]\n\n"
-    << "  fonte/alvo      basename ou arquivo .xmf/.xdmf/.h5 com UVC nos nos\n\n"
-    << "opcoes:\n"
-    << "  --campo NOME    campo a transferir (obrigatorio): so o nome\n"
-    << "                  (tecido) ou o caminho (vertex_field/tecido,\n"
-    << "                  cell_field/tecido) quando o nome for ambiguo\n"
-    << "  --tipo T        continuo | categorico   (padrao continuo)\n"
-    << "  --passos N      quantas chamadas de kdtree_uvc_transf (padrao 10)\n"
-    << "  --saida ARQ     grava o resultado da ultima chamada num .vtu\n"
-    << "  --nos A,B,C     imprime o valor transferido nesses ids do alvo\n"
-    << "  --k N           vizinhos por no alvo (padrao 12)\n"
-    << "  --peso P        gauss | idw            (padrao gauss)\n"
-    << "  --pot-idw V     expoente do IDW        (padrao 2)\n"
-    << "  --w-ab V --w-tm V --w-rt V   pesos dos eixos do embedding\n"
-    << "  --tv-split V    limiar VE/VD (padrao: media entre min e max de tv)\n"
-    << "  --sem-clamp-ab  nao limita o ab do alvo a faixa da fonte\n"
+    << "usage: " << prog << " <source> <target> --field NAME [options]\n\n"
+    << "  source/target   basename or .xmf/.xdmf/.h5 file with nodal UVC\n\n"
+    << "options:\n"
+    << "  --field NAME    field to transfer (required): just the name\n"
+    << "                  (tecido) or the path (vertex_field/tecido,\n"
+    << "                  cell_field/tecido) when the name is ambiguous\n"
+    << "  --type T        continuous | categorical   (default continuous)\n"
+    << "  --steps N       number of kdtree_uvc_transfer calls (default 10)\n"
+    << "  --output FILE   writes the result of the last call to a .vtu\n"
+    << "  --nodes A,B,C   prints the transferred value at these target ids\n"
+    << "  --k N           neighbours per target node (default 12)\n"
+    << "  --weight W      gauss | idw            (default gauss)\n"
+    << "  --idw-power V   IDW exponent           (default 2)\n"
+    << "  --w-ab V --w-tm V --w-rt V   embedding axis weights\n"
+    << "  --tv-split V    LV/RV threshold (default: midpoint of the tv range)\n"
+    << "  --no-clamp-ab   do not clamp target ab to the source range\n"
     << endl;
 }
 
-static bool ler_opcoes(int argc, char ** argv, Opcoes & o)
+static bool parse_options(int argc, char ** argv, Options & o)
 {
-  vector<string> posicionais;
+  vector<string> positional;
 
   for (int i = 1; i < argc; i++)
   {
     const string a = argv[i];
 
-    if (a == "-h" || a == "--help" || a == "--ajuda") { ajuda(argv[0]); std::exit(0); }
-    else if (a == "--sem-clamp-ab") o.uvc.sem_clamp_ab = true;
+    if (a == "-h" || a == "--help") { help(argv[0]); std::exit(0); }
+    else if (a == "--no-clamp-ab") o.uvc.no_clamp_ab = true;
     else if (a.size() > 1 && a[0] == '-')
     {
-      if (++i >= argc) { cerr << "[ERRO] " << a << " exige um valor." << endl; return false; }
+      if (++i >= argc) { cerr << "[ERROR] " << a << " requires a value." << endl; return false; }
       const string v = argv[i];
 
-      if      (a == "--campo")    o.campo = v;
-      else if (a == "--tipo")     o.tipo = v;
-      else if (a == "--saida")    o.saida = v;
-      else if (a == "--nos")      o.nos = v;
-      else if (a == "--passos")   o.passos = atoi(v.c_str());
-      else if (a == "--k")        o.uvc.k = atoi(v.c_str());
-      else if (a == "--peso")     o.uvc.peso = v;
-      else if (a == "--pot-idw")  o.uvc.pot_idw = atof(v.c_str());
-      else if (a == "--w-ab")     o.uvc.w_ab = atof(v.c_str());
-      else if (a == "--w-tm")     o.uvc.w_tm = atof(v.c_str());
-      else if (a == "--w-rt")     o.uvc.w_rt = atof(v.c_str());
-      else if (a == "--tv-split") { o.uvc.tv_split = atof(v.c_str()); o.uvc.tem_tv_split = true; }
-      else { cerr << "[ERRO] opcao desconhecida: " << a << endl; return false; }
+      if      (a == "--field")     o.field = v;
+      else if (a == "--type")      o.type = v;
+      else if (a == "--output")    o.output = v;
+      else if (a == "--nodes")     o.nodes = v;
+      else if (a == "--steps")     o.steps = atoi(v.c_str());
+      else if (a == "--k")         o.uvc.k = atoi(v.c_str());
+      else if (a == "--weight")    o.uvc.weight = v;
+      else if (a == "--idw-power") o.uvc.idw_power = atof(v.c_str());
+      else if (a == "--w-ab")      o.uvc.w_ab = atof(v.c_str());
+      else if (a == "--w-tm")      o.uvc.w_tm = atof(v.c_str());
+      else if (a == "--w-rt")      o.uvc.w_rt = atof(v.c_str());
+      else if (a == "--tv-split")  { o.uvc.tv_split = atof(v.c_str()); o.uvc.has_tv_split = true; }
+      else { cerr << "[ERROR] unknown option: " << a << endl; return false; }
     }
-    else posicionais.push_back(a);
+    else positional.push_back(a);
   }
 
-  if (posicionais.size() != 2) { ajuda(argv[0]); return false; }
+  if (positional.size() != 2) { help(argv[0]); return false; }
 
-  o.fonte = posicionais[0];
-  o.alvo  = posicionais[1];
+  o.source = positional[0];
+  o.target = positional[1];
 
-  if (o.campo.empty())
+  if (o.field.empty())
   {
-    cerr << "[ERRO] --campo e obrigatorio neste teste." << endl;
+    cerr << "[ERROR] --field is required." << endl;
     return false;
   }
-  if (o.tipo != "continuo" && o.tipo != "categorico")
+  if (o.type != "continuous" && o.type != "categorical")
   {
-    cerr << "[ERRO] --tipo deve ser 'continuo' ou 'categorico'." << endl;
+    cerr << "[ERROR] --type must be 'continuous' or 'categorical'." << endl;
     return false;
   }
-  if (o.passos < 1) o.passos = 1;
+  if (o.steps < 1) o.steps = 1;
 
   return true;
 }
 
 //! "783,5510,7133" -> {783, 5510, 7133}
-static vector<int> ler_ids(const string & s)
+static vector<int> parse_ids(const string & s)
 {
   vector<int> ids;
   size_t a = 0;
@@ -142,225 +143,184 @@ static vector<int> ler_ids(const string & s)
   return ids;
 }
 
-static double segundos(clock_t a, clock_t b)
+static double seconds(clock_t a, clock_t b)
 {
   return (double) (b - a) / (double) CLOCKS_PER_SEC;
 }
 
 // =============================================================================
-//  Programa principal
+//  Main program
 // =============================================================================
 
 int main(int argc, char ** argv)
 {
-  Opcoes o;
-  if (!ler_opcoes(argc, argv, o)) return 1;
+  Options o;
+  if (!parse_options(argc, argv, o)) return 1;
 
-  const bool categorico = (o.tipo == "categorico");
+  const bool categorical = (o.type == "categorical");
   cout << std::fixed << std::setprecision(6);
   cout << string(64, '=') << endl;
 
-  // ---------------------------------------------------------- 0) leitura
-  cout << "Lendo malhas..." << endl;
+  // ------------------------------------------------------------ 0) reading
+  cout << "Reading meshes..." << endl;
 
-  ReaderHDF5 leitor_f, leitor_a;
-  MalhaTransf mf, ma;
+  ReaderHDF5 reader_s, reader_t;
+  UVCDataTransfer ms, mt;
 
-  if (!carregar_malha_uvc(leitor_f, o.fonte, "fonte", mf)) return 1;
-  if (!carregar_malha_uvc(leitor_a, o.alvo,  "alvo ", ma)) return 1;
+  if (!load_uvc_mesh(reader_s, o.source, "source", ms)) return 1;
+  if (!load_uvc_mesh(reader_t, o.target, "target", mt)) return 1;
 
-  // ----------------------------------------------- 1) campo (passo 0) ----
-  vector<double> campo_fonte;
-  bool por_celula = false;
-  string nome_real;
+  // ------------------------------------------------------ 1) field (step 0)
+  vector<double> source_field;
+  bool cell_data = false;
+  string path;
 
-  if (!ler_campo_cru_uvc(leitor_f, o.campo, campo_fonte, por_celula, nome_real))
+  if (!read_field_uvc(reader_s, o.field, source_field, cell_data, path))
   {
-    cerr << "[ERRO] campo '" << o.campo << "' nao encontrado na fonte." << endl;
-    cerr << "       campos disponiveis:";
-    for (int i = 0; i < leitor_f.get_n_fields(); i++)
-      cerr << " " << leitor_f.get_field(i).path.substr(1)
-           << (leitor_f.get_field(i).cell_centered ? "(cell)" : "");
+    cerr << "[ERROR] field '" << o.field << "' not found in the source." << endl;
+    cerr << "        available fields:";
+    for (int i = 0; i < reader_s.get_n_fields(); i++)
+      cerr << " " << reader_s.get_field(i).path.substr(1)
+           << (reader_s.get_field(i).cell_centered ? "(cell)" : "");
     cerr << endl;
     return 1;
   }
 
-  // nome_real e o caminho do dataset ("/vertex_field/tecido"): chave unica
-  // para as leituras do loop. nome_curto ("tecido") nomeia a saida.
-  const int idx = leitor_f.find_field(nome_real);
-  const int n_steps = (idx >= 0) ? leitor_f.get_field(idx).n_steps : 1;
-  const string nome_curto = (idx >= 0) ? leitor_f.get_field(idx).name
-                                       : nome_real;
+  // path is the dataset path ("/vertex_field/tecido"): unique key for the
+  // reads in the loop. short_name ("tecido") names the output.
+  const int idx = reader_s.find_field(path);
+  const int n_steps = (idx >= 0) ? reader_s.get_field(idx).n_steps : 1;
+  const string short_name = (idx >= 0) ? reader_s.get_field(idx).name : path;
 
-  cout << "\nCampo '" << nome_real << "': "
-       << (por_celula ? "CellData" : "PointData")
-       << ", " << n_steps << " passo(s), tipo " << o.tipo << endl;
+  cout << "\nField '" << path << "': "
+       << (cell_data ? "CellData" : "PointData")
+       << ", " << n_steps << " step(s), type " << o.type << endl;
 
-  // ------------------------------------------------- 2) BUILD (uma vez) --
+  // ------------------------------------------------------- 2) BUILD (once)
   cout << "\n--- kdtree_uvc_build (1x) ---" << endl;
 
-  KdtreeUVC est;
+  KdtreeUVC kd;
   const clock_t t0 = clock();
-  if (!kdtree_uvc_build(mf, ma, o.uvc, est)) return 1;
+  if (!kdtree_uvc_build(ms, mt, o.uvc, kd)) return 1;
   const clock_t t1 = clock();
 
-  cout << "  tempo do build: " << segundos(t0, t1) << " s"
-       << "   (k_max=" << est.k_max << ", "
-       << est.copia_destino.size() << " copias, "
-       << est.n_sem_valor << " sem valor)" << endl;
+  cout << "  build time: " << seconds(t0, t1) << " s"
+       << "   (k_max=" << kd.k_max << ", "
+       << kd.copy_to.size() << " copies, "
+       << kd.n_unfilled << " unfilled)" << endl;
 
-  // -------------------------------------------- 3) TRANSF (dentro do loop)
-  cout << "\n--- kdtree_uvc_transf (" << o.passos << "x) ---" << endl;
+  // ---------------------------------------------- 3) TRANSFER (in the loop)
+  cout << "\n--- kdtree_uvc_transfer (" << o.steps << "x) ---" << endl;
 
-  vector<double> campo_alvo;
-  vector<double> bruto;
-  double t_transf = 0.0;
+  vector<double> target_field;
+  vector<double> raw;
+  double t_transfer = 0.0;
 
-  for (int passo = 0; passo < o.passos; passo++)
+  for (int step = 0; step < o.steps; step++)
   {
-    // serie temporal: cada iteracao usa um passo diferente do arquivo
+    // time series: each iteration uses a different step of the file
     if (n_steps > 1)
     {
-      const int s = passo % n_steps;
-      if (!leitor_f.read_field_step(nome_real, s, bruto)) return 1;
-      campo_fonte = por_celula ? celula_para_no(mf, bruto, categorico) : bruto;
+      const int s = step % n_steps;
+      if (!reader_s.read_field_step(path, s, raw)) return 1;
+      source_field = cell_data ? cell_to_node_uvc(ms, raw, categorical) : raw;
     }
-    else if (passo == 0 && por_celula)
+    else if (step == 0 && cell_data)
     {
-      campo_fonte = celula_para_no(mf, campo_fonte, categorico);
+      source_field = cell_to_node_uvc(ms, source_field, categorical);
     }
 
-    if ((int) campo_fonte.size() != mf.n_points)
+    if ((int) source_field.size() != ms.n_points)
     {
-      cerr << "[ERRO] campo com " << campo_fonte.size()
-           << " valores; a fonte tem " << mf.n_points << " nos." << endl;
+      cerr << "[ERROR] field has " << source_field.size()
+           << " values; the source has " << ms.n_points << " nodes." << endl;
       return 1;
-    }    
-    
-
+    }
 
     const clock_t a = clock();
-    if (!kdtree_uvc_transf(est, campo_fonte, categorico, campo_alvo)) return 1;
+    if (!kdtree_uvc_transfer(kd, source_field, categorical, target_field))
+      return 1;
     const clock_t b = clock();
-    t_transf += segundos(a, b);
+    t_transfer += seconds(a, b);
 
-
-  
-/*
-      vector<CampoSaida> campos;
-
-      CampoSaida c_ab; c_ab.nome = "ab"; c_ab.val = ma.ab; campos.push_back(c_ab);
-      CampoSaida c_tm; c_tm.nome = "tm"; c_tm.val = ma.tm; campos.push_back(c_tm);
-      CampoSaida c_rt; c_rt.nome = "rt"; c_rt.val = ma.rt; campos.push_back(c_rt);
-      CampoSaida c_tv; c_tv.nome = "tv"; c_tv.val = ma.tv; campos.push_back(c_tv);
-
-      // o campo sai no MESMO tipo em que entrou
-      CampoSaida c_out;
-      c_out.nome = nome_curto;
-      if (por_celula)
-      {
-        c_out.por_celula = true;
-        c_out.val = no_para_celula(ma, campo_alvo, categorico);
-      }
-      else
-      {
-        c_out.val = campo_alvo;
-      }
-      campos.push_back(c_out);
-
-      std::string novasaida = "passo_" + std::to_string(passo) + ".vtu";
-
-      if (!salvar_vtu_uvc(novasaida, ma, campos)) return 1;
-      cout << "\nArquivo salvo: " << o.saida << endl;
-      
-      */
-
-
-
-
-
-
-
-
-
-    // --- resumo desta iteracao ---
+    // --- summary of this iteration ---
     double lo = 1e300, hi = -1e300;
     int n_nan = 0;
-    for (int i = 0; i < ma.n_points; i++)
+    for (int i = 0; i < mt.n_points; i++)
     {
-      const double v = campo_alvo[(size_t) i];
+      const double v = target_field[(size_t) i];
       if (!(v == v)) { n_nan++; continue; }
       if (v < lo) lo = v;
       if (v > hi) hi = v;
     }
 
-    cout << "  passo " << std::setw(3) << passo
-         << "  saida [" << lo << ", " << hi << "]"
+    cout << "  step " << std::setw(3) << step
+         << "  output [" << lo << ", " << hi << "]"
          << "  NaN=" << n_nan << endl;
   }
 
-  cout << "\n  tempo total das " << o.passos << " transferencias: "
-       << t_transf << " s" << endl;
-  cout << "  media por chamada               : "
-       << t_transf / (double) o.passos << " s" << endl;
-  if (t_transf > 0.0)
-    cout << "  build / media por chamada       : "
-         << segundos(t0, t1) / (t_transf / (double) o.passos) << "x" << endl;
+  cout << "\n  total time of the " << o.steps << " transfers: "
+       << t_transfer << " s" << endl;
+  cout << "  mean per call                  : "
+       << t_transfer / (double) o.steps << " s" << endl;
+  if (t_transfer > 0.0)
+    cout << "  build / mean per call          : "
+         << seconds(t0, t1) / (t_transfer / (double) o.steps) << "x" << endl;
 
-  // ----------------------------------------- 4) nos pedidos na linha ----
-  if (!o.nos.empty())
+  // ------------------------------------------- 4) nodes requested by --nodes
+  if (!o.nodes.empty())
   {
-    const vector<int> ids = ler_ids(o.nos);
-    cout << "\n--- nos do alvo pedidos ---" << endl;
+    const vector<int> ids = parse_ids(o.nodes);
+    cout << "\n--- requested target nodes ---" << endl;
     for (size_t t = 0; t < ids.size(); t++)
     {
       const int i = ids[t];
-      if (i < 0 || i >= ma.n_points)
+      if (i < 0 || i >= mt.n_points)
       {
-        cout << "  no " << i << ": fora do intervalo [0, "
-             << ma.n_points - 1 << "]" << endl;
+        cout << "  node " << i << ": out of range [0, "
+             << mt.n_points - 1 << "]" << endl;
         continue;
       }
-      cout << "  no " << i
-           << "  " << nome_curto << "=" << campo_alvo[(size_t) i]
-           << "  ab=" << ma.ab[(size_t) i]
-           << "  tm=" << ma.tm[(size_t) i]
-           << "  tv=" << ma.tv[(size_t) i]
-           << "  rt=" << ma.rt[(size_t) i]
-           << "  (" << est.n_viz[(size_t) i] << " vizinhos)" << endl;
+      cout << "  node " << i
+           << "  " << short_name << "=" << target_field[(size_t) i]
+           << "  ab=" << mt.ab[(size_t) i]
+           << "  tm=" << mt.tm[(size_t) i]
+           << "  tv=" << mt.tv[(size_t) i]
+           << "  rt=" << mt.rt[(size_t) i]
+           << "  (" << kd.n_neighbors[(size_t) i] << " neighbours)" << endl;
     }
   }
 
-  // ------------------------------------------------------- 5) saida ----
-  if (!o.saida.empty())
+  // ------------------------------------------------------------ 5) output
+  if (!o.output.empty())
   {
-    vector<CampoSaida> campos;
+    vector<OutputField> fields;
 
-    CampoSaida c_ab; c_ab.nome = "ab"; c_ab.val = ma.ab; campos.push_back(c_ab);
-    CampoSaida c_tm; c_tm.nome = "tm"; c_tm.val = ma.tm; campos.push_back(c_tm);
-    CampoSaida c_rt; c_rt.nome = "rt"; c_rt.val = ma.rt; campos.push_back(c_rt);
-    CampoSaida c_tv; c_tv.nome = "tv"; c_tv.val = ma.tv; campos.push_back(c_tv);
+    OutputField f_ab; f_ab.name = "ab"; f_ab.values = mt.ab; fields.push_back(f_ab);
+    OutputField f_tm; f_tm.name = "tm"; f_tm.values = mt.tm; fields.push_back(f_tm);
+    OutputField f_rt; f_rt.name = "rt"; f_rt.values = mt.rt; fields.push_back(f_rt);
+    OutputField f_tv; f_tv.name = "tv"; f_tv.values = mt.tv; fields.push_back(f_tv);
 
-    // o campo sai no MESMO tipo em que entrou
-    CampoSaida c_out;
-    c_out.nome = nome_curto;
-    if (por_celula)
+    // the field is written with the SAME centering it was read with
+    OutputField f_out;
+    f_out.name = short_name;
+    if (cell_data)
     {
-      c_out.por_celula = true;
-      c_out.val = no_para_celula(ma, campo_alvo, categorico);
+      f_out.cell_data = true;
+      f_out.values = node_to_cell_uvc(mt, target_field, categorical);
     }
     else
     {
-      c_out.val = campo_alvo;
+      f_out.values = target_field;
     }
-    campos.push_back(c_out);
+    fields.push_back(f_out);
 
-    if (!salvar_vtu_uvc(o.saida, ma, campos)) return 1;
-    cout << "\nArquivo salvo: " << o.saida << endl;
+    if (!save_vtu_uvc(o.output, mt, fields)) return 1;
+    cout << "\nFile saved: " << o.output << endl;
   }
 
-  leitor_f.close();
-  leitor_a.close();
+  reader_s.close();
+  reader_t.close();
 
   cout << string(64, '=') << endl;
   cout << "Done" << endl;

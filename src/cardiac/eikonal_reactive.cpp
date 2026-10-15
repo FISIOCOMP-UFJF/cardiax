@@ -7,7 +7,8 @@
 
 using namespace std;
 
-EikonalReactive::EikonalReactive() : CardiacProblem(), stim_apply_nodes(false) {
+EikonalReactive::EikonalReactive()
+    : CardiacProblem(), stim_val(0.0), stim_apply(false), stim_apply_nodes(false) {
     mesh = new Mesh();
     writer = new WriterHDF5(mesh);
 
@@ -83,9 +84,13 @@ void EikonalReactive::init() {
     // eikonal_solver.solve(mesh_filename);
     // lat = eikonal_solver.get_lat();
 
-    cellmodel = CellModel::create(cell_name);
-    cellmodel->setup(odesolver, timestep, totaltime, 1.0);
-    cells = new Cells(ndofs, cellmodel);
+    // Construtor POR NOME (igual ao Monodomain): cria uma copia do modelo
+    // celular por thread OpenMP (omp_get_max_threads(), ja fixado pelo
+    // omp_set_num_threads() do main). O construtor que recebe um modelo pronto
+    // cria UMA copia so, e os lacos paralelos de Cells::advance() indexam
+    // ode[tid] -> leitura fora do array assim que ha mais de uma thread.
+    cells = new Cells(ndofs, cell_name, odesolver, timestep, totaltime, 1.0);
+    cellmodel = &cells->get_model();
     cells->init();
 }
 
@@ -130,14 +135,20 @@ void EikonalReactive::read_eikonal_solution(const std::string &mshfile) {
 void EikonalReactive::initial_conditions() {
     tip.reset();
     cells->init();
-
+    cout<<"aqui 1"<<endl; 
     warmup_cells(lat);
+    cout<<"aqui 2"<<endl; 
 
     int lat_idx = cells->get_model().lat_var_index();
+    cout<<"aqui 3"<<endl; 
+
     if (lat_idx >= 0)
         cells->set_var(lat_idx, lat);
+    cout<<"aqui 4"<<endl; 
 
     cells->advance(tip.time(), timestep, stim_val, stim_nodes);
+    cout<<"aqui 5"<<endl; 
+
 }
 
 void EikonalReactive::advance() {
@@ -187,6 +198,59 @@ void EikonalReactive::apply_lat_stimulus(double amplitude, double duration, doub
 
     if (any) stim_apply_nodes = true;
 }
+
+
+void EikonalReactive::apply_lat_stimulus(double amplitude, double duration,
+                                 double period, double offset)
+{
+  // Stimulate every node whose local activation time has been reached, for
+  // `duration` after it. This is what drives ionic cell models such as
+  // ToRORdLand, which need an actual depolarising current: unlike the
+  // phenomenological Kerckhoffs model, they do not read the activation time
+  // directly.
+  //
+  // lat and duration are in the solver time unit (seconds here, so a 2 ms
+  // stimulus is duration = 0.002).
+  if (stim_values.n_elem != lat.n_elem)
+  {
+    std::cout << " Warning: stimulus buffer (" << stim_values.n_elem
+              << ") and LAT vector (" << lat.n_elem
+              << ") have different sizes; resizing." << std::endl;
+    stim_values.zeros(lat.n_elem);
+  }
+
+  double t = tip.time();
+
+  // A origem do relogio do estimulo e `offset`: a primeira ativacao ocorre
+  // em t = offset. Com offset = 0 (default) nada muda.
+  t -= offset;
+
+  // lat is fixed and t grows monotonically, so without folding the time back
+  // into a single beat the activation window [lat, lat+duration) is crossed
+  // only during the first beat and every later beat runs unstimulated.
+  //
+  // fmod preserva o sinal do dividendo, entao antes de offset o t dobrado
+  // seria negativo e poderia cair dentro de [lat, lat+duration) de um no com
+  // LAT proximo de zero -- estimulando o tecido ANTES da hora. O segundo
+  // fmod normaliza para [0, period).
+  if (period > 0.0) t = std::fmod(std::fmod(t, period) + period, period);
+  else if (t < 0.0) return;   // ainda nao chegou a primeira ativacao
+
+  bool any = false;
+
+  for (arma::uword i = 0; i < lat.n_elem; i++)
+  {
+    if (t >= lat(i) && t < lat(i) + duration)
+    {
+      stim_values(i) = amplitude;
+      any = true;
+    }
+  }
+
+  if (any)
+    stim_apply_nodes = true;
+}
+
 
 void EikonalReactive::solve() {
     //Do nothing

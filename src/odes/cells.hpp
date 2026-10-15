@@ -137,6 +137,9 @@ class Cells
   //! Return the number of cells (systems of ODEs)
   int size() { return num_systems; }
 
+  //! Numero de copias do modelo celular = maximo de threads em advance()
+  int get_num_threads() const { return n_ode; }
+
  protected:  
   
   //! Number of cells (systems of ODEs)
@@ -165,6 +168,11 @@ class Cells
 
   //! Monitored values array
   arma::vec monitored_values;
+
+  //! Quantas copias de CellModel existem em ode[] (1 no construtor que
+  //! recebe um modelo pronto; omp_get_max_threads() no construtor por nome).
+  //! Os lacos paralelos de advance() limitam a equipe a este valor.
+  int n_ode = 1;
 
 
  private:

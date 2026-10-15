@@ -22,6 +22,7 @@ void usage()
   cout << "                       Without -circ: total time of simulation." << endl;
   cout << "    -c    <cell>       name of the cell model (FHN,NP,LR1,TT2)" << endl; 
   cout << "    -m    <odesolver>  ODE solver (ExplicitEuler, ImplicitEuler)" << endl;
+  cout << "    -num_threads <n>   number of OpenMP threads" << endl;
   cout << "    -cond <condtype>   conductivity type (0 1 ... 5)" << endl;
   cout << "    -ep   <EP model>   Monodomain or Bidomain (mono or bido)" << endl;
   cout << "    -circ <0|1>        closed-loop 0D circulation (Regazzoni 2022)" << endl;
@@ -58,7 +59,6 @@ void usage()
   cout << " Nem toda flag lida esta listada acima. Para o inventario completo" << endl;
   cout << " de uma rodada, com valor resolvido e marca [cli]/[default], veja o" << endl;
   cout << " bloco \"flags desta rodada\" impresso no fim da configuracao." << endl;
-  cout << "-num_threads\t number of OpenMP threads " << endl;
   cout << endl;
   exit(0);
 }
@@ -66,7 +66,7 @@ void usage()
 int main(int argc, const char* argv[])
 {
   string basename, meshname, ep_model;
-  int condtype, use_circ, num_beats, num_threads;
+  int condtype, use_circ, num_beats, num_threads, use_pw;
   double dt_circ;
 
   if (argc <= 1) usage();
@@ -77,6 +77,7 @@ int main(int argc, const char* argv[])
   ep_model = CommandLineArgs::read("-ep","mono");
   condtype = CommandLineArgs::read("-cond",0);
   use_circ = CommandLineArgs::read("-circ",0);
+  use_pw = CommandLineArgs::read("-pw",0);
   num_beats = CommandLineArgs::read("-beats",1);
   dt_circ  = CommandLineArgs::read("-dtc",1.0e-3);
   num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() > 0 ? omp_get_max_threads() : 1);
@@ -114,6 +115,11 @@ int main(int argc, const char* argv[])
     {
       cout << "Iniciando solve com circulacao 0D fechada" << endl;
       model.solve_circulation(num_beats, dt_circ);
+    }
+    else if (use_pw)
+    {
+      cout << "Iniciando solve com circulação Piecewise" << endl; 
+      model.solve_piecewise(num_beats, dt_circ);   
     }
     else
     {

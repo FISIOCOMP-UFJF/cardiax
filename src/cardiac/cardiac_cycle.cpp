@@ -110,7 +110,7 @@ void CardiacElectromechanic::config(const string &basename)
   // given -t / -dt wins over the values implied by the curve.
   double dt_from_curve = T / (size - 1);
   double T_cli  = CommandLineArgs::read("-t",  -1.0,
-      "TETO de tempo de simulacao; com -circ 1 e opcional", "tempo");
+      "TETO de tempo de simulacao; com -circ 1 ou -pw 1 e opcional", "tempo");
   double dt_cli = CommandLineArgs::read("-dt", -1.0,
       "passo de tempo da EP, na unidade de -tunit", "tempo");
 
@@ -141,6 +141,18 @@ void CardiacElectromechanic::config(const string &basename)
   // -------------------------------------------------------------------
   const int use_circ_early = CommandLineArgs::read("-circ", 0,
       "circulacao 0D em malha fechada (Regazzoni 2022)", "circulacao");
+
+  // PV loop POR FASES (Wang et al. 2025). Terceiro caminho, ao lado do
+  // legado (curva tabelada no <pvloop>) e do -circ. Mutuamente exclusivo
+  // com -circ: os dois prescrevem a condicao de contorno endocardica, e
+  // aceitar ambos silenciosamente deixaria um deles sem efeito visivel.
+  const int use_pw_early = CommandLineArgs::read("-pw", 0,
+      "PV loop por fases (Wang et al. 2025 / Alya)", "pvloop por fases");
+
+  if (use_circ_early && use_pw_early)
+    throw std::runtime_error("-circ 1 e -pw 1 sao mutuamente exclusivos: "
+                             "ambos prescrevem a pressao endocardica. "
+                             "Escolha um dos dois caminhos.");
 
   // Leituras puras, sem efeito colateral: set_solver_time_unit_ms() continua
   // acontecendo mais abaixo, no lugar de sempre.
@@ -207,6 +219,82 @@ void CardiacElectromechanic::config(const string &basename)
          << " | EP span = " << T << " " << tunit_early
          << " | warm-up BCL = " << bcl << " " << tunit_early << endl;
   }
+  else if (use_pw_early)
+  {
+    // ---------------------------------------------------------------
+    //  PV loop por fases: o controlador trabalha em ms, o solver na
+    //  unidade de -tunit. TODA conversao acontece aqui, uma vez.
+    // ---------------------------------------------------------------
+    use_piecewise = true;
+
+    pw.configure(mshfile);
+    cout << "\n" << pw.describe() << endl;
+
+    pw_dt_ms = CommandLineArgs::read("-dtp", 1.0,
+        "passo do controlador do PV loop por fases, em ms",
+        "pvloop por fases");
+    if (pw_dt_ms <= 0.0) pw_dt_ms = 1.0;
+
+    pw_num_beats = CommandLineArgs::read("-beats", 1,
+        "numero de batimentos", "circulacao");
+    if (pw_num_beats < 1) pw_num_beats = 1;
+
+    // ms -> unidade de tempo do solver. Com -tunit ms o fator e 1; com
+    // -tunit s e 1/1000.
+    const double ms_to_units = 1.0 / solver_ms_early;
+
+    // -t e um TETO, como no caminho -circ. Se nao cobrir a rodada pedida,
+    // reduz o numero de batimentos em vez de deixar o relogio da EP parar
+    // no meio -- Eikonal::advance() vira um no-op silencioso nesse caso.
+    if (T_cli > 0.0)
+    {
+      const double t_init_units = pw.timing().t_init * ms_to_units;
+      const double RR_units     = pw.timing().RR     * ms_to_units;
+      const int fits = static_cast<int>(
+          std::floor((T_cli - t_init_units) / RR_units + 1e-9));
+      if (fits < pw_num_beats)
+      {
+        cout << " *** -t " << T_cli << " " << tunit_early << " cobre apenas "
+             << fits << " batimento(s) apos a fase 0 de "
+             << t_init_units << " " << tunit_early << "; -beats "
+             << pw_num_beats << " reduzido para " << std::max(1, fits)
+             << endl;
+        pw_num_beats = std::max(1, fits);
+      }
+    }
+
+    // Span da EP: rodada inteira mais dois passos de margem, pelo mesmo
+    // motivo do caminho -circ (finished() testa cur_time >= stop).
+    T = pw.total_time(pw_num_beats) * ms_to_units + 2.0 * dt;
+
+    // BCL do warm up: UM batimento, nunca a rodada inteira.
+    const double bcl_cli = CommandLineArgs::read("-bcl", -1.0,
+        "BCL do warm up celular (default: periodo cardiaco)", "warmup");
+    const double bcl = (bcl_cli > 0.0) ? bcl_cli
+                                       : pw.timing().RR * ms_to_units;
+    ephy.set_warmup_bcl(bcl);
+
+    // O passo do controlador tem de ser um multiplo do passo da EP; senao
+    // o numero de sub-passos arredonda e a tensao ativa passa a andar numa
+    // frequencia ligeiramente diferente da do controlador.
+    const double dt_pw_units = pw_dt_ms * ms_to_units;
+    const double ratio = dt_pw_units / dt;
+    const int    n_sub = std::max(1, static_cast<int>(std::round(ratio)));
+    if (std::fabs(n_sub * dt - dt_pw_units) > 1e-9 * dt_pw_units)
+    {
+      cout << " *** ATENCAO: -dtp " << pw_dt_ms << " ms = " << dt_pw_units
+           << " " << tunit_early << " nao e multiplo de -dt " << dt
+           << "; " << n_sub << " x " << dt << " = " << n_sub * dt << endl;
+    }
+
+    cout << " Heart period = " << pw.timing().RR << " ms"
+         << " | fase 0 = " << pw.timing().t_init << " ms"
+         << " | run = " << pw_num_beats << " batimento(s)"
+         << " | EP span = " << T << " " << tunit_early
+         << " | warm-up BCL = " << bcl << " " << tunit_early << endl;
+    cout << " Controlador: dt = " << pw_dt_ms << " ms -> " << n_sub
+         << " sub-passo(s) de EP por passo" << endl;
+  }
   else if (T_cli > 0.0 && T_cli != T)
   {
     // Caminho legado: -t continua sendo a duracao da simulacao, e o BCL do
@@ -269,7 +357,8 @@ void CardiacElectromechanic::config(const string &basename)
        << " ms" << endl;
   // O teto escala com o numero de batimentos: com o span cobrindo a rodada
   // inteira, 20 batimentos de 1 s sao 20000 ms legitimos.
-  const double T_ms_max = 20000.0 * std::max(1, circ_num_beats);
+  const double T_ms_max =
+      20000.0 * std::max(1, std::max(circ_num_beats, pw_num_beats));
   if (T_ms < 50.0 || T_ms > T_ms_max)
   {
     cout << "\n *** TIME UNIT WARNING ***" << endl;
@@ -417,7 +506,8 @@ void CardiacElectromechanic::config(const string &basename)
   // the number of frames follows from the run parameters; the length of the
   // pressure curve (curr_time) is irrelevant there because that curve is
   // not used at all.
-  int use_circ  = CommandLineArgs::read("-circ", 0);
+  // Mesma decisao tomada no topo de config(); nao reler a linha de comando.
+  const bool use_circ = (use_circ_early != 0);
   circ_out_every = CommandLineArgs::read("-prc", 8);
   circ_log_every = CommandLineArgs::read("-logc", 25);
   if (circ_log_every < 1) circ_log_every = 1;
@@ -436,6 +526,24 @@ void CardiacElectromechanic::config(const string &basename)
          << " steps, saving every " << circ_out_every << " -> "
          << circ_n_frames << " frame(s)" << endl;
     elas.setup_data_writer(circ_n_frames);
+  }
+  else if (use_piecewise)
+  {
+    // pw_num_beats ja foi resolvido contra o teto -t na secao de tempos.
+    // Reler -beats aqui reintroduziria a divergencia justamente no caso em
+    // que o teto cortou.
+    pw_out_every = circ_out_every;
+    pw_log_every = circ_log_every;
+
+    const int nsteps_total = static_cast<int>(
+        std::round(pw.total_time(pw_num_beats) / pw_dt_ms));
+    // +2: o frame 0 e escrito antes de qualquer solucao, e o ultimo passo
+    // pode cair fora da divisao exata.
+    pw_n_frames = nsteps_total / pw_out_every + 2;
+
+    cout << " Piecewise output: " << nsteps_total << " steps, saving every "
+         << pw_out_every << " -> " << pw_n_frames << " frame(s)" << endl;
+    elas.setup_data_writer(pw_n_frames);
   }
   else
     elas.setup_data_writer(curr_time.size());
@@ -1616,4 +1724,338 @@ void CardiacElectromechanic::solve_circulation(int num_beats, double dt_circ)
   cout << " Final blood volume: " << circ.total_volume() << " mL" << endl;
 
   timer.leave();
+}
+
+// ======================================================================
+//  PV loop POR FASES  (Wang et al. 2025, eLife 14:RP106555)
+// ======================================================================
+//
+//  A diferenca estrutural em relacao a solve_circulation() esta em UMA
+//  linha do laco: aqui a pressao do passo sai de uma expressao explicita
+//  (PiecewisePVLoop::advance_pressure) e vai direto para a mecanica, em
+//  vez de ser a incognita de um Newton 2x2 sobre o volume.
+//
+//  Consequencias praticas:
+//
+//    - custo: UMA solucao 3D por passo, contra 4-8 do caminho -circ;
+//    - estabilidade: o esquema e explicito no acoplamento p <-> V, entao
+//      as fases isovolumetricas sao mantidas por penalidade e nao por
+//      restricao. Ganho alto demais nas penalidades oscila; ganho baixo
+//      demais deixa o volume derivar. Ver as notas em piecewise_pvloop.hpp;
+//    - circulacao: ABERTA. Um Windkessel de dois elementos por ventriculo,
+//      sem retorno venoso e sem atrios. Nao ha volume sanguineo total a
+//      conservar, o que elimina a questao do volume estressado que domina
+//      o transiente do caminho -circ, mas tambem elimina o mecanismo de
+//      Frank-Starling entre batimentos.
+//
+//  Ordem dentro do passo, e por que ela e essa:
+//
+//    0. lambda_f vem do gradiente de deformacao deixado pela ULTIMA
+//       solucao convergida, logo tem de ser lido ANTES das celulas;
+//    1. celulas avancam n_sub sub-passos e Ta e congelada;
+//    2. o controlador calcula p_LV/p_RV a partir de V e dV/dt do passo
+//       anterior;
+//    3. UMA solucao mecanica com essas pressoes e essa Ta;
+//    4. os volumes resultantes voltam para o controlador, que atualiza
+//       dV/dt e avalia as transicoes de fase.
+
+void CardiacElectromechanic::solve_piecewise(int num_beats, double dt_pw_ms)
+{
+  cout << "\n=== PV loop por fases (Wang et al. 2025) ===" << endl;
+
+  timer.enter("solve_piecewise");
+
+  // config() ja resolveu -beats e -dtp contra o teto imposto por -t. Os
+  // argumentos chegam direto da linha de comando pelo app e podem estar
+  // desatualizados; ESTES membros sao a verdade.
+  if (pw_num_beats > 0 && num_beats != pw_num_beats)
+  {
+    cout << " *** -beats " << num_beats << " ajustado para " << pw_num_beats
+         << " (limite imposto por -t)" << endl;
+    num_beats = pw_num_beats;
+  }
+  if (std::fabs(dt_pw_ms - pw_dt_ms) > 1e-12)
+    dt_pw_ms = pw_dt_ms;
+
+  // --- inicializacao, espelhando solve_circulation() -------------------
+  // pre_solve() monta as matrizes e a configuracao de referencia;
+  // initial_conditions() reinicia o estado celular. Pular qualquer um dos
+  // dois deixa o sistema linear sem montagem, o que aparece como falha de
+  // precondicionador (PETSc reason -11) ja na primeira solucao.
+  cout << " Time step of mechanics: " << dt_mech << endl;
+  elas.pre_solve();
+  ephy.initial_conditions();
+
+  update_active_tension();
+
+  // --- estado inicial do controlador -----------------------------------
+  const double v_lv0 = elas.volume_LV();
+  const double v_rv0 = elas.volume_RV();
+  pw.init(v_lv0, v_rv0);
+
+  cout << " Volumes iniciais da malha: VE = " << v_lv0
+       << " mL, VD = " << v_rv0 << " mL" << endl;
+  cout << " Conversao de pressao: 1 kPa = " << kPa_to_p
+       << " unidades do modelo" << endl;
+
+  if (v_rv0 > v_lv0)
+    cout << " *** NOTA: o volume da cavidade DIREITA excede o da esquerda"
+         << " nesta malha. Confirme os marcadores (30 = VE, 20 = VD) antes"
+         << " de calibrar os limiares de ejecao." << endl;
+
+  // --- saida -----------------------------------------------------------
+  pw_file.open((filename + string("_piecewise.dat")).c_str());
+  if (pw_file.is_open())
+    pw_file << PiecewisePVLoop::history_header() << "\n";
+
+  // --- relogios --------------------------------------------------------
+  //
+  // Tres unidades de tempo convivem neste laco e a maior parte dos erros
+  // caros mora exatamente aqui:
+  //
+  //   ms                : o controlador e a Tabela 1 do artigo;
+  //   unidade do solver : o relogio da EP, s ou ms conforme -tunit;
+  //   unidade do modelo : a do proprio modelo celular, tratada por Cells.
+  //
+  // ephy_time_per_second foi fixado em config() a partir de -tunit, entao
+  // aqui ele NAO e autodetectado -- ao contrario do caminho -circ, que
+  // aceita malhas antigas sem essa declaracao.
+  const double units_per_ms = (ephy_time_per_second > 0.0)
+                            ? ephy_time_per_second / 1000.0 : 1.0;
+
+  const double dt_ephy   = ephy.get_time_parameters().get_dt();
+  const double dt_pw_ep  = dt_pw_ms * units_per_ms;   // passo em unid. do solver
+
+  int n_sub = static_cast<int>(std::round(dt_pw_ep / dt_ephy));
+  if (n_sub < 1) n_sub = 1;
+
+  const double mismatch = std::fabs(n_sub * dt_ephy - dt_pw_ep);
+  cout << " Cell model: dt = " << dt_ephy << ", passo do controlador = "
+       << dt_pw_ep << " (mesmas unidades) -> " << n_sub
+       << " sub-passo(s) por passo" << endl;
+  if (mismatch > 1e-9 * dt_pw_ep)
+  {
+    cout << " *** ATENCAO: o passo do controlador nao e multiplo do passo"
+         << " do modelo celular." << endl;
+    cout << "     " << n_sub << " x " << dt_ephy << " = " << n_sub * dt_ephy
+         << " vs " << dt_pw_ep << " (deriva de " << mismatch
+         << " por passo)." << endl;
+  }
+
+  const double RR_ms      = pw.timing().RR;
+  const double total_ms   = pw.total_time(num_beats);
+  const int    nsteps     = static_cast<int>(std::round(total_ms / dt_pw_ms));
+
+  // Estimulo LAT: periodo e deslocamento na unidade do SOLVER, porque e
+  // contra o relogio da EP que Eikonal::apply_lat_stimulus os compara.
+  // O deslocamento e o fim da fase 1: no artigo, "Phase 2: Isovolumetric
+  // contraction. Electrical activation ensues". Sem ele, a ativacao cairia
+  // em t = 0, isto e, no meio da rampa de inflacao passiva.
+  const double stim_period_ep = RR_ms * units_per_ms;
+  const double stim_offset_ep = pw.stimulus_offset() * units_per_ms;
+
+  cout << " Rodada: " << total_ms << " ms = " << nsteps << " passos de "
+       << dt_pw_ms << " ms (" << num_beats << " batimento(s) de " << RR_ms
+       << " ms apos a fase 0)" << endl;
+
+  if (stim_amplitude != 0.0)
+    cout << " Estimulo LAT: amplitude = " << stim_amplitude
+         << ", duracao = " << stim_duration
+         << ", periodo = " << stim_period_ep
+         << ", offset = " << stim_offset_ep
+         << " (unidades do solver)" << endl;
+  else
+    cout << " Sem estimulo LAT: o modelo celular e dirigido diretamente"
+         << " pelo LAT (Kerckhoffs). A ativacao NAO respeita o offset de"
+         << " fase; considere ajustar o LAT da malha em "
+         << pw.stimulus_offset() << " ms." << endl;
+
+  // --- o relogio da EP tem de cobrir a rodada inteira -------------------
+  double stop_ephy = ephy.get_time_parameters().get_stop();
+  const double total_ep = total_ms * units_per_ms;
+  if (stop_ephy < total_ep - 0.5 * dt_ephy)
+  {
+    const double novo = total_ep + 2.0 * dt_ephy;
+    cout << " EP span esticado de " << stop_ephy << " para " << novo
+         << " para cobrir a rodada" << endl;
+    ephy.time_parameters().set_stop(novo);
+    stop_ephy = ephy.get_time_parameters().get_stop();
+  }
+  if (stop_ephy < total_ep - 0.5 * dt_ephy)
+    throw std::runtime_error("EP span menor que a rodada: o modelo celular "
+                             "pararia de integrar no meio, sem avisar. "
+                             "Verifique -t, -hr/-pwrr, -pwinit e -beats.");
+
+  // --- primeiro frame ---------------------------------------------------
+  int frame = 0;
+  elas.output_vtk(0, frame);
+  save_node_fields(frame);
+  cout << " Output: salvando a cada " << pw_out_every << " passo(s), "
+       << pw_n_frames << " frame(s) alocados" << endl;
+  cout << " Log: relatorio detalhado a cada " << pw_log_every << " passo(s)"
+       << endl;
+  cout << "\n Legenda: [ODE] modelo celular | [PW] controlador de fases |"
+       << " [MECH] mecanica 3D" << endl;
+
+  double t_ms   = 0.0;
+  int    solves = 0;
+  int    beat_reported = -1;
+
+  for (int i = 0; i < nsteps; i++)
+  {
+    const bool log_now = (i % pw_log_every == 0) || (i == nsteps - 1);
+    quiet_solve = !log_now;
+
+    const double t_end_ms = t_ms + dt_pw_ms;
+
+    const int beat = pw.beat_of(t_end_ms);
+    if (beat != beat_reported && beat >= 0)
+    {
+      cout << "\n--- batimento " << beat + 1 << "/" << num_beats << " ---"
+           << endl;
+      beat_reported = beat;
+    }
+
+    if (log_now)
+    {
+      const std::streamsize prec0 = cout.precision();
+      cout << "\n[t = " << std::fixed << std::setprecision(1) << t_end_ms
+           << " ms | passo " << i + 1 << "/" << nsteps
+           << " | VE " << PiecewisePVLoop::phase_name(pw.state_LV().phase)
+           << " | VD " << PiecewisePVLoop::phase_name(pw.state_RV().phase)
+           << "]" << std::defaultfloat << endl;
+      cout.precision(prec0);
+    }
+
+    // ---- 0. realimentacao mecano-eletrica ---------------------------
+    update_fiber_stretch(dt_pw_ep);
+
+    // ---- 1. modelo celular ------------------------------------------
+    bool stimulating = false;
+    const arma::vec & lat_v = ephy.get_lat();
+    for (int k = 0; k < n_sub; k++)
+    {
+      if (stim_amplitude != 0.0)
+      {
+        double tk = ephy.get_time_parameters().time() - stim_offset_ep;
+        if (stim_period_ep > 0.0)
+          tk = std::fmod(std::fmod(tk, stim_period_ep) + stim_period_ep,
+                         stim_period_ep);
+        if (tk >= 0.0 && arma::any(tk >= lat_v && tk < lat_v + stim_duration))
+          stimulating = true;
+
+        ephy.apply_lat_stimulus(stim_amplitude, stim_duration,
+                                stim_period_ep, stim_offset_ep);
+      }
+      ephy.advance();
+    }
+    update_active_tension();
+
+    if (!ta.is_finite())
+    {
+      cout << "\n *** a tensao ativa contem NaN/Inf em t = " << t_end_ms
+           << " ms." << endl;
+      cout << "     O modelo celular divergiu. Com Euler explicito o ToRORd"
+           << " precisa de dt <= ~0.002 ms;" << endl;
+      cout << "     reduza -dt ou use um solver implicito." << endl;
+      break;
+    }
+
+    if (log_now)
+    {
+      cout << "  [ODE  ] " << n_sub << " sub-passos"
+           << (stimulating ? " (estimulo ligado)" : "")
+           << " -> Ta max = " << ta.max() << " nodal";
+      if (ta_applied.n_elem > 0)
+        cout << ", " << ta_applied.max() << " applied";
+      cout << endl;
+    }
+
+    // ---- 2. controlador de fases ------------------------------------
+    pw.advance_pressure(t_end_ms, dt_pw_ms);
+
+    const double p_lv_kPa = pw.pressure_LV();
+    const double p_rv_kPa = pw.pressure_RV();
+
+    if (log_now)
+      cout << "  [PW   ] p_VE = " << p_lv_kPa << " kPa, p_VD = " << p_rv_kPa
+           << " kPa  (P_art VE = " << pw.state_LV().P_art << " kPa)" << endl;
+
+    // ---- 3. UMA solucao mecanica -------------------------------------
+    // A conversao kPa -> unidade de pressao do modelo e a MESMA que a
+    // tensao ativa recebe (kPa_to_p), de proposito: um fator de 1000
+    // entre a pressao da cavidade e a tensao ativa seria quase invisivel
+    // nos resultados e fatal na fisiologia.
+    p_lv_cur = p_lv_kPa * kPa_to_p;
+    p_rv_cur = p_rv_kPa * kPa_to_p;
+
+    Solve_System(t_end_ms, p_lv_cur, p_rv_cur);
+    solves++;
+
+    // ---- 4. volumes de volta ao controlador --------------------------
+    const double v_lv = elas.volume_LV();
+    const double v_rv = elas.volume_RV();
+
+    pw.update_volumes(t_end_ms, dt_pw_ms, v_lv, v_rv);
+
+    t_ms = t_end_ms;
+
+    if (log_now)
+      cout << "  [MECH ] V_VE = " << v_lv << " mL (dV/dt = "
+           << pw.state_LV().Vdot << " mL/ms)"
+           << " | V_VD = " << v_rv << " mL (dV/dt = "
+           << pw.state_RV().Vdot << " mL/ms)" << endl;
+
+    if (pw_file.is_open())
+    {
+      pw_file << pw.history_row(t_ms) << "\n";
+      pw_file.flush();
+    }
+
+    if (i % pw_out_every == 0 && frame < pw_n_frames - 1)
+    {
+      frame++;
+      elas.output_vtk(0, frame);
+      save_node_fields(frame);
+    }
+  }
+
+  quiet_solve = false;
+
+  if (pw_file.is_open())
+    pw_file.close();
+
+  // --- resumo -----------------------------------------------------------
+  cout << "\n Total de solucoes 3D: " << solves
+       << " (" << (nsteps > 0 ? double(solves) / nsteps : 0.0)
+       << " por passo)" << endl;
+
+  const PiecewisePVLoop::ChamberState & slv = pw.state_LV();
+  const PiecewisePVLoop::ChamberState & srv = pw.state_RV();
+
+  cout << " VE: V_ED = " << slv.V_ED << " mL, V_ES = " << slv.V_ES
+       << " mL, VS = " << pw.stroke_volume_LV() << " mL, FE = "
+       << pw.ejection_fraction_LV() << " %" << endl;
+  cout << " VD: V_ED = " << srv.V_ED << " mL, V_ES = " << srv.V_ES
+       << " mL, VS = " << pw.stroke_volume_RV() << " mL, FE = "
+       << pw.ejection_fraction_RV() << " %" << endl;
+
+  // O teto de |dP| e uma rede de seguranca. Se ele atuou muito, o ganho
+  // das penalidades esta alto demais para este dt e a fase isovolumetrica
+  // esta sendo suavizada de um jeito que a calibracao nao ve.
+  if (slv.n_clipped > 0 || srv.n_clipped > 0)
+    cout << " *** ATENCAO: o teto -pwdpmax atuou " << slv.n_clipped
+         << " vez(es) no VE e " << srv.n_clipped << " no VD. Reduza"
+         << " -pwcpiso/-pwcviso ou -dtp antes de interpretar o laco."
+         << endl;
+
+  if (slv.V_ES >= slv.V_ED)
+    cout << " *** ATENCAO: V_ES >= V_ED no VE: nao houve ejecao liquida."
+         << " Verifique -tascale, o limiar -pwpej e se a ativacao caiu no"
+         << " fim da fase 1." << endl;
+
+  timer.leave();
+
+  elas.timer.summary();
+  timer.summary();
 }

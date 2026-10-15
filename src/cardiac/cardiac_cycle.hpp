@@ -7,6 +7,7 @@
 #include "pdes/updated_lagrangian.hpp"
 #include "eikonal_reactive.hpp"
 #include "regazzoni2020.hpp"
+#include "piecewise_pvloop.hpp"
 #include <fstream>
 
 class CardiacElectromechanic
@@ -27,6 +28,15 @@ public:
   //! cavities. The 0D model supplies target volumes, the 3D model returns
   //! the pressures that reproduce them.
   void solve_circulation(int num_beats = 1, double dt_circ = 1.0e-3);
+
+  //! PV loop POR FASES (Wang et al. 2025, eLife 14:RP106555 -- a formulacao
+  //! do Alya). Aqui o 0D e dono da PRESSAO, entao nao ha inversao do mapa
+  //! p -> V: uma unica solucao 3D por passo de tempo, contra as 4-8 do
+  //! caminho -circ. Ver piecewise_pvloop.hpp para as cinco fases.
+  //!
+  //! dt_pw_ms e o passo do controlador, em MILISSEGUNDOS, independente de
+  //! -tunit: o artigo e a Tabela 1 estao todos em ms.
+  void solve_piecewise(int num_beats = 1, double dt_pw_ms = 1.0);
 
   //! Pressure conversion: model pressure units per mmHg.
   //! Default 133.322 (mesh/material in Pa). Use 0.133322 for kPa.
@@ -236,6 +246,20 @@ private:
   //! nao sabe do limite.
   int circ_num_beats = 1;
   std::ofstream circ_file;
+
+  // ---- PV loop por fases (Wang et al. 2025) --------------------------
+  //
+  // Estado paralelo ao do caminho -circ, e nao compartilhado com ele: os
+  // dois esquemas tem donos diferentes da incognita e misturar o estado
+  // faria uma rodada herdar silenciosamente parametros do outro caminho.
+  PiecewisePVLoop pw;              //!< controlador de pressao por fases
+  bool   use_piecewise = false;    //!< -pw 1
+  int    pw_num_beats  = 1;        //!< ja resolvido contra o teto de -t
+  double pw_dt_ms      = 1.0;      //!< passo do controlador, em ms
+  int    pw_out_every  = 8;        //!< salva a malha a cada N passos
+  int    pw_n_frames   = 1;        //!< frames alocados no writer
+  int    pw_log_every  = 25;       //!< log detalhado a cada N passos
+  std::ofstream pw_file;
 
   //! Invert the 3D model: find the cavity pressures reproducing the target
   //! volumes. Returns pressures in mmHg through plv/prv.

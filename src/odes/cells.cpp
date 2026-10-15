@@ -1,8 +1,26 @@
 #include "cells.hpp"
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace {
+// Vetor por-no menor que num_systems vira leitura fora da faixa (SEGV
+// silencioso com ARMA_NO_DEBUG). Melhor falhar aqui, com mensagem, do que
+// dentro de uma regiao paralela.
+void check_per_node(const char *name, size_t n_elem, size_t num_systems)
+{
+  if (n_elem != 0 && n_elem < num_systems)
+    throw std::runtime_error(std::string("Cells: ") + name + " tem " +
+        std::to_string(n_elem) + " elementos, mas ha " +
+        std::to_string(num_systems) + " sistemas");
+}
+}
 
 Cells::Cells(uint n, CellModel *c) 
-  : num_systems(n), types()
+  : num_systems(n), types(), n_ode(1)
 {
+  // Um unico modelo: os lacos paralelos usam num_threads(n_ode) e rodam
+  // com 1 thread neste construtor.
   ode = new CellModel*[1];
   ode[0] = c;
 
@@ -19,7 +37,7 @@ Cells::Cells(uint n, CellModel *c)
 }
 
 Cells::Cells(uint n, string cell_model_name, string ode_solver, double dt, double totaltime, double tp)
-    : num_systems(n), types()
+    : num_systems(n), types(), n_ode(1)
 {
   // Isso ficou um pouco confuso, tem a funçaõ omp_get_num_threads, mas parece que ela tem o risco de 
   // retornar um valor inferior ao número de threads (se o numero de threads não for setado, tenho que testar isso). 
@@ -27,6 +45,8 @@ Cells::Cells(uint n, string cell_model_name, string ode_solver, double dt, doubl
   // mais objetos do que o necessário!! Tenho que testar isso!! 
 
     int num_threads = omp_get_max_threads(); 
+    if (num_threads < 1) num_threads = 1;
+    n_ode = num_threads;
 
     ode = new CellModel*[num_threads];
 
@@ -53,45 +73,14 @@ Cells::Cells(uint n, string cell_model_name, string ode_solver, double dt, doubl
 
 Cells::~Cells()
 {
+  delete [] ode;
   delete [] states;
 }
 
 void Cells::advance(double t, double dt)
 {
-  // convert solver time into the model's own time unit
-  // const double tf = time_factor();
-  // t  *= tf;
-  // dt *= tf;
-
-  // for (uint system=0; system<num_systems; system++)    
-  // {
-  //   // Compute offset for ODE
-  //   const uint offset = system*ode[0]->get_num_state_vars();
-
-  //   if (types.size() != 0) ode[0]->set_celltype( types(system) );
-  //   if (apicobasal.n_elem != 0) ode[0]->set_apicobasal( apicobasal(system) );
-  //   if (stretch.n_elem != 0)      ode[0]->set_stretch( stretch(system) );
-  //   if (stretch_rate.n_elem != 0) ode[0]->set_stretch_rate( stretch_rate(system) );
-
-  //   // Time-stepping
-  //   ode[0]->advance(states+offset, t, dt);
-
-  //   // Update monitored values
-  //   if (ode[0]->get_num_monitored() > 0)
-  //   {
-  //     for(int j=0; j<ode[0]->get_num_monitored(); j++)
-  //     {
-  //       double value = ode[0]->get_monitored_value(j);
-  //       //cout << "el: "<<system<<" - " << value << endl;
-  //       // BUG
-  //       //const uint moffset = system * ode[0]->get_num_monitored() + j;
-  //       const uint moffset = system * ode[0]->get_num_monitored();
-  //       monitored_values(moffset) = value;
-  //     }
-  //   }
-  // }
-  cout<<"This function should be legacy, and if it's been called, there is something wrong! : advance(double, double)" <<endl; 
-  exit(10);
+  // reaproveita a versão com set de snodes, passando um set vazio (sem estímulos)
+  advance(t, dt, 0.0, std::set<uint>());
 }
 
 void Cells::advance(double t, double dt, const double istim,
@@ -101,10 +90,15 @@ void Cells::advance(double t, double dt, const double istim,
   t  *= tf;
   dt *= tf;
 
-  #pragma omp parallel for
+  check_per_node("types",        types.n_elem,        num_systems);
+  check_per_node("apicobasal",   apicobasal.n_elem,   num_systems);
+  check_per_node("stretch",      stretch.n_elem,      num_systems);
+  check_per_node("stretch_rate", stretch_rate.n_elem, num_systems);
+
+  #pragma omp parallel for num_threads(n_ode)
   for (uint system=0; system<num_systems; system++)
   {
-    int tid = omp_get_thread_num(); //thread_id
+    const int tid = omp_get_thread_num(); //thread_id, sempre < n_ode
 
     // compute offset for ODE
     const uint offset = system * ode[tid]->get_num_state_vars();
@@ -142,26 +136,36 @@ void Cells::advance(double t, double dt, const arma::vec & stim_values)
   t  *= tf;
   dt *= tf;
 
+  if (stim_values.n_elem < num_systems)
+    throw std::runtime_error("Cells: stim_values menor que num_systems");
+  check_per_node("types",        types.n_elem,        num_systems);
+  check_per_node("apicobasal",   apicobasal.n_elem,   num_systems);
+  check_per_node("stretch",      stretch.n_elem,      num_systems);
+  check_per_node("stretch_rate", stretch_rate.n_elem, num_systems);
+
+  #pragma omp parallel for num_threads(n_ode)
   for (uint system=0; system<num_systems; system++)
   {
-    // compute offset for ODE
-    const uint offset = system * ode[0]->get_num_state_vars();
+    const int tid = omp_get_thread_num();
 
-    if (types.size() != 0) ode[0]->set_celltype( types(system) );
-    if (apicobasal.n_elem != 0) ode[0]->set_apicobasal( apicobasal(system) );
-    if (stretch.n_elem != 0)      ode[0]->set_stretch( stretch(system) );
-    if (stretch_rate.n_elem != 0) ode[0]->set_stretch_rate( stretch_rate(system) );
+    // compute offset for ODE
+    const uint offset = system * ode[tid]->get_num_state_vars();
+
+    if (types.size() != 0) ode[tid]->set_celltype( types(system) );
+    if (apicobasal.n_elem != 0) ode[tid]->set_apicobasal( apicobasal(system) );
+    if (stretch.n_elem != 0)      ode[tid]->set_stretch( stretch(system) );
+    if (stretch_rate.n_elem != 0) ode[tid]->set_stretch_rate( stretch_rate(system) );
 
     const double istim = stim_values(system);
-    ode[0]->advance(states+offset, t, dt, istim);
+    ode[tid]->advance(states+offset, t, dt, istim);
 
     // update monitored values
-    if (ode[0]->get_num_monitored() > 0)
+    if (ode[tid]->get_num_monitored() > 0)
     {
-      for(int j=0; j<ode[0]->get_num_monitored(); j++)
+      for(int j=0; j<ode[tid]->get_num_monitored(); j++)
       {
-        double value = ode[0]->get_monitored_value(j);
-        const uint moffset = system * ode[0]->get_num_monitored();
+        double value = ode[tid]->get_monitored_value(j);
+        const uint moffset = system * ode[tid]->get_num_monitored() + j;
         monitored_values(moffset) = value;
       }
     }
@@ -222,6 +226,23 @@ void Cells::init()
 
     // set initial conditions of this system
     ode[0]->init(states+offset);
+  }
+
+  // As copias 1..n_ode-1 nunca passavam por init(). Se CellModel::init()
+  // preenche membros da INSTANCIA (constantes, tabelas, parametros por tipo),
+  // elas ficavam com lixo, o que so aparece nos lacos paralelos. Inicializa
+  // cada uma num buffer descartavel; o estado verdadeiro ja esta em states[].
+  if (num_systems > 0 && n_ode > 1)
+  {
+    std::vector<double> scratch(ode[0]->get_num_state_vars());
+    for (int i = 1; i < n_ode; i++)
+    {
+      if (types.n_elem        != 0) ode[i]->set_celltype( types(0) );
+      if (apicobasal.n_elem   != 0) ode[i]->set_apicobasal( apicobasal(0) );
+      if (stretch.n_elem      != 0) ode[i]->set_stretch( stretch(0) );
+      if (stretch_rate.n_elem != 0) ode[i]->set_stretch_rate( stretch_rate(0) );
+      ode[i]->init(scratch.data());
+    }
   }
 }
 
@@ -298,5 +319,3 @@ void Cells::solve()
   cout << "\nDone.\n" << endl;
 
 }
-
-

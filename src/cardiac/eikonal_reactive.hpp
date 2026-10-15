@@ -43,6 +43,8 @@ public:
     
     void set_stimulus_value(int index, double val);
     void apply_lat_stimulus(double amplitude, double duration, double period);
+    void apply_lat_stimulus(double amplitude, double duration,
+                                     double period, double offset);
     
     void read_eikonal_solution(const std::string &mshfile);
 

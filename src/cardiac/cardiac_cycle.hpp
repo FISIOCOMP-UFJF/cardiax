@@ -1,132 +1,88 @@
 #ifndef MONOMECHANIC_H
 #define MONOMECHANIC_H
 
+#include <memory>
+#include <string>
+#include <vector>
+#include <fstream>
+
 #include "bidomain_deformation.hpp"
 #include "monodomain_deformation.hpp"
 #include "pdes/total_lagrangian.hpp"
 #include "pdes/updated_lagrangian.hpp"
 #include "eikonal_reactive.hpp"
-#include "regazzoni2020.hpp"
-#include "piecewise_pvloop.hpp"
-#include <fstream>
 
-class CardiacElectromechanic
+#include "circulation_model.hpp"
+#include "cell_coupling.hpp"
+
+class CardiacElectromechanic : private CavityMechanics
 {
 public:
-  CardiacElectromechanic(const std::string &epmodel);
-
+  explicit CardiacElectromechanic(const std::string &epmodel);
   ~CardiacElectromechanic();
 
-  void config(const string &basename);
+  void config(const std::string &basename);
 
-  // MonodomainDeformation &ref() { return ephy; }
   EikonalReactive &ref() { return ephy; }
-  
+
+  //! Roda a simulacao com o modelo de circulacao escolhido em config()
   void solve();
 
-  //! Solve with the closed-loop Regazzoni 0D circulation driving both
-  //! cavities. The 0D model supplies target volumes, the 3D model returns
-  //! the pressures that reproduce them.
-  void solve_circulation(int num_beats = 1, double dt_circ = 1.0e-3);
-
-  //! PV loop POR FASES (Wang et al. 2025, eLife 14:RP106555 -- a formulacao
-  //! do Alya). Aqui o 0D e dono da PRESSAO, entao nao ha inversao do mapa
-  //! p -> V: uma unica solucao 3D por passo de tempo, contra as 4-8 do
-  //! caminho -circ. Ver piecewise_pvloop.hpp para as cinco fases.
-  //!
-  //! dt_pw_ms e o passo do controlador, em MILISSEGUNDOS, independente de
-  //! -tunit: o artigo e a Tabela 1 estao todos em ms.
-  void solve_piecewise(int num_beats = 1, double dt_pw_ms = 1.0);
-
-  //! Pressure conversion: model pressure units per mmHg.
-  //! Default 133.322 (mesh/material in Pa). Use 0.133322 for kPa.
-  void set_pressure_unit_per_mmHg(double f) { mmHg_to_p = f; }
-
-  //! Electrophysiology time units per second: 1 if the EP problem is set up
-  //! in seconds, 1000 if in milliseconds. Left at 0 it is auto-detected from
-  //! the EP final time.
-  void set_ephy_time_per_second(double f) { ephy_time_per_second = f; }
-
-  //! Where the active tension comes from.
-  //! var_index < 0  : monitored value 0 (phenomenological models such as
-  //!                  Kerckhoffs, which expose active_stress as monitored)
-  //! var_index >= 0 : state variable var_index (ionic models such as
-  //!                  ToRORdLand, whose Ta is state 49)
-  //! scale multiplies the raw value.
-  void set_active_tension_source(int var_index, double scale)
-  { ta_var_index = var_index; ta_scale = scale; }
-
-  //! State variable holding the membrane potential, for the per-node output.
-  //! Ionic models (ToRORdLand) keep Vm in state 0; phenomenological models
-  //! have no membrane potential at all and must pass -1, which disables the
-  //! vm output instead of writing some unrelated state variable into it.
-  void set_vm_source(int var_index) { vm_var_index = var_index; }
-
-  //! Stimulus applied at each node once its LAT is reached.
-  //! Amplitude in the cell-model current unit, duration in the solver time
-  //! unit (2 ms = 0.002 when the solver runs in seconds). Amplitude 0
-  //! disables it, which is correct for LAT-driven models like Kerckhoffs.
-  void set_lat_stimulus(double amplitude, double duration)
-  { stim_amplitude = amplitude; stim_duration = duration; }
-
-public:
-  void saveActiveStressToFile(const std::string &filename)
-  {
-    std::ofstream outFile(filename);
-    if (!outFile.is_open())
-    {
-      std::cerr << "Error: could not open file " << filename << std::endl;
-    }
-    for (size_t i = 0; i < activeStressCurve.size(); ++i)
-    {
-      outFile << timePoints[i] << " " << activeStressCurve[i] << "\n";
-    }
-    outFile.close();
-    std::cout << "Active tension data saved to: " << filename << std::endl;
-  }
-
 private:
-  double T_ref;
-  double dt_mech;
-  int n_cycles = 1;
-  double Ta0 = 0.0;
-  double P0;
-  double dTa0;
-  double c_art, c_ven, Rmv, Rven, Rao, Rper;
-  double V_art_zero, V_ven_zero;
-  double E_es_LA, A_LA, B_LA, Tmax, tau;
-  double P_o, part, pven, stroke_volume;
-  string filename;
-  // MonodomainDeformation ephy;
-  EikonalReactive ephy; 
-  UpdatedLagrangian elas;
-  std::vector<arma::mat33 *> vec_stress;
-  std::vector<arma::mat33 *> vec_fib;
-  std::vector<arma::mat33 *> vec_fib0;
-  TimerSection timer;
-  std::vector<double> curr_time;
-  std::vector<double> recorded_time;
-  std::vector<double> p_lv, p_rv, Ta_list, volume, p_art, p_ven, p_LA;
-  std::vector<double> volume_rv;   //!< RV cavity volume history
-  
-  arma::vec ta;
+  // ---- CavityMechanics -------
+  void   apply_pressures(double t_ms, double p_lv, double p_rv) override;
+  double volume_LV() override;
+  double volume_RV() override;
+  double volume_total() override;
+  double pressure_unit_per_mmHg() const override { return mmHg_to_p; }
+  double pressure_unit_per_kPa()  const override { return kPa_to_p; }
+  bool   verbose() const override { return !quiet_solve; }
 
-  int vm_var_index = -1;           //!< state variable holding Vm (<0 = none)
-  arma::vec vm_node;               //!< membrane potential per node [mV]
+  void configure_units(const std::string &cellmodel);
+  void configure_fibers();
+  void configure_mef(const std::string &cellmodel);
+  void describe_active_tension_pipeline();
 
-  //! Write the per-node membrane potential and active tension for the given
-  //! output frame, at the same rate as the displacement field.
+  // ---- um passo ----------------------------------------------------------
+  //! Avanca a EP n_sub sub-passos (com estimulo LAT, se o modelo celular o
+  //! pede) e atualiza Ta. Devolve true se algum no foi estimulado.
+  bool advance_cells(int n_sub, const RunPlan &plan, double ep_per_ms);
+
+  //! Quantos sub-passos da EP cabem em um passo de acoplamento
+  int  cell_substeps(const RunPlan &plan, double ep_per_ms);
+
+  void ensure_ep_covers(const RunPlan &plan, double ep_per_ms);
+
+  void write_frame(int frame, const RunPlan &plan);
+
+  // ---- tensao ativa ------------------------------------------------------
+  //! Le Ta do modelo celular para `ta` e deriva ta_applied e ka
+  void update_active_tension();
+
+  //! Preenche `ka`, a rigidez ativa nodal do submodelo de Land, usada pela
+  //! mecanica para estabilizar a realimentacao de velocidade. Limpa `ka`
+  //! (o que desliga a estabilizacao) sempre que nao se aplica.
+  void update_active_stiffness();
+
+  //! Grava Vm e Ta por no, no mesmo ritmo do campo de deslocamento
   void save_node_fields(int frame);
 
-  void Solve_System(double tt, double pressure, double pressure2);
+  // ---- componentes ------------------------------------------------------
+  EikonalReactive   ephy;
+  UpdatedLagrangian elas;
+  std::unique_ptr<CirculationModel> circulation;
+  CellProfile       cell;          
+  LandCoupling      land;         
+  TimerSection      timer;
+  std::string       filename;
 
-  // ---- closed-loop circulation coupling ----------------------------
-  Regazzoni2020 circ;              //!< 0D closed-loop model
-  double mmHg_to_p = 133.322387415;//!< model pressure unit per mmHg (Pa)
-  double kPa_to_p = 1000.0;        //!< model pressure units per kPa (Pa)
-  double ephy_time_per_second = 0.0;//!< EP time units per second (0 = detect)
-  int    ta_var_index = -1;        //!< <0 = monitored 0; else state variable
-  double ta_scale = 0.0;           //!< 0 = use T_ref
+  // ---- unidades (entram so pela linha de comando) -----------------------
+  double kPa_to_p  = 1000.0;       //!< unidades de pressao do modelo por kPa (-kpa2p)
+  double mmHg_to_p = 133.322387415;//!< derivado de kPa_to_p: um sistema de unidades so
+
+  // ---- tensao ativa ------------------------------------------------------
+  double T_ref = 1.0;              //!< escala de Ta fenomenologico (<pvloop T_ref>)
+  arma::vec ta;                    //!< Ta nodal, ja em unidades de pressao e x -tascale
 
   //! Escala GLOBAL de contratilidade (-tascale). Multiplica Ta em todos os
   //! nos por igual, depois da conversao kPa -> unidade de pressao. E o botao
@@ -144,45 +100,15 @@ private:
 
   //! Mapa do multiplicador ta_scale por elemento (constante no tempo).
   arma::vec ta_scale_map;
-  double stim_amplitude = 0.0;     //!< LAT stimulus amplitude (0 = disabled)
-  double stim_duration = 0.002;    //!< LAT stimulus duration (solver units)
 
-  bool   quiet_solve = false;      //!< suppress the per-solve pressure line
-  int    last_newton_its = 0;      //!< pressure-inversion stats, per step
-  double last_dV = 0.0;
-  int    last_solves = 0;
-  int    circ_log_every = 25;      //!< detailed log every N circulation steps
+  arma::vec ka;                    //!< rigidez ativa por no, unidades do modelo
 
-  //! Read the active tension from the cell model into `ta`
-  void update_active_tension();
-
-  //! Fill `ka` with the nodal active stiffness of the Land submodel, used by
-  //! the mechanics to stabilise the velocity feedback. Clears `ka` (which
-  //! disables the stabilisation) whenever it does not apply.
-  void update_active_stiffness();
-
-  arma::vec ka;                    //!< active stiffness per node, model units
-
-  //! State-variable indices of the Land distortion submodel, used only by the
-  //! negative-Ta diagnostic. Set for ToRORdLand; left at -1 for any model
-  //! whose Ta does not decompose this way, which disables the diagnostic.
-  //!     Ta = Lfac*(Tref/dr)*[ (ZETAS+1)*XS + ZETAW*XW ]
-  void set_land_state_indices(int xs, int xw, int zetas, int zetaw)
-  { land_xs_index = xs; land_xw_index = xw;
-    land_zetas_index = zetas; land_zetaw_index = zetaw; }
-
-  int land_xs_index    = -1;
-  int land_xw_index    = -1;
-  int land_zetas_index = -1;
-  int land_zetaw_index = -1;
-
-  //! Scratch buffers for the diagnostic, kept as members so the per-step
-  //! report does not reallocate four nodal vectors every call.
-  arma::vec land_xs, land_xw, land_zetas, land_zetaw;
-
-  //! Report WHICH term of the Land active tension went negative, and at what
-  //! stretch rate. Called from update_active_tension() when ta.min() < 0.
-  void report_negative_ta();
+  // ---- saida e log -------------------------------------------------------
+  arma::vec vm_node;               //!< potencial de membrana por no [mV]
+  int  out_every = 8;              //!< grava a malha a cada N passos (-prc)
+  int  log_every = 25;             //!< relatorio detalhado a cada N passos (-logc)
+  int  n_frames  = 1;              //!< frames alocados no writer
+  bool quiet_solve = false;        //!< suprime o log por solucao mecanica
 
   // ---- mechano-electric feedback: fibre stretch --------------------
   // After each mechanical solve, lambda_f = sqrt(I4f) is evaluated per
@@ -232,48 +158,6 @@ private:
   //! the EP SOLVER's time unit (s or ms, per -tunit); it is converted to the
   //! cell model's own unit internally and is only used for the rate.
   void update_fiber_stretch(double dt_solver);
-  double p_lv_cur = 0.0;           //!< current LV pressure [model units]
-  double p_rv_cur = 0.0;           //!< current RV pressure [model units]
-  arma::mat22 Jpv;                 //!< dV/dp Jacobian [mL / model pressure]
-  bool Jpv_valid = false;
-  int circ_solves = 0;             //!< 3D solves performed (cost counter)
-  int circ_out_every = 8;          //!< save the mesh every N circulation steps
-  int circ_n_frames = 1;           //!< frames allocated for the writer
-
-  //! Numero de batimentos efetivamente rodado, ja resolvido em config()
-  //! contra o teto imposto por -t. solve_circulation() usa ESTE valor, nao
-  //! o argumento recebido -- o app le -beats direto da linha de comando e
-  //! nao sabe do limite.
-  int circ_num_beats = 1;
-  std::ofstream circ_file;
-
-  // ---- PV loop por fases (Wang et al. 2025) --------------------------
-  //
-  // Estado paralelo ao do caminho -circ, e nao compartilhado com ele: os
-  // dois esquemas tem donos diferentes da incognita e misturar o estado
-  // faria uma rodada herdar silenciosamente parametros do outro caminho.
-  PiecewisePVLoop pw;              //!< controlador de pressao por fases
-  bool   use_piecewise = false;    //!< -pw 1
-  int    pw_num_beats  = 1;        //!< ja resolvido contra o teto de -t
-  double pw_dt_ms      = 1.0;      //!< passo do controlador, em ms
-  int    pw_out_every  = 8;        //!< salva a malha a cada N passos
-  int    pw_n_frames   = 1;        //!< frames alocados no writer
-  int    pw_log_every  = 25;       //!< log detalhado a cada N passos
-  std::ofstream pw_file;
-
-  //! Invert the 3D model: find the cavity pressures reproducing the target
-  //! volumes. Returns pressures in mmHg through plv/prv.
-  void pressures_for_volumes(double Vlv_target, double Vrv_target, double t,
-                             double & plv_mmHg, double & prv_mmHg);
-
-  //! Rebuild the 2x2 dV/dp Jacobian by finite differences (2 extra solves).
-  void update_pv_jacobian(double t);
-
-
-  std::vector<double> activeStressCurve;
-  std::vector<double> timePoints;
-  bool curveCalculated = false;
-  bool has_eikonal = false; 
 };
 
 #endif

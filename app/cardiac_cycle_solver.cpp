@@ -17,16 +17,20 @@ void usage()
   cout << " Usage: monomech [OPTIONS]" << endl << endl;
   cout << "    -f    <meshbase>   prefix of the mesh file" << endl;
   cout << "    -dt   <dt>         time step (ms)" << endl;
-  cout << "    -t    <time>       with -circ 1: MAXIMUM simulation time; the" << endl;
-  cout << "                       run is -beats * 1/hr and -t only caps it." << endl;
-  cout << "                       Without -circ: total time of simulation." << endl;
+  cout << "    -t    <time>       with -circ 1 or -pw 1: MAXIMUM simulation time;" << endl;
+  cout << "                       the run is -beats periods and -t only caps it." << endl;
+  cout << "                       Without them: total time of simulation." << endl;
   cout << "    -c    <cell>       name of the cell model (FHN,NP,LR1,TT2)" << endl; 
   cout << "    -m    <odesolver>  ODE solver (ExplicitEuler, ImplicitEuler)" << endl;
   cout << "    -num_threads <n>   number of OpenMP threads" << endl;
   cout << "    -cond <condtype>   conductivity type (0 1 ... 5)" << endl;
   cout << "    -ep   <EP model>   Monodomain or Bidomain (mono or bido)" << endl;
   cout << "    -circ <0|1>        closed-loop 0D circulation (Regazzoni 2022)" << endl;
-  cout << "    -beats <n>         number of beats with -circ 1" << endl;
+  cout << "    -pw   <0|1>        piecewise PV loop (Wang et al. 2025); exclusive" << endl;
+  cout << "                       with -circ. Neither: legacy pressure curve." << endl;
+  cout << "    -beats <n>         number of beats with -circ 1 or -pw 1" << endl;
+  cout << "    -dtp  <ms>         piecewise controller step, in ms (default 1.0);" << endl;
+  cout << "                       must be a multiple of -dt in ms" << endl;
   cout << "    -hr   <Hz>         heart rate (default 1.0 Hz = 60 bpm)" << endl;
   cout << "    -bpm  <bpm>        heart rate in beats per minute" << endl;
   cout << "    -bcl  <time>       warm-up BCL (default: the heart period)" << endl;
@@ -42,7 +46,7 @@ void usage()
   cout << "    -amgx <file>       AMGX config (./configs/CG_DILU.json)" << endl;
   cout << "    -dumpflags <0|1>   print every flag read, with [cli]/[default]" << endl;
   cout << "                       markers, at the end of config() (default 1)" << endl;
-  cout << "    -dtc  <dt>         circulation time step in s (default 1e-3)" << endl;
+  cout << "    -dtc  <dt>         -circ 1 only: circulation time step in s (1e-3)" << endl;
   cout << "    -prc  <n>          save the mesh every n circulation steps" << endl;
   cout << "    -logc <n>          detailed log every n circulation steps (25)" << endl;
   cout << "    -c    <model>      cell model (Kerkoff2003 or ToRORdLand)" << endl;
@@ -66,8 +70,7 @@ void usage()
 int main(int argc, const char* argv[])
 {
   string basename, meshname, ep_model;
-  int condtype, use_circ, num_beats, num_threads, use_pw;
-  double dt_circ;
+  int condtype, num_threads;
 
   if (argc <= 1) usage();
 
@@ -76,10 +79,6 @@ int main(int argc, const char* argv[])
   basename = CommandLineArgs::read("-f","emptymesh");
   ep_model = CommandLineArgs::read("-ep","mono");
   condtype = CommandLineArgs::read("-cond",0);
-  use_circ = CommandLineArgs::read("-circ",0);
-  use_pw = CommandLineArgs::read("-pw",0);
-  num_beats = CommandLineArgs::read("-beats",1);
-  dt_circ  = CommandLineArgs::read("-dtc",1.0e-3);
   num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() > 0 ? omp_get_max_threads() : 1);
 
 
@@ -111,21 +110,9 @@ int main(int argc, const char* argv[])
     model.config(basename);
     cout << "Config OK" << endl;
     model.ref().set_conductivity(condtype);
-    if (use_circ)
-    {
-      cout << "Iniciando solve com circulacao 0D fechada" << endl;
-      model.solve_circulation(num_beats, dt_circ);
-    }
-    else if (use_pw)
-    {
-      cout << "Iniciando solve com circulação Piecewise" << endl; 
-      model.solve_piecewise(num_beats, dt_circ);   
-    }
-    else
-    {
-      cout << "Iniciando solve"<<endl;
-      model.solve();
-    }
+    // O modelo de circulacao (legado, -circ 1 ou -pw 1) e escolhido em config()
+    cout << "Iniciando solve" << endl;
+    model.solve();
   }
   // end of PDE solver
 

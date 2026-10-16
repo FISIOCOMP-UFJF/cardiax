@@ -1,0 +1,50 @@
+#include "circulation_model.hpp"
+#include <algorithm>
+#include <cmath>
+#include <iomanip>
+#include <iostream>
+
+int CirculationModel::limit_beats(const TimeBase & tb, int beats,
+                                  double period_ms, double lead_in_ms)
+{
+  if (beats < 1) beats = 1;
+  if (tb.ceiling <= 0.0) return beats;
+
+  const double lead = lead_in_ms / tb.solver_ms;
+  const double rr   = period_ms  / tb.solver_ms;
+  const int fits = static_cast<int>(std::floor((tb.ceiling - lead) / rr + 1e-9));
+
+  if (fits < beats)
+  {
+    std::cout << " *** -t " << tb.ceiling << " " << tb.unit
+              << " cobre apenas " << fits << " batimento(s) de " << rr
+              << " " << tb.unit;
+    if (lead_in_ms > 0.0)
+      std::cout << " apos a fase 0 de " << lead << " " << tb.unit;
+    std::cout << "; -beats " << beats << " reduzido para "
+              << std::max(1, fits) << std::endl;
+    beats = std::max(1, fits);
+  }
+  return beats;
+}
+
+void CirculationModel::print_status(const StepContext & s,
+                                    const std::string & tail)
+{
+  // std::defaultfloat restaura o FORMATO mas nao a PRECISAO: sem salvar e
+  // restaurar, o setprecision(1) vazaria para todas as linhas seguintes.
+  const std::streamsize prec0 = std::cout.precision();
+  std::cout << "\n[t = " << std::fixed << std::setprecision(1) << s.t_ms
+            << " ms | step " << s.index + 1 << "/" << s.nsteps;
+  if (!tail.empty()) std::cout << " | " << tail;
+  std::cout << "]" << std::defaultfloat << std::endl;
+  std::cout.precision(prec0);
+}
+
+void CirculationModel::open_history(const std::string & path,
+                                    const std::string & header)
+{
+  history_.open(path.c_str());
+  if (history_.is_open() && !header.empty())
+    history_ << header << "\n";
+}

@@ -15,6 +15,11 @@ set(CARDIAC_SRC
     piecewise_pvloop.cpp
     electromechanic.cpp
     coupled_purkinje.cpp
+    circulation_model.cpp
+    legacy_circulation.cpp
+    piecewise_circulation.cpp
+    regazzoni_circulation.cpp
+    cell_coupling.cpp
 )
 
 add_subdirectory(uvc)

@@ -1,14 +1,14 @@
 #include "cell_coupling.hpp"
 #include <cmath>
 #include <iostream>
+#include <stdexcept>
 #include "util/command_line_args.h"
 #include "odes/torord_land.hpp"   // land_active_stiffness()
 
 using std::cout;
 using std::endl;
 
-CellProfile CellProfile::for_model(const std::string & name, double kPa_to_p,
-                                   double T_ref, double ms_to_solver)
+CellProfile CellProfile::for_model(const std::string & name, double T_ref)
 {
   CellProfile p;
 
@@ -19,7 +19,7 @@ CellProfile CellProfile::for_model(const std::string & name, double kPa_to_p,
     // LAT. Land entrega Ta em kPa; qualquer ganho adicional vem do ta_scale
     // por material do XML, para que um unico lugar o controle.
     p.ta_var  = 49;
-    p.ta_unit = kPa_to_p;
+    p.ta_unit = 1000.0;            // Land entrega kPa; a mecanica usa Pa
     p.vm_var  = 0;                 // Vm e a variavel de estado 0
 
     // Estados de distorcao de Land, so para o diagnostico de Ta negativa.
@@ -27,21 +27,34 @@ CellProfile CellProfile::for_model(const std::string & name, double kPa_to_p,
     p.land_xs = 43; p.land_xw = 44; p.land_zetas = 47; p.land_zetaw = 48;
 
     p.stim_amplitude = CommandLineArgs::read("-stimamp", -53.0);
-    p.stim_duration  = CommandLineArgs::read("-stimdur", 2.0 * ms_to_solver);
+    p.stim_duration  = CommandLineArgs::read("-stimdur", 2.0);   // ms
     p.uses_stretch   = true;
 
-    cout << " Active tension: state variable 49 (kPa) x " << kPa_to_p
-         << " model pressure units per kPa"
-         << " (further gain from the per-material ta_scale)" << endl;
+    // Euler explicito no ToRORd: 0.02 ms e o uso documentado deste solver. O
+    // electromech usa 0.001 ms, 20x mais caro por passo de acoplamento e mais
+    // seguro. Se 0.02 divergir, a rodada para com NaN em Ta e manda reduzir -dt.
+    p.default_dt_ms  = 0.02;
+
+    cout << " Active tension: state variable 49 (kPa) x 1000 -> Pa" << endl;
     cout << " LAT stimulus: amplitude " << p.stim_amplitude << ", duration "
-         << p.stim_duration << " (solver time units)" << endl;
+         << p.stim_duration << " ms" << endl;
   }
-  else
+  else if (name == "Kerkoff2003")
   {
     // Fenomenologico (Kerckhoffs): Ta e o valor monitorado 0, o modelo e
     // disparado pelo proprio LAT -> sem corrente de estimulo.
     p.ta_var  = -1;
     p.ta_unit = T_ref;
+    p.default_dt_ms = 1.0;         // Euler explicito, escrito em s: 1 ms e estavel
+  }
+  else
+  {
+    throw std::runtime_error(
+        "Modelo celular '" + name + "' sem mapeamento de tensao ativa no "
+        "cardiac_cycle. Modelos suportados: Kerkoff2003, ToRORdLand. Para "
+        "adicionar um, inclua um ramo em CellProfile::for_model() "
+        "(cell_coupling.cpp) com o indice do estado de Ta e a conversao de "
+        "unidade; electromechanic.cpp ja lista os indices de varios modelos.");
   }
 
   return p;

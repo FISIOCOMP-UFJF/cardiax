@@ -56,13 +56,13 @@ PiecewisePVLoop::PiecewisePVLoop()
   // valores CALIBRADOS da Figura 1F estao no README e no XML de exemplo;
   // sao eles que produzem o laco fisiologico do artigo, mas os iniciais
   // sao o ponto de partida documentado.
-  par_lv.P_DS       =  0.6;   // nao tabelado (diastase ~4.5 mmHg)
-  par_lv.EDP        =  1.3;   // "EDP_LV 1.3 kPa"
-  par_lv.P_ejection = 10.0;   // "P ejection LV 10 kPa" (calibrado: 8.45)
-  par_lv.P_atrium   =  1.3;   // "P diastolic cut-off LV 1.3 kPa"
-  par_lv.DSV        = -1.0;   // automatico: volume no fim da fase 0
-  par_lv.C_art      =  1.5;   // "C_LV 1.5 mL/kPa" (calibrado: 1.392)
-  par_lv.R_art      = 10.0;   // "R_LV 10 kPa ms/mL" (calibrado: 21.59)
+  par_lv.P_DS       =   600.0;   // nao tabelado (diastase ~4.5 mmHg)
+  par_lv.EDP        =  1300.0;   // "EDP_LV 1.3 kPa"
+  par_lv.P_ejection = 10000.0;   // "P ejection LV 10 kPa" (calibrado: 8450)
+  par_lv.P_atrium   =  1300.0;   // "P diastolic cut-off LV 1.3 kPa"
+  par_lv.DSV        = -1.0;      // automatico: volume no fim da fase 0
+  par_lv.C_art      =  0.0015;   // "C_LV 1.5 mL/kPa" (calibrado: 0.001392)
+  par_lv.R_art      = 10000.0;   // "R_LV 10 kPa ms/mL" (calibrado: 21590)
   par_lv.C_stab     = -1.0;   // automatico: usa a C_cav medida
 
   // Penalidades das fases isovolumetricas e do enchimento passivo. NAO
@@ -76,25 +76,22 @@ PiecewisePVLoop::PiecewisePVLoop()
   par_lv.Cp_fill    = -1.0;
   par_lv.Cv_fill    = -1.0;
   par_lv.damping    =  0.3;
-  par_lv.dP_max     =  5.0;
+  par_lv.dP_max     = 5000.0;
 
   // ---- ventriculo direito ---------------------------------------------
-  par_rv.P_DS       =  0.4;
-  par_rv.EDP        =  1.0;   // "EDP_RV 1.0 kPa"
-  par_rv.P_ejection =  2.3;   // "P ejection RV 2.3 kPa"
-  par_rv.P_atrium   =  1.5;   // "P diastolic cut-off RV 1.5 kPa"
+  par_rv.P_DS       =   400.0;
+  par_rv.EDP        =  1000.0;   // "EDP_RV 1.0 kPa"
+  par_rv.P_ejection =  2300.0;   // "P ejection RV 2.3 kPa"
+  par_rv.P_atrium   =  1500.0;   // "P diastolic cut-off RV 1.5 kPa"
   par_rv.DSV        = -1.0;
-  par_rv.C_art      =  4.5;   // "C_RV 4.5 mL/kPa" (3x o do VE)
+  par_rv.C_art      =  0.0045;   // "C_RV 4.5 mL/kPa" (3x o do VE)
 
-  // ATENCAO: a Tabela 1 imprime R_RV = 33.3 kPa ms/mL e ao lado descreve
-  // o valor como "a third of left ventricular value". As duas coisas nao
-  // podem ser verdadeiras ao mesmo tempo com R_LV = 10: um terco da 3.33.
-  // O default aqui e 3.33, porque uma pos-carga pulmonar TRES VEZES MAIOR
-  // que a sistemica inverteria a relacao de pressoes entre os ventriculos
-  // -- e o proprio artigo reporta pressao de pico do VD de 2.3 kPa contra
-  // 14 kPa do VE. Para reproduzir o numero impresso, ponha R_art="33.3"
-  // no bloco XML.
-  par_rv.R_art      =  3.33;
+  // ATENCAO: a Tabela 1 imprime R_RV = 33.3 kPa ms/mL e descreve o valor como
+  // "a third of left ventricular value", o que com R_LV = 10 daria 3.33. O
+  // default e 3330 Pa*ms/mL: uma pos-carga pulmonar 3x maior que a sistemica
+  // inverteria a relacao de pressoes (o artigo reporta pico de 2.3 kPa no VD
+  // contra 14 kPa no VE). Para o numero impresso, R_art="33300" no XML.
+  par_rv.R_art      =  3330.0;
   par_rv.C_stab     = -1.0;
 
   par_rv.Cp_iso     = -1.0;
@@ -102,7 +99,7 @@ PiecewisePVLoop::PiecewisePVLoop()
   par_rv.Cp_fill    = -1.0;
   par_rv.Cv_fill    = -1.0;
   par_rv.damping    =  0.3;
-  par_rv.dP_max     =  5.0;
+  par_rv.dP_max     = 5000.0;
 }
 
 const char * PiecewisePVLoop::phase_name(Phase p)
@@ -123,7 +120,7 @@ const char * PiecewisePVLoop::phase_name(Phase p)
 //  Configuracao: XML primeiro, linha de comando depois
 // ======================================================================
 
-void PiecewisePVLoop::configure(const std::string & mshfile)
+void PiecewisePVLoop::configure(const std::string & mshfile, double rr_ms)
 {
   // ---- 1. bloco <pvloop_piecewise> da malha, se existir ---------------
   //
@@ -182,23 +179,9 @@ void PiecewisePVLoop::configure(const std::string & mshfile)
 
   // ---- 2. sobrescritas de linha de comando ----------------------------
   //
-  // O periodo tem tres fontes possiveis, nesta ordem de precedencia:
-  //   -pwrr (explicito, em ms) > -hr / -bpm (em Hz / bpm) > XML > default.
-  // -hr e -bpm sao as mesmas flags do caminho -circ, de proposito: a
-  // frequencia cardiaca e a mesma grandeza fisica nos dois caminhos e nao
-  // deveria ter dois nomes.
-  const double hr  = CommandLineArgs::read("-hr",  -1.0,
-      "frequencia cardiaca em Hz (default 1.0 = 60 bpm)", "circulacao");
-  const double bpm = CommandLineArgs::read("-bpm", -1.0,
-      "frequencia cardiaca em bpm (alternativa a -hr)", "circulacao");
+  // Periodo: -rr (flag global) > XML > default
+  if (rr_ms > 0.0) tim.RR = rr_ms;
 
-  double hr_hz = -1.0;
-  if (bpm > 0.0) hr_hz = bpm / 60.0;
-  if (hr  > 0.0) hr_hz = hr;
-  if (hr_hz > 0.0) tim.RR = 1000.0 / hr_hz;
-
-  tim.RR        = CommandLineArgs::read("-pwrr", tim.RR,
-      "periodo cardiaco em ms (sobrescreve -hr/-bpm)", "pvloop por fases");
   tim.t_init    = CommandLineArgs::read("-pwinit", tim.t_init,
       "duracao da fase 0 (inflacao ate a diastase), em ms",
       "pvloop por fases");
@@ -216,20 +199,20 @@ void PiecewisePVLoop::configure(const std::string & mshfile)
       "pvloop por fases") != 0);
 
   par_lv.P_DS       = CommandLineArgs::read("-pwpds",     par_lv.P_DS,
-      "pressao de diastase do VE, kPa", "pvloop por fases");
+      "pressao de diastase do VE, Pa", "pvloop por fases");
   par_lv.EDP        = CommandLineArgs::read("-pwedplv",   par_lv.EDP,
-      "pressao de fim de diastole do VE, kPa", "pvloop por fases");
+      "pressao de fim de diastole do VE, Pa", "pvloop por fases");
   par_lv.P_ejection = CommandLineArgs::read("-pwpej",     par_lv.P_ejection,
-      "limiar de ejecao do VE, kPa", "pvloop por fases");
+      "limiar de ejecao do VE, Pa", "pvloop por fases");
   par_lv.P_atrium   = CommandLineArgs::read("-pwpla",     par_lv.P_atrium,
-      "pressao atrial esquerda, kPa", "pvloop por fases");
+      "pressao atrial esquerda, Pa", "pvloop por fases");
   par_lv.DSV        = CommandLineArgs::read("-pwdsv",     par_lv.DSV,
       "volume de diastase do VE, mL (<0 = medido no fim da fase 0)",
       "pvloop por fases");
   par_lv.C_art      = CommandLineArgs::read("-pwcart",    par_lv.C_art,
-      "complacencia aortica, mL/kPa", "pvloop por fases");
+      "complacencia aortica, mL/Pa", "pvloop por fases");
   par_lv.R_art      = CommandLineArgs::read("-pwrart",    par_lv.R_art,
-      "resistencia aortica, kPa*ms/mL", "pvloop por fases");
+      "resistencia aortica, Pa*ms/mL", "pvloop por fases");
   par_lv.Cp_iso     = CommandLineArgs::read("-pwcpiso",   par_lv.Cp_iso,
       "penalidade de volume das fases isovolumetricas do VE",
       "pvloop por fases");
@@ -243,20 +226,20 @@ void PiecewisePVLoop::configure(const std::string & mshfile)
       "penalidade de taxa do enchimento passivo do VE", "pvloop por fases");
 
   par_rv.P_DS       = CommandLineArgs::read("-pwpds_rv",  par_rv.P_DS,
-      "pressao de diastase do VD, kPa", "pvloop por fases");
+      "pressao de diastase do VD, Pa", "pvloop por fases");
   par_rv.EDP        = CommandLineArgs::read("-pwedprv",   par_rv.EDP,
-      "pressao de fim de diastole do VD, kPa", "pvloop por fases");
+      "pressao de fim de diastole do VD, Pa", "pvloop por fases");
   par_rv.P_ejection = CommandLineArgs::read("-pwpej_rv",  par_rv.P_ejection,
-      "limiar de ejecao do VD, kPa", "pvloop por fases");
+      "limiar de ejecao do VD, Pa", "pvloop por fases");
   par_rv.P_atrium   = CommandLineArgs::read("-pwpra",     par_rv.P_atrium,
-      "pressao atrial direita, kPa", "pvloop por fases");
+      "pressao atrial direita, Pa", "pvloop por fases");
   par_rv.DSV        = CommandLineArgs::read("-pwdsv_rv",  par_rv.DSV,
       "volume de diastase do VD, mL (<0 = medido no fim da fase 0)",
       "pvloop por fases");
   par_rv.C_art      = CommandLineArgs::read("-pwcart_rv", par_rv.C_art,
-      "complacencia pulmonar, mL/kPa", "pvloop por fases");
+      "complacencia pulmonar, mL/Pa", "pvloop por fases");
   par_rv.R_art      = CommandLineArgs::read("-pwrart_rv", par_rv.R_art,
-      "resistencia pulmonar, kPa*ms/mL", "pvloop por fases");
+      "resistencia pulmonar, Pa*ms/mL", "pvloop por fases");
   par_rv.Cp_iso     = CommandLineArgs::read("-pwcpiso_rv", par_rv.Cp_iso,
       "penalidade de volume das fases isovolumetricas do VD",
       "pvloop por fases");
@@ -270,7 +253,7 @@ void PiecewisePVLoop::configure(const std::string & mshfile)
       "penalidade de taxa do enchimento passivo do VD", "pvloop por fases");
 
   const double cstab = CommandLineArgs::read("-pwcstab", par_lv.C_stab,
-      "complacencia de estabilizacao da ejecao, mL/kPa (<=0 = C_cav medida)",
+      "complacencia de estabilizacao da ejecao, mL/Pa (<=0 = C_cav medida)",
       "pvloop por fases");
   par_lv.C_stab = cstab;
   par_rv.C_stab = cstab;
@@ -282,7 +265,7 @@ void PiecewisePVLoop::configure(const std::string & mshfile)
   par_rv.damping = damp;
 
   const double dpmax = CommandLineArgs::read("-pwdpmax", par_lv.dP_max,
-      "teto de |dP| por passo, kPa (0 desativa)", "pvloop por fases");
+      "teto de |dP| por passo, Pa (0 desativa)", "pvloop por fases");
   par_lv.dP_max = dpmax;
   par_rv.dP_max = dpmax;
 
@@ -298,13 +281,13 @@ void PiecewisePVLoop::configure(const std::string & mshfile)
 
   if (par_lv.P_ejection <= par_lv.EDP)
     std::cout << " *** ATENCAO: o limiar de ejecao do VE (" << par_lv.P_ejection
-              << " kPa) nao supera a EDP (" << par_lv.EDP << " kPa): a fase 2"
+              << " Pa) nao supera a EDP (" << par_lv.EDP << " Pa): a fase 2"
               << " termina no primeiro passo e nao havera contracao"
               << " isovolumetrica." << std::endl;
 
   if (par_rv.R_art > par_lv.R_art)
     std::cout << " *** ATENCAO: R_RV (" << par_rv.R_art << ") > R_LV ("
-              << par_lv.R_art << " kPa*ms/mL). A pos-carga pulmonar ficaria"
+              << par_lv.R_art << " Pa*ms/mL). A pos-carga pulmonar ficaria"
               << " maior que a sistemica; ver a nota sobre a Tabela 1 em"
               << " piecewise_pvloop.cpp." << std::endl;
 }
@@ -340,7 +323,7 @@ void PiecewisePVLoop::init(double V_lv0, double V_rv0)
     // Ainda nao ha nada medido. Um valor positivo de partida evita divisao
     // por zero se o modo automatico for consultado antes do fim da fase 0;
     // ele e substituido pela medida real assim que ela existir.
-    s.C_cav     = (v0[c] > 0.0) ? 0.25 * v0[c] : 10.0;
+    s.C_cav     = (v0[c] > 0.0) ? 0.25e-3 * v0[c] : 1.0e-2;   // [mL/Pa]
   }
 }
 
@@ -369,7 +352,7 @@ double PiecewisePVLoop::compliance_from(double V_hi, double P_hi,
   // respondeu, nao produz uma complacencia utilizavel. Devolver 0 sinaliza
   // "sem medida" e deixa o chamador manter a estimativa anterior, o que e
   // muito melhor do que propagar um ganho negativo para o controlador.
-  if (dP <= 1e-9 || dV <= 0.0) return 0.0;
+  if (dP <= 1e-6 || dV <= 0.0) return 0.0;   // dP em Pa
   return dV / dP;
 }
 
@@ -396,7 +379,7 @@ double PiecewisePVLoop::penalty_dP(ChamberState & st, const ChamberParams & p,
     // Cp = C_cav e o ganho deadbeat: um passo corrigiria o desvio inteiro
     // se a cavidade fosse linear com a complacencia medida. Ver a nota no
     // cabecalho de piecewise_pvloop.hpp.
-    const double C = (st.C_cav > 1e-9) ? st.C_cav : 1e-9;
+    const double C = (st.C_cav > 1e-12) ? st.C_cav : 1e-12;
     dP = -((st.V - V_target) + p.damping * dt * st.Vdot) / C;
   }
 
@@ -560,7 +543,7 @@ void PiecewisePVLoop::transition_one(ChamberState & st, const ChamberParams & p,
 
         std::cout << "  [PW " << tag << "] fim da fase 0: V_diastase = "
                   << st.V_DS << " mL, C_cav ~ " << st.C_cav
-                  << " mL/kPa" << std::endl;
+                  << " mL/Pa" << std::endl;
       }
 
       st.phase   = FILLING;
@@ -595,8 +578,8 @@ void PiecewisePVLoop::transition_one(ChamberState & st, const ChamberParams & p,
         st.phase  = IVC;
         st.t_phase = t;
         std::cout << "  [PW " << tag << "] fim da diastole: V_ED = "
-                  << st.V_ED << " mL, P = " << st.P << " kPa, C_cav = "
-                  << st.C_cav << " mL/kPa -> IVC" << std::endl;
+                  << st.V_ED << " mL, P = " << st.P << " Pa, C_cav = "
+                  << st.C_cav << " mL/Pa -> IVC" << std::endl;
       }
       break;
 
@@ -611,7 +594,7 @@ void PiecewisePVLoop::transition_one(ChamberState & st, const ChamberParams & p,
         st.phase   = EJECTION;
         st.t_phase = t;
         std::cout << "  [PW " << tag << "] abertura da valva: P = " << st.P
-                  << " kPa >= " << thr << " kPa -> EJECTION" << std::endl;
+                  << " Pa >= " << thr << " Pa -> EJECTION" << std::endl;
       }
       break;
     }
@@ -637,7 +620,7 @@ void PiecewisePVLoop::transition_one(ChamberState & st, const ChamberParams & p,
         if (!reversed)
           std::cout << "  [PW " << tag << "] *** o fluxo NAO reverteu; a"
                     << " ejecao foi encerrada porque P caiu a " << st.P
-                    << " kPa <= P_atrio (" << p.P_atrium << "). Aumente"
+                    << " Pa <= P_atrio (" << p.P_atrium << "). Aumente"
                     << " R_art/C_art ou reveja o relaxamento." << std::endl;
 
         st.V_ES   = st.V;
@@ -645,7 +628,7 @@ void PiecewisePVLoop::transition_one(ChamberState & st, const ChamberParams & p,
         st.phase  = IVR;
         st.t_phase = t;
         std::cout << "  [PW " << tag << "] fim da ejecao: V_ES = " << st.V_ES
-                  << " mL, P = " << st.P << " kPa -> IVR" << std::endl;
+                  << " mL, P = " << st.P << " Pa -> IVR" << std::endl;
       }
       break;
     }
@@ -656,7 +639,7 @@ void PiecewisePVLoop::transition_one(ChamberState & st, const ChamberParams & p,
       {
         st.phase   = PASSIVE;
         st.t_phase = t;
-        std::cout << "  [PW " << tag << "] P = " << st.P << " kPa <= P_atrio ("
+        std::cout << "  [PW " << tag << "] P = " << st.P << " Pa <= P_atrio ("
                   << p.P_atrium << ") -> PASSIVE" << std::endl;
       }
       break;
@@ -707,7 +690,7 @@ std::string PiecewisePVLoop::describe() const
   std::ostringstream os;
 
   os << " PV loop por fases (Wang et al. 2025, eLife 14:RP106555)\n";
-  os << "   unidades internas: mL, kPa, ms\n";
+  os << "   unidades: mL, Pa, ms\n";
   os << "   periodo RR = " << tim.RR << " ms ("
      << (tim.RR > 0.0 ? 60000.0 / tim.RR : 0.0) << " bpm)\n";
   os << "   fase 0 (inflacao) = " << tim.t_init << " ms;"
@@ -730,9 +713,9 @@ std::string PiecewisePVLoop::describe() const
     os << "   " << tag[c] << ": P_DS = " << p.P_DS
        << ", EDP = " << p.EDP
        << ", P_ejecao = " << p.P_ejection
-       << ", P_atrio = " << p.P_atrium << " kPa\n";
-    os << "       C_art = " << p.C_art << " mL/kPa, R_art = " << p.R_art
-       << " kPa*ms/mL, DSV = "
+       << ", P_atrio = " << p.P_atrium << " Pa\n";
+    os << "       C_art = " << p.C_art << " mL/Pa, R_art = " << p.R_art
+       << " Pa*ms/mL, DSV = "
        << (p.DSV > 0.0 ? std::to_string(p.DSV) : std::string("auto")) << "\n";
     os << "       penalidade isovolumetrica: "
        << (p.Cp_iso > 0.0
@@ -760,8 +743,8 @@ std::string PiecewisePVLoop::describe() const
 
 std::string PiecewisePVLoop::history_header()
 {
-  return "# t[ms] phase_LV P_LV[kPa] V_LV[mL] dVdt_LV[mL/ms] Part_LV[kPa]"
-         " phase_RV P_RV[kPa] V_RV[mL] dVdt_RV[mL/ms] Part_RV[kPa]";
+  return "# t[ms] phase_LV P_LV[Pa] V_LV[mL] dVdt_LV[mL/ms] Part_LV[Pa]"
+         " phase_RV P_RV[Pa] V_RV[mL] dVdt_RV[mL/ms] Part_RV[Pa]";
 }
 
 std::string PiecewisePVLoop::history_row(double t) const

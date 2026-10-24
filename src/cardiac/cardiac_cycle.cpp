@@ -16,38 +16,24 @@ namespace
 constexpr int kLvMarker = 30;
 constexpr int kRvMarker = 20;
 
-//! Leitor daquela TAG do pvloop do xml. Talvez tirar isso com o advento do toml?
-//TODO: passar isso para o toml
-struct PvloopHeader
-{
-  double total_time = 0.0;   //!< duracao da curva
-  int    size       = 0;     //!< numero de pontos da curva
-  double T_ref      = 1.0;   //!< escala de Ta dos modelos fenomenologicos
-};
-
-PvloopHeader read_pvloop_header(const std::string &mshfile)
+// Unico item do <pvloop> usado fora do LegacyCirculation: a escala de Ta dos
+// modelos fenomenologicos. Com o TOML vira [cell_model].ta_ref.
+double read_T_ref(const std::string &mshfile)
 {
   pugi::xml_document doc;
   pugi::xml_parse_result result = doc.load_file(mshfile.c_str());
   if (!result)
-    std::cout << "XML parsed with errors\n"
-              << "Error description: " << result.description() << "\n"
-              << "Error offset: " << result.offset << "\n\n";
+    std::cout << "XML parsed with errors: " << result.description() << "\n";
 
-  pugi::xml_node pv = doc.child("mesh").child("pvloop");
-
-  PvloopHeader h;
-  h.total_time = pv.attribute("total_time").as_double();
-  h.size       = pv.attribute("size").as_int();
-  h.T_ref      = pv.attribute("T_ref") ? pv.attribute("T_ref").as_double() : 1.0;
-  return h;
+  pugi::xml_attribute a = doc.child("mesh").child("pvloop").attribute("T_ref");
+  return a ? a.as_double() : 1.0;
 }
 
-//! -circ 1 -> Regazzoni, -pw 1 -> Piecewise, None -> legacy (Wind).
+// -circ 1 -> Regazzoni, -pw 1 -> por fases, nenhum -> legado
 std::unique_ptr<CirculationModel> select_circulation()
 {
   const int use_circ = CommandLineArgs::read("-circ", 0,
-      "0D circulation in closed mesh (Regazzoni 2022)", "regazzoni");
+      "0D circulation in closed loop (Regazzoni 2022)", "regazzoni");
   const int use_pw = CommandLineArgs::read("-pw", 0,
       "Piecewise pvloop (Wang et al. 2025 / Alya)", "piecewise");
 
@@ -61,228 +47,141 @@ std::unique_ptr<CirculationModel> select_circulation()
 }
 } // namespace
 
-CardiacElectromechanic::CardiacElectromechanic(const std::string &epmodel) : timer()
-{
+CardiacElectromechanic::CardiacElectromechanic(const std::string &epmodel) : timer() {}
 
-  // ~~~
-}
-
-CardiacElectromechanic::~CardiacElectromechanic()
-{
-  // ~~~
-}
+CardiacElectromechanic::~CardiacElectromechanic() {}
 
 // ======================================================================
 //  Configuracao
 // ======================================================================
 void CardiacElectromechanic::config(const std::string &basename)
 {
-  //TODO: migrar para toml algum desses arquivos. 
-  std::string mshfile  = basename;
-  std::string parfile  = basename;
-  std::string monofile = basename;
-  std::string cellmodel, odesolver;
+  // O mesmo XML e malha, material e setup da EP: um caminho so (nao-const,
+  // porque algumas funcoes abaixo recebem std::string&).
+  std::string mesh = basename;
+  std::string cellmodel = CommandLineArgs::read("-c", "Kerkoff2003");
+  std::string odesolver = CommandLineArgs::read("-m", "ExplicitEuler");
   filename = basename;
 
   cout << endl << "Starting Cardiac Cycle problem" << endl;
 
-  cellmodel = CommandLineArgs::read("-c", "Kerkoff2003");   // Kerkoff2003 como padrao
-  odesolver = CommandLineArgs::read("-m", "ExplicitEuler");
+  T_ref = read_T_ref(mesh);
+  cell  = CellProfile::for_model(cellmodel, T_ref);
+  land.set_state_indices(cell.land_xs, cell.land_xw, cell.land_zetas, cell.land_zetaw);
 
-  // -------------------------------------------------------------------
-  //  Tempo. TRES quantidades, TRES donos:
-  //
-  //    periodo cardiaco   <- o modelo de circulacao (-hr/-bpm, ou a malha)
-  //    duracao da rodada  <- -beats * periodo, LIMITADA por -t
-  //    BCL do warm up     <- -bcl, default = periodo cardiaco
-  //
-  //  Antes de separar, -t acumulava as tres, e elas so eram compativeis com
-  //  -beats 1: -t curto deixava o relogio da EP terminar no meio da rodada
-  //  (Eikonal::advance() virava um no-op SILENCIOSO), e -t longo dava ao
-  //  warm up um BCL de varios batimentos.
-  // -------------------------------------------------------------------
-  const PvloopHeader pv = read_pvloop_header(mshfile);
-  T_ref = pv.T_ref;
-
+  // ---- tempo (ms) ----------------------------------------------------
+  // A cada passo de acoplamento (-dt_mech) a EP avanca N = dt_mech/dt passos
+  // (-dt). -t so LIMITA a rodada: ela e -beats periodos, e um -t curto reduz
+  // os batimentos em vez de deixar o relogio da EP parar no meio.
   TimeBase tb;
-  tb.unit      = CommandLineArgs::read("-tunit", std::string("s"),
-      "Eletrophysiology time unity (s or ms)", "time"); // Segundos é padrão
-  tb.solver_ms = (tb.unit == "ms") ? 1.0 : 1000.0; // 1000 é o padrão
-  tb.ceiling   = CommandLineArgs::read("-t", -1.0,
-      "Simulation time; with -circ 1 or -pw 1 this is optional", "time"); // tempo total de simulação
-  tb.beats     = CommandLineArgs::read("-beats", 1, 
-      "Number of beats", "circulation");
-
-  // The EP step comes from -dt; with out the -dt flag, it comes from <pvloop> of the xml 
-  const double dt_cli = CommandLineArgs::read("-dt", -1.0,
-      "EP Timestep, in -tunit unity of measurement", "time");
-      const double dt_curve = pv.total_time / (pv.size - 1);
-  if (dt_cli > 0.0)
-    cout << " dt from the pvloop curve (" << dt_curve
-         << ") overridden by -dt " << dt_cli << endl;
-  tb.dt = (dt_cli > 0.0) ? dt_cli : dt_curve;
-  if (!(tb.dt > 0.0))
-    throw std::runtime_error("Invalid EP time step: use -dt, or add <pvloop> tag in xml");
+  tb.ceiling_ms = CommandLineArgs::read("-t", -1.0,
+      "Simulation time CEILING [ms]; with -circ 1 or -pw 1 it is optional", "time");
+  tb.step_ms    = CommandLineArgs::read("-dt_mech", 1.0,
+      "Coupling step: cell model -> circulation -> mechanics [ms]", "time");
+  tb.beats      = CommandLineArgs::read("-beats", 1, "Number of beats", "circulation");
+  tb.period_ms  = CommandLineArgs::read("-rr", -1.0,
+      "Cardiac period [ms] (default: the circulation model's own, 1000)", "circulation");
+  if (!(tb.step_ms > 0.0))
+    throw std::runtime_error("-dt_mech must be > 0 (ms)");
 
   circulation = select_circulation();
-  circulation->configure(mshfile, tb);
+  circulation->configure(mesh, tb);
   const RunPlan &plan = circulation->plan();
   cout << " Circulation model: " << circulation->name() << endl;
 
-  const double dt = tb.dt;
-  const double T  = plan.run_ms / tb.solver_ms + plan.span_margin_steps * dt;
+  // Passo da EP: -dt, ou o que o modelo de circulacao sugere (legado: um passo
+  // por amostra da curva), ou o default do modelo celular
+  const double dt_cli = CommandLineArgs::read("-dt", -1.0,
+      "EP time step [ms]; default depends on the cell model", "time");
+  const double dt = (dt_cli > 0.0)             ? dt_cli
+                  : (plan.ep_dt_hint_ms > 0.0) ? plan.ep_dt_hint_ms
+                                               : cell.default_dt_ms;
+
+  // Span da EP = rodada + folga: finished() e (cur_time >= stop), entao sem
+  // folga o ultimo sub-passo seria descartado
+  const double T = plan.run_ms + plan.span_margin_steps * dt;
 
   if (plan.period_ms > 0.0)
   {
     const double bcl_cli = CommandLineArgs::read("-bcl", -1.0,
-        "BCL do warm up celular (default: periodo cardiaco)", "warmup");
-    const double bcl = (bcl_cli > 0.0) ? bcl_cli : plan.period_ms / tb.solver_ms;
+        "Cell warm-up BCL [ms] (default: heart period)", "warmup");
+    const double bcl = (bcl_cli > 0.0) ? bcl_cli : plan.period_ms;
     ephy.set_warmup_bcl(bcl);
-
-    cout << " Heart period = " << plan.period_ms / tb.solver_ms << " " << tb.unit
-         << " | run = " << plan.beats << " beat(s)"
-         << " | EP span = " << T << " " << tb.unit
-         << " | warm-up BCL = " << bcl << " " << tb.unit << endl;
+    cout << " Heart period = " << plan.period_ms << " ms | run = " << plan.beats
+         << " beat(s) | EP span = " << T << " ms | warm-up BCL = " << bcl << " ms" << endl;
   }
+  cout << " EP step = " << dt << " ms | coupling step = " << plan.step_ms
+       << " ms | " << plan.nsteps << " coupling step(s)" << endl;
 
-  cout << "total time: " << T << endl;
-  cout << "Mechanical time step: " << dt << endl;
-
-  ephy.setup(monofile, cellmodel, odesolver, dt, T, 1.0, 1.0);
+  ephy.setup(mesh, cellmodel, odesolver, dt, T, 1.0, 1.0);
   ephy.update_matrix(false);
   ephy.init();
 
-  // Coordenadas Cobiveco: opcionais. Se a malha trouxer o bloco <tm>, o tipo
-  // celular (endo/mid/epi) passa a vir da coordenada transmural em vez de ser
-  // uniforme. Tem de vir depois de init() -- que e onde Cells e alocado -- e
-  // antes de initial_conditions(), porque Cells::init() ja usa o tipo para
-  // escolher as condicoes iniciais de cada celula.
-  ephy.read_cobiveco(mshfile);
+  // Cobiveco (opcional): com o bloco <tm> na malha, o tipo celular vem da
+  // coordenada transmural. Tem de vir depois de init() (onde Cells e alocado)
+  // e antes de initial_conditions() (Cells::init() ja usa o tipo).
+  ephy.read_cobiveco(mesh);
   if (ephy.has_cobiveco())
     ephy.set_cell_types_from_tm(CommandLineArgs::read("-tm_endo", 0.3),
                                 CommandLineArgs::read("-tm_epi",  0.7));
 
-  // Gradiente apicobasal de IKs, ligado por default quando a malha traz <ab>.
-  // -abgrad 0 desliga, para poder comparar as duas rodadas na mesma malha.
+  // Gradiente apicobasal de IKs: ligado por default quando a malha traz <ab>
   if (CommandLineArgs::read("-abgrad", 1))
     ephy.set_apicobasal_from_ab();
   else
     cout << " Apicobasal gradient disabled by -abgrad 0" << endl;
 
-  //TODO: conferir isso para todos os modelos (principalmente ToRORd e pro Kerkoff)
-  //TODO: conferir se o código faz sentido: a ideia é ter dt diferente para mecânico e EP, e rodar várias vezes o EP para cada passo mecânico. 
-  // Declara a unidade de tempo da EP. Modelos ionicos como o ToRORd sao
-  // escritos em ms e precisam de passo ~0.01-0.02 ms com Euler explicito, o
-  // que e impraticavel em segundos; o Kerckhoffs e escrito em segundos. Cells
-  // converte o tempo para a unidade de cada modelo, entao ambos funcionam
-  // sob qualquer das duas:
-  //   -tunit ms  -> -t 800 -dt 0.02
-  //   -tunit s   -> -t 0.8 -dt 0.001
-  ephy.set_solver_time_unit_ms(tb.solver_ms);
-  cout << " EP time unit: " << tb.unit << " (1 unit = " << tb.solver_ms
-       << " ms); cell model " << cellmodel << " is written in "
-       << (cellmodel == "Kerkoff2003" ? "s" : "ms") << endl;
+  // A EP roda em ms (como Monodomain::init()); Cells converte para a unidade
+  // nativa de cada modelo. O default de Cells e 1000 (s): sem esta linha o
+  // ToRORd rodaria 1000x lento, sem aviso.
+  ephy.set_solver_time_unit_ms(1.0);
 
-  // Sanidade: T deve ser um ou poucos batimentos, ou seja, algumas centenas
-  // de ms. Uma divergencia aqui significa que a unidade declarada e a
-  // configuracao real discordam, e toda conversao de tempo adiante estaria
-  // errada por um fator 1000.
-  const double T_ms = T * tb.solver_ms;
-  cout << " EP span: T = " << T << " " << tb.unit << " = " << T_ms
-       << " ms, dt = " << dt << " " << tb.unit << " = " << dt * tb.solver_ms
-       << " ms" << endl;
-  const double T_ms_max = 20000.0 * std::max(1, plan.beats);
-  if (T_ms < 50.0 || T_ms > T_ms_max)
-  {
-    cout << "\n *** TIME UNIT WARNING ***" << endl;
-    cout << " With -tunit " << tb.unit << ", the EP span works out to " << T_ms
-         << " ms, which is not a plausible number of beats." << endl;
-    cout << " Either -tunit is wrong, or T came from the mesh's"
-         << " <pvloop total_time=...> in a different unit." << endl;
-    cout << " Pass -t and -dt explicitly in " << tb.unit << " to override.\n"
-         << endl;
-  }
-
-  configure_units(cellmodel);
   configure_mef(cellmodel);
 
-  elas.config(mshfile, parfile);
+  elas.config(mesh, mesh);
   elas.set_output_step(false);
   elas.init();
 
-  // Dimensiona o writer uma unica vez: o numero de frames sai do plano da
-  // rodada. +2: o frame 0 e escrito antes de qualquer solucao, e o ultimo
-  // passo pode cair fora da divisao exata.
-  out_every = CommandLineArgs::read("-prc", plan.default_out_every);
-  log_every = CommandLineArgs::read("-logc", 25);
-  if (out_every < 1) out_every = 1;
-  if (log_every < 1) log_every = 1;
-  n_frames = plan.nsteps / out_every + 2;
+  // Frames: +2 porque o frame 0 sai antes de qualquer solucao
+  out_every = std::max(1, CommandLineArgs::read("-prc", plan.default_out_every));
+  log_every = std::max(1, CommandLineArgs::read("-logc", 25));
+  n_frames  = plan.nsteps / out_every + 2;
   cout << " Output: " << plan.nsteps << " steps, saving every " << out_every
        << " -> " << n_frames << " frame(s)" << endl;
   elas.setup_data_writer(n_frames);
 
   configure_fibers();
 
-  // Init ta and vm vectors with n_points
+  // Ta e um campo NODAL: Cells tem um sistema de EDOs por ponto da malha
   const int npoints = elas.get_mesh().get_n_points();
   ta.zeros(npoints);
   vm_node.zeros(npoints);
 
-  // Dimensiona os buffers de estiramento para o estado indeformado. O
-  // primeiro frame sai antes de qualquer solucao mecanica, e um campo que
-  // falta no frame 0 mas aparece depois deixa a serie XDMF inconsistente.
+  // Buffers de estiramento no estado indeformado: o frame 0 sai antes de
+  // qualquer solucao mecanica, e um campo que falta nele deixa o XDMF inconsistente
   if (lambda_coupling)
   {
     lambda_node.ones(npoints);
     lambda_rate_node.zeros(npoints);
   }
 
-  //TODO: não sei se deve ser mantido assim, eu acho que ou é definido por material, ou é definido globalmente... não sei se precisa dos dois. Acho redundante. 
-  // Contratilidade global. Separada do ta_scale por material de proposito: o
-  // primeiro e calibracao fisiologica e muda a cada rodada; o segundo e
-  // atributo anatomico, fixo pela geometria.
-  ta_scale_global = CommandLineArgs::read("-tascale", 1.0,
-      "escala GLOBAL de contratilidade, multiplica Ta em todos os nos",
-      "mecanica");
+  const double tascale = CommandLineArgs::read("-tascale", 1.0,
+      "Global contractility scale (multiplies Ta at every node)", "mechanics");
+  ta_gain = cell.ta_unit * tascale;
 
-  //TODO: mesma coisa de cima... parece redundante. Mas talvez a ideia aqui seja o contrário: ao invés de ser global, ser local por nó. 
-  // Mapa do ta_scale por elemento: constante no tempo, calculado uma vez.
-  elas.active_scale_field(ta_scale_map);
-  describe_active_tension_pipeline();
+  elas.active_scale_field(ta_scale_map);     // ta_scale do material, por elemento
+  describe_active_tension_pipeline(tascale);
 
-  // Read eikonal solution from file
-  ephy.read_eikonal_solution(basename);
+  ephy.read_eikonal_solution(basename);      // LAT por no, em ms
 
   if (CommandLineArgs::read("-dumpflags", 1,
         "print all flags used after config()", "Diagnosis"))
     CommandLineArgs::dump(cout);
 }
 
-// TODO: To achando muito estranho tudo sobre essas unidades de medida... Não está claro quais valores colocar no "padrão"
-void CardiacElectromechanic::configure_units(const std::string &cellmodel)
-{
-  // Unidades de pressao do modelo por kPa: 1000 se a mecanica roda em Pa, 1 se
-  // em kPa. Converte a tensao ativa de Land, que e dada em kPa, para a unidade
-  // que o material e as condicoes de pressao usam.
-  kPa_to_p = CommandLineArgs::read("-kpa2p", 1000.0);
-
-  // A circulacao trabalha em mmHg. Essa conversao deriva da MESMA escolha de
-  // unidade de pressao, em vez de ser uma flag independente: duas flags que
-  // descrevem um sistema de unidades podem discordar, e um fator 1000
-  // silencioso entre a tensao ativa e as pressoes das cavidades seria muito
-  // dificil de ver nos resultados.
-  mmHg_to_p = 0.133322387415 * kPa_to_p;
-  cout << " Pressure unit: 1 kPa = " << kPa_to_p << " model units, "
-       << "1 mmHg = " << mmHg_to_p << " model units" << endl;
-
-  cell = CellProfile::for_model(cellmodel, kPa_to_p, T_ref, ephy.ms_to_solver_time());
-  land.set_state_indices(cell.land_xs, cell.land_xw, cell.land_zetas, cell.land_zetaw);
-}
-
 void CardiacElectromechanic::configure_fibers()
 {
-  // Fiber-sheet-normal directions for mechanics
+  // Direcoes fibra-folha-normal para a mecanica
   for (int i = 0; i < elas.get_mesh().get_n_elements(); i++)
   {
     arma::vec3 f0 = ephy.get_fiber(i);
@@ -293,88 +192,64 @@ void CardiacElectromechanic::configure_fibers()
     elas.get_mesh().set_element_normal(i, n0);
   }
 
-  // Meanwhile the EP and the EPHY meshes must be the same. 
+  // As malhas mecanica e eletrica tem de ser a mesma
   assert(elas.get_mesh().get_n_points() == ephy.get_mesh().get_n_points());
   assert(elas.get_mesh().get_n_elements() == ephy.get_mesh().get_n_elements());
 }
 
-void CardiacElectromechanic::describe_active_tension_pipeline()
+void CardiacElectromechanic::describe_active_tension_pipeline(double tascale)
 {
-  if (ta_scale_map.n_elem > 0)
-  {
-    const double kpa2p = cell.ta_unit;
-    const double smax  = ta_scale_map.max();
+  if (ta_scale_map.n_elem == 0) return;
 
-    cout << "\n Active tension pipeline:" << endl;
-    cout << "   1. cell model              Ta [kPa]" << endl;
-    cout << "   2. x " << kpa2p
-         << " (kPa -> model pressure units)" << endl;
-    cout << "   3. x " << ta_scale_global
-         << " (-tascale, global contractility, uniform over all nodes)"
-         << endl;
-    cout << "        -> logged as 'Ta max ... nodal', saved as 'active_stress'"
-         << endl;
-    cout << "   4. x ta_scale of the element's material, in ["
-         << ta_scale_map.min() << ", " << smax << "] (per element, exact,"
-         << " NOT interpolated)" << endl;
-    cout << "        -> logged as '... applied', saved as 'Ta_applied'" << endl;
-    cout << "   net: Ta of 1 kPa in the cell model becomes up to "
-         << kpa2p * ta_scale_global * smax << " model pressure units" << endl;
+  const double smax = ta_scale_map.max();
+  cout << "\n Active tension pipeline:\n"
+       << "   Ta (cell model) x " << cell.ta_unit << " (-> Pa) x " << tascale
+       << " (-tascale) = x" << ta_gain << " at every node  -> 'active_stress'\n"
+       << "   x ta_scale of the element's material, in [" << ta_scale_map.min()
+       << ", " << smax << "] (per element)  -> 'Ta_applied'" << endl;
 
-    if (smax > 1.5)
-    {
-      cout << "\n *** ATENCAO: o maior ta_scale de material e " << smax
-           << "." << endl;
-      cout << "     Com -tascale, os valores por material sao FRACOES de"
-           << " contratilidade regional" << endl;
-      cout << "     (1 = miocardio normal, 0 = passivo). Um valor > 1.5"
-           << " costuma ser resto da" << endl;
-      cout << "     convencao antiga, e multiplica com -tascale "
-           << ta_scale_global << " dando " << ta_scale_global * smax
-           << "x." << endl;
-      cout << "     Se a intencao era " << smax
-           << "x de contratilidade, ponha ta_scale=1 no XML e use -tascale "
-           << smax << "." << endl;
-    }
-  }
+  // O ta_scale do material e uma FRACAO regional (1 = miocardio, 0 = passivo);
+  // a calibracao global e o -tascale
+  if (smax > 1.5)
+    cout << " *** WARNING: largest material ta_scale is " << smax << ". If you meant "
+         << smax << "x contractility, set ta_scale=1 in the XML and use -tascale "
+         << smax << "." << endl;
 }
+
+// ======================================================================
+//  O laco: generico para qualquer CirculationModel
+// ======================================================================
 
 void CardiacElectromechanic::solve()
 {
   const RunPlan &plan = circulation->plan();
-  const double ep_per_ms = ephy.ms_to_solver_time();
 
   cout << "\n=== " << circulation->name() << " ===" << endl;
   timer.enter("solve");
 
+  // pre_solve() monta as matrizes; initial_conditions() reinicia as celulas.
+  // Pular qualquer um deixa o sistema linear sem montagem (PETSc reason -11).
   elas.pre_solve();
   ephy.initial_conditions();
   update_active_tension();            // Ta em t = 0
 
   circulation->begin(*this);
 
-  const int n_sub = cell_substeps(plan, ep_per_ms);
-  ensure_ep_covers(plan, ep_per_ms);
-  const double step_ep = plan.step_ms * ep_per_ms;
+  const int n_sub = cell_substeps(plan);
 
   if (cell.stim_amplitude != 0.0)
-    cout << " LAT stimulus: amplitude = " << cell.stim_amplitude
-         << ", duration = " << cell.stim_duration
-         << ", period = " << plan.period_ms * ep_per_ms
-         << ", offset = " << plan.stim_offset_ms * ep_per_ms
-         << " (solver units)" << endl;
+    cout << " LAT stimulus: amplitude = " << cell.stim_amplitude << ", duration = "
+         << cell.stim_duration << " ms, period = " << plan.period_ms
+         << " ms, offset = " << plan.stim_offset_ms << " ms" << endl;
   else if (plan.stim_offset_ms != 0.0)
-    cout << " No LAT stimulus: the cell model is driven directly by the LAT"
+    cout << " No LAT stimulus: the cell model is driven by the LAT itself"
          << " (Kerckhoffs), so activation does NOT honour the phase offset;"
-         << " consider shifting the mesh LAT by " << plan.stim_offset_ms
-         << " ms." << endl;
+         << " consider shifting the mesh LAT by " << plan.stim_offset_ms << " ms." << endl;
 
   int frame = 0;
   write_frame(frame, plan);
-  cout << " Output: saving every " << out_every << " step(s), " << n_frames
-       << " frame(s) allocated" << endl;
-  cout << " Log: detailed report every " << log_every << " step(s)" << endl;
-  cout << "\n Legend: [ODE] cell model" << endl;
+  cout << " Output every " << out_every << " step(s), log every " << log_every
+       << " step(s)\n\n Legend: [ODE] cell model" << endl;
 
   double t_ms = 0.0;
   for (int i = 0; i < plan.nsteps; i++)
@@ -386,32 +261,51 @@ void CardiacElectromechanic::solve()
     const StepContext step = { i, plan.nsteps, t_ms, plan.step_ms, log_now };
     circulation->announce(step);
 
-    update_fiber_stretch(step_ep);
+    // 0. Realimentacao mecano-eletrica. lambda_f vem da ULTIMA solucao mecanica
+    //    convergida: uma vez por passo, antes das celulas, e nunca dentro de uma
+    //    inversao de pressao (o estiramento de uma pressao de teste rejeitada
+    //    nao tem significado).
+    update_fiber_stretch(plan.step_ms);
 
-    // TODO: isso daqui é preciso compreender se eu avanço um passo de tempo apenas, ou se eu avanço N tal que N = dt_mech/dt_ephy
-    const bool stimulating = advance_cells(n_sub, plan, ep_per_ms);
+    // 1. Celulas: N = dt_mech/dt passos da EP. Ta fica congelado enquanto a
+    //    circulacao itera.
+    const bool stimulating = advance_cells(n_sub, plan);
 
+    // Um modelo ionico rigido com passo grande demais diverge primeiro em Vm;
+    // Ta segue decaindo suave por um tempo, e a rodada parece viva com a EP morta
     if (!ta.is_finite())
     {
       cout << "\n *** the active tension contains NaN/Inf at t = " << t_ms
-           << " ms." << endl;
-      cout << "     The cell model has diverged." <<endl; 
+           << " ms: the cell model has diverged. Reduce -dt." << endl;
       break;
     }
 
     if (log_now)
     {
-      // Log of cellular model
-      cout << "  [ODE  ] " << n_sub << " sub-steps"
-           << (stimulating ? " (stimulus on)" : "")
+      // 'ta' e do modelo celular x ganho escalar; 'applied' inclui tambem o
+      // ta_scale do material, por elemento. Nao sao proporcionais.
+      elas.effective_active_tension(ta, ta_applied);
+      cout << "  [ODE  ] " << n_sub << " sub-steps" << (stimulating ? " (stimulus on)" : "")
            << " -> Ta max = " << ta.max() << " nodal";
-      if (ta_applied.n_elem > 0)
-        cout << ", " << ta_applied.max() << " applied";
+      if (ta_applied.n_elem > 0) cout << ", " << ta_applied.max() << " applied";
       cout << endl;
     }
 
+    if (i == 0 && arma::max(arma::abs(ta)) == 0.0)
+    {
+      cout << " *** WARNING: the active tension is zero at the start of the run.\n"
+           << "     With Kerckhoffs, Ta is non-zero only for lat <= t <= lat + 483 ms,"
+           << " where lat comes from the per-node LAT in the mesh or <pvloop passive_time=...>."
+           << endl;
+      if (plan.period_ms > 0.0)
+        cout << "     Check that passive_time is smaller than the heart period ("
+             << plan.period_ms << " ms), or the ventricle will fill and never eject." << endl;
+    }
+
+    // 2. Circulacao + mecanica
     circulation->advance(step);
 
+    // 3. Saida
     if (i % out_every == 0 && frame < n_frames - 1)
       write_frame(++frame, plan);
   }
@@ -424,60 +318,34 @@ void CardiacElectromechanic::solve()
   timer.summary();
 }
 
-int CardiacElectromechanic::cell_substeps(const RunPlan &plan, double ep_per_ms)
+int CardiacElectromechanic::cell_substeps(const RunPlan &plan)
 {
-  // O passo de acoplamento tem de ser multiplo do passo da EP; senao o
-  // numero de sub-passos arredonda e a tensao ativa passa a andar numa
-  // frequencia ligeiramente diferente da do modelo de circulacao.
-  const double dt_ephy = ephy.get_time_parameters().get_dt();
-  const double step_ep = plan.step_ms * ep_per_ms;
-  const int    n_sub   = std::max(1, static_cast<int>(std::round(step_ep / dt_ephy)));
-  const double mismatch = std::fabs(n_sub * dt_ephy - step_ep);
+  // N = dt_mech/dt, ARREDONDADO (o electromech trunca: 0.3/0.1 = 2.9999999999999996
+  // perderia um passo da EP). Se dt_mech nao for multiplo de dt, a tensao ativa
+  // andaria numa frequencia ligeiramente diferente da da circulacao.
+  const double dt_ephy  = ephy.get_time_parameters().get_dt();
+  const int    n_sub    = std::max(1, static_cast<int>(std::round(plan.step_ms / dt_ephy)));
+  const double mismatch = std::fabs(n_sub * dt_ephy - plan.step_ms);
 
-  cout << " Cell model: dt = " << dt_ephy << ", coupling step = " << step_ep
-       << " (same units) -> " << n_sub << " sub-step(s) per step" << endl;
-  if (mismatch > 1e-9 * step_ep)
-  {
-    cout << " *** WARNING: the coupling step is not a multiple of the"
-         << " cell-model step." << endl;
-    cout << "     " << n_sub << " x " << dt_ephy << " = " << n_sub * dt_ephy
-         << " vs " << step_ep << "  (drift of " << mismatch << " per step)."
-         << endl;
-  }
+  cout << " Cell model: dt = " << dt_ephy << " ms, coupling step = " << plan.step_ms
+       << " ms -> " << n_sub << " sub-step(s) per step" << endl;
+  if (mismatch > 1e-9 * plan.step_ms)
+    cout << " *** WARNING: -dt_mech is not a multiple of -dt: " << n_sub << " x " << dt_ephy
+         << " = " << n_sub * dt_ephy << " vs " << plan.step_ms << " (drift of "
+         << mismatch << " ms per step)." << endl;
+
+  // O relogio da EP tem de cobrir a rodada, senao Eikonal::advance() vira um
+  // no-op silencioso. config() ja o dimensiona pelo plano; isto so dispara se
+  // alguem mudar uma das pontas.
+  if (ephy.get_time_parameters().get_stop() < plan.run_ms - 0.5 * dt_ephy)
+    throw std::runtime_error("EP span shorter than the run: the cell model would "
+                             "stop integrating mid-run, silently.");
   return n_sub;
 }
 
-void CardiacElectromechanic::ensure_ep_covers(const RunPlan &plan, double ep_per_ms)
+bool CardiacElectromechanic::advance_cells(int n_sub, const RunPlan &plan)
 {
-  const double dt_ephy  = ephy.get_time_parameters().get_dt();
-  const double total_ep = plan.run_ms * ep_per_ms;
-  double stop = ephy.get_time_parameters().get_stop();
-
-  // Se estiver curto, estica: quem manda no tempo e este laco, nao o -t. A
-  // excecao abaixo so dispara se a aritmetica ficar inconsistente, e e MUITO
-  // preferivel ao no-op silencioso de Eikonal::advance(), que congela as
-  // celulas sem emitir nada.
-  if (stop < total_ep - 0.5 * dt_ephy)
-  {
-    const double novo = total_ep + 2.0 * dt_ephy;
-    cout << " EP span esticado de " << stop << " para " << novo
-         << " para cobrir a rodada" << endl;
-    ephy.time_parameters().set_stop(novo);
-    stop = ephy.get_time_parameters().get_stop();
-  }
-  if (stop < total_ep - 0.5 * dt_ephy)
-    throw std::runtime_error("EP span menor que a rodada: o modelo celular "
-                             "pararia de integrar no meio, sem avisar. "
-                             "Verifique -t, -hr/-pwrr, -pwinit e -beats.");
-}
-
-bool CardiacElectromechanic::advance_cells(int n_sub, const RunPlan &plan,
-                                           double ep_per_ms)
-{
-  const double period = plan.period_ms * ep_per_ms;
-  const double offset = plan.stim_offset_ms * ep_per_ms;
-  const bool   stim   = (cell.stim_amplitude != 0.0);
-
+  const bool stim = (cell.stim_amplitude != 0.0);
   bool stimulating = false;
   const arma::vec &lat = ephy.get_lat();
 
@@ -485,18 +353,18 @@ bool CardiacElectromechanic::advance_cells(int n_sub, const RunPlan &plan,
   {
     if (stim)
     {
-      // "estimulo ligado" tem de refletir se algum no foi de fato estimulado
-      // neste passo, e nao apenas que o estimulo esta habilitado.
-      double tk = ephy.get_time_parameters().time() - offset;
-      if (period > 0.0)
-        tk = std::fmod(std::fmod(tk, period) + period, period);
+      // "estimulo ligado" = algum no foi de fato estimulado neste passo
+      double tk = ephy.get_time_parameters().time() - plan.stim_offset_ms;
+      if (plan.period_ms > 0.0)
+        tk = std::fmod(std::fmod(tk, plan.period_ms) + plan.period_ms, plan.period_ms);
       if (tk >= 0.0 && arma::any(tk >= lat && tk < lat + cell.stim_duration))
         stimulating = true;
 
-      if (offset == 0.0)
-        ephy.apply_lat_stimulus(cell.stim_amplitude, cell.stim_duration, period);
+      if (plan.stim_offset_ms == 0.0)
+        ephy.apply_lat_stimulus(cell.stim_amplitude, cell.stim_duration, plan.period_ms);
       else
-        ephy.apply_lat_stimulus(cell.stim_amplitude, cell.stim_duration, period, offset);
+        ephy.apply_lat_stimulus(cell.stim_amplitude, cell.stim_duration,
+                                plan.period_ms, plan.stim_offset_ms);
     }
     ephy.advance();
   }
@@ -512,65 +380,64 @@ void CardiacElectromechanic::write_frame(int frame, const RunPlan &plan)
   save_node_fields(frame);
 }
 
+// ======================================================================
+//  A porta para os modelos de circulacao (CavityMechanics)
+// ======================================================================
+
 void CardiacElectromechanic::apply_pressures(double /*t_ms*/, double p_lv, double p_rv)
 {
   if (!quiet_solve)
-    cout << "Pressure: LV=" << p_lv << " RV=" << p_rv
-         << " Ta: min=" << ta.min() << " max=" << ta.max() << endl;
+    cout << "Pressure: LV=" << p_lv << " RV=" << p_rv << " Pa  Ta: min=" << ta.min()
+         << " max=" << ta.max() << endl;
 
   elas.set_pressure_Ta(kLvMarker, p_lv, kRvMarker, p_rv, ta);
 
+  // Estabilizacao da tensao ativa dependente da velocidade. lambda_raw, nao
+  // lambda_node: o incremento (lambda_atual - lambda_prev) tem de diferenciar
+  // dois valores da mesma regra, e o material calcula lambda_atual da
+  // deformacao bruta. Contra o campo CORTADO haveria um salto quando um no
+  // entra ou sai de [-lammin, -lammax], multiplicado por uma rigidez ~10^6.
+  // Vazios, os dois vetores restauram o comportamento sem estabilizacao.
   elas.set_active_stabilization(ka, lambda_raw);
 
   elas.solve();
   elas.reset();
 }
 
+// Os volumes saem de UpdatedLagrangian em mL (malha em um, pressao em Pa).
 double CardiacElectromechanic::volume_LV()    { return elas.volume_LV(); }
 double CardiacElectromechanic::volume_RV()    { return elas.volume_RV(); }
 double CardiacElectromechanic::volume_total() { return elas.total_volume_cavity(); }
 
-//TODO: testar ver se está funcionando com todos os modelos celulares. Principalmente Kerkoff e Torord
+// ======================================================================
+//  Tensao ativa
+// ======================================================================
+
 void CardiacElectromechanic::update_active_tension()
 {
-  // Modelos fenomenologicos (Kerckhoffs) publicam a tensao ativa como valor
-  // monitorado 0. Modelos ionicos (ToRORdLand) nao: o Ta deles e uma variavel
-  // de estado (49), que tem de ser lida diretamente.
+  // Quem sabe de onde vem Ta e o CellProfile: fenomenologicos (Kerckhoffs) o
+  // publicam como valor monitorado 0; ionicos (ToRORdLand), no estado 49.
   if (cell.ta_var < 0)
     ephy.get_cells().get_monitored_values(0, ta);
   else
     ephy.get_cells().get_var(cell.ta_var, ta);
 
-  // Duas escalas, com papeis distintos:
-  //   cell.ta_unit    = conversao kPa -> unidade de pressao do modelo
-  //   ta_scale_global = contratilidade global, -tascale
-  // Ambas uniformes, aplicadas no campo NODAL. A terceira escala, a do
-  // material, e por elemento e entra so na montagem.
-  ta = ta * cell.ta_unit * ta_scale_global;
-
-  // Tensao efetivamente entregue a montagem: a media nodal de Ta em cada
-  // elemento vezes o ta_scale do material daquele elemento. Por elemento,
-  // porque ta_scale e constante por elemento -- um no na fronteira entre
-  // marcadores nao tem valor efetivo unico.
-  elas.effective_active_tension(ta, ta_applied);
+  // Um ganho escalar (conversao x -tascale), no campo NODAL. A escala do
+  // material, por elemento, entra so na montagem.
+  ta = ta * ta_gain;
 
   update_active_stiffness();
 
-  // So diagnostico -- os valores NAO sao modificados aqui. Uma tensao ativa
-  // negativa e uma tensao compressiva na fibra, que e o que inverte
-  // elementos alguns passos depois; esta linha e o aviso que precede o
-  // Jacobiano negativo.
+  // So diagnostico. Ta negativa e tensao compressiva na fibra, o que inverte
+  // elementos alguns passos depois; este e o aviso que precede o Jacobiano negativo.
   if (lambda_rate_on && ta.n_elem > 0 && ta.min() < 0.0)
-    land.report_negative_ta(ephy.get_cells(), ta, lambda_rate_node,
-                            lambda_rate_max_clip);
+    land.report_negative_ta(ephy.get_cells(), ta, lambda_rate_node, lambda_rate_max_clip);
 }
 
 void CardiacElectromechanic::update_active_stiffness()
 {
-  // A estabilizacao so tem serventia quando a tensao ativa de fato depende da
-  // velocidade de encurtamento. Sem -lamrate, ZETAS e ZETAW ficam em repouso,
-  // Ta nao tem dependencia de velocidade, e nao ha laco de realimentacao a
-  // estabilizar -- entao a mecanica fica exatamente como era.
+  // So ha o que estabilizar quando Ta depende da velocidade de encurtamento,
+  // ou seja, com -lamrate. Sem ele a mecanica fica exatamente como era.
   if (!stabilize_active || !lambda_rate_on || !land.has_stiffness_states()
       || lambda_raw.n_elem != ta.n_elem)
   {
@@ -580,65 +447,48 @@ void CardiacElectromechanic::update_active_stiffness()
 
   land.active_stiffness(ephy.get_cells(), lambda_raw, ka);
 
-  // Ka sai do submodelo de Land em kPa, exatamente como Ta, e portanto
-  // precisa da MESMA conversao que ta recebeu; uma escala diferente deixaria
-  // um fator 5000 entre o termo de estabilizacao e a tensao que ele
+  // Ka e dTa/dlambda e a mecanica recebe Ta com o ganho INTEIRO: Ka precisa do
+  // mesmo, senao o termo de estabilizacao sai de proporcao com a tensao que
   // estabiliza.
-  ka = ka * cell.ta_unit;
+  ka = ka * ta_gain;
 }
 
-
-// TODO: essa parte está funcionando? Já com o writer HDF5 do jeito que está? 
 void CardiacElectromechanic::save_node_fields(int frame)
 {
-  // Both quantities live on the nodes: Cells is built with one ODE system
-  // per mesh point (Eikonal::init), and the active tension is a nodal field
-  // in the material (allocate_Ta(npoints)).
-
-  // Membrane potential -- ionic models only. Kerckhoffs has no Vm, and its
-  // state 0 is the contractile element length, which must not be written
-  // into a field named vm.
+  // Vm so para modelos ionicos: o estado 0 do Kerckhoffs e o comprimento do
+  // elemento contratil e nao pode ir para um campo "vm"
   if (cell.vm_var >= 0)
   {
     ephy.get_cells().get_var(cell.vm_var, vm_node);
     elas.store_point_field(frame, vm_node, string("vm"));
   }
 
-  // Active tension, in the same unit the mechanics sees: `ta` has already
-  // been scaled by set_active_tension_source (kPa -> model pressure unit for
-  // ToRORdLand, T_ref for Kerckhoffs). Divide by kPa_to_p when
-  // post-processing if you want kPa.
-  // Ta nodal: modelo celular x (kPa -> unidades) x -tascale global. Uniforme,
-  // sem a escala do material. Divida por kPa_to_p e por -tascale para voltar
-  // aos kPa do modelo celular.
+  // Ta nodal: modelo celular x ganho, sem a escala do material
   elas.store_point_field(frame, ta, string("active_stress"));
 
-  // Tensao ativa EFETIVA, por elemento. "active_stress" acima e o valor
-  // nodal bruto do modelo celular; "Ta_applied" ja inclui o ta_scale do
-  // material e e a grandeza que aparece no residuo. Onde ta_scale = 0
-  // (plugs valvares, cicatriz) este campo e identicamente zero, o que torna
-  // a regiao passiva visivel no ParaView.
+  // Ta EFETIVA por elemento (inclui o ta_scale do material, e e a que entra no
+  // residuo). Zero onde ta_scale = 0 (plugs, cicatriz): torna a regiao passiva
+  // visivel no ParaView.
+  elas.effective_active_tension(ta, ta_applied);
   if (ta_applied.n_elem > 0)
     elas.store_cell_field(frame, ta_applied, string("Ta_applied"));
 
-  // Mapa do multiplicador. Constante no tempo, gravado a cada frame para o
-  // XDMF ficar consistente e permitir sobrepor aos demais campos.
+  // Mapa do ta_scale: constante, gravado a cada frame para o XDMF ficar consistente
   if (ta_scale_map.n_elem > 0)
     elas.store_cell_field(frame, ta_scale_map, string("ta_scale"));
 
-  // Fibre stretch, when the mechano-electric coupling is on. Saving it makes
-  // it possible to see whether lambda is doing anything sensible before
-  // trying to interpret its effect on Ta.
   if (lambda_coupling && lambda_node.n_elem == ta.n_elem)
     elas.store_point_field(frame, lambda_node, string("lambda_f"));
 
-  // The rate is the field that actually decides whether Ta can go negative,
-  // so it is worth having offline. Only written when the rate coupling is
-  // on, which keeps the output identical for every existing run.
-  if (lambda_coupling && lambda_rate_on
-      && lambda_rate_node.n_elem == ta.n_elem)
+  // So com o acoplamento de taxa ligado, para a saida das rodadas existentes
+  // continuar identica
+  if (lambda_coupling && lambda_rate_on && lambda_rate_node.n_elem == ta.n_elem)
     elas.store_point_field(frame, lambda_rate_node, string("lambda_rate"));
 }
+
+// ======================================================================
+//  Realimentacao mecano-eletrica (estiramento de fibra). Sem alteracao.
+// ======================================================================
 
 void CardiacElectromechanic::configure_mef(const std::string &cellmodel)
 {
@@ -728,10 +578,11 @@ void CardiacElectromechanic::update_fiber_stretch(double dt_solver)
   if (!lambda_coupling) return;
 
   // The Land equations expect d(lambda)/dt in the model's OWN time unit
-  // (1/ms for ToRORd), while dt_solver is in the EP solver's unit, which is
-  // seconds or milliseconds depending on -tunit. Cells knows the ratio, so
-  // ask it rather than reproducing the conversion here: getting this wrong
-  // is a silent factor of 1000 on ZETAS/ZETAW.
+  // (1/ms for ToRORd), while dt_solver is in the EP solver's unit (ms).
+  // Cells knows the ratio to the model's unit (1 for ToRORd, 1e-3 for
+  // Kerckhoffs, written in seconds), so ask it rather than reproducing the
+  // conversion here: getting this wrong is a silent factor of 1000 on
+  // ZETAS/ZETAW.
   const double dt_cell = dt_solver * ephy.get_cells().time_factor();
 
   // lambda_f = sqrt(I4f) per element, averaged onto the nodes, since the

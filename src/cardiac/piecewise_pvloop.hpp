@@ -4,151 +4,59 @@
 #include <string>
 
 /*!
- *  ---------------------------------------------------------------------
- *  Controlador de pressao ventricular POR FASES (piecewise PV loop)
- *  ---------------------------------------------------------------------
+ *  Controlador de pressao ventricular POR FASES (piecewise PV loop).
  *
- *  Implementa o esquema de cinco fases descrito em
+ *  Esquema de cinco fases de Wang et al. (2025), eLife 14:RP106555, secao
+ *  "Mechanical model" -- a formulacao do Alya. Diferenca em relacao ao
+ *  caminho -circ (Regazzoni 2022): QUEM e a incognita.
  *
- *    Wang, Holmes, Doste, Camps, Margara, Vazquez, Rodriguez (2025/2026),
- *    "Calibration and validation strategy for electromechanical cardiac
- *     digital twins", eLife 14:RP106555, secao "Mechanical model",
+ *    -circ : o 0D e dono do VOLUME; pergunta ao 3D "que pressao reproduz este
+ *            volume?" -> Newton 2x2, varias solucoes 3D por passo.
+ *    -pw   : o 0D e dono da PRESSAO. A pressao do passo n+1 sai de uma equacao
+ *            explicita que so usa V e dV/dt medidos no passo n -> UMA solucao
+ *            3D por passo.
  *
- *  que e a formulacao usada no Alya. A diferenca conceitual em relacao ao
- *  caminho -circ (Regazzoni 2022, ver regazzoni2020.hpp) e QUEM e a
- *  incognita:
+ *  O preco: as fases isovolumetricas sao impostas por penalidade (um PD sobre
+ *  a pressao segura o volume) e a circulacao e aberta -- um Windkessel de dois
+ *  elementos por ventriculo, sem retorno venoso.
  *
- *    -circ : o modelo 0D e dono do VOLUME e pergunta ao 3D "que pressao
- *            reproduz este volume?". Isso exige inverter numericamente o
- *            mapa p -> V, ou seja, um Newton 2x2 com varias solucoes 3D
- *            por passo de tempo.
+ *  UNIDADES: tempo ms | pressao Pa | volume mL | resistencia Pa*ms/mL |
+ *            complacencia mL/Pa. As mesmas do resto do cardiax; esta classe
+ *            nao conhece a malha nem o solver. (A Tabela 1 do artigo esta em
+ *            kPa; os defaults abaixo ja foram convertidos, x1000.)
  *
- *    -pw   : o modelo 0D e dono da PRESSAO. A pressao endocardica do passo
- *            n+1 sai de uma equacao explicita que so usa o volume e a taxa
- *            de volume ja medidos no passo n. Uma UNICA solucao 3D por
- *            passo de tempo.
+ *  AS FASES
+ *  0 INIT      rampa de 0 ate P_DS em t_init (infla a malha sem choque).
+ *  1 FILLING   rampa de P_DS ate EDP em t_EDP ("chute atrial"). O fim desta
+ *              fase e o fim da diastole: V_ED e medido aqui e a ativacao
+ *              eletrica dispara neste instante (activation_time()).
+ *  2 IVC       contracao isovolumetrica: PD sobre a pressao, V travado em V_ED.
+ *              Sai quando P >= limiar de ejecao (P_ejection, ou P_art).
+ *  3 EJECTION  Windkessel de 2 elementos: C_art dP_art/dt + P_art/R_art = -dV/dt,
+ *              P = P_art. Integrado com C_stab (estabilizacao, ver abaixo).
+ *              Sai quando o fluxo reverte (dV/dt > 0), ou P <= P_atrium.
+ *  4 IVR       relaxamento isovolumetrico: PD com V travado em V_ES.
+ *              Sai quando P <= P_atrium.
+ *  5 PASSIVE   enchimento passivo: PD devolve o volume a V_DS. Sai pelo relogio,
+ *              no inicio da fase 1 do batimento seguinte.
  *
- *  O preco e que as fases isovolumetricas passam a ser impostas por
- *  penalidade (o volume e mantido constante por um controlador PD sobre a
- *  pressao) em vez de por restricao exata, e que a circulacao e aberta:
- *  um Windkessel de dois elementos por ventriculo, sem retorno venoso.
+ *  ESTABILIZACAO DA EJECAO. Com dV/dt do passo anterior, a equacao da fase 3
+ *  tomada ao pe da letra e instavel (ganho C_cav/C_art > 1 nos numeros do
+ *  artigo). A cura e separar de dV/dt a parte que vem da propria variacao de
+ *  pressao e trata-la implicitamente:
+ *      (C_art + C_stab) dP/dt + P/R = -[ dV/dt - C_stab dP/dt|ant ]
+ *  O ponto fixo nao muda; qualquer C_stab >= C_cav estabiliza.
  *
- *  ---------------------------------------------------------------------
- *  UNIDADES INTERNAS: mL, kPa, ms
- *  ---------------------------------------------------------------------
- *  Escolhidas para bater com a Tabela 1 do artigo, onde R_LV aparece em
- *  kPa*ms/mL, C_LV em mL/kPa, as pressoes em kPa e os tempos em ms.
- *
- *      pressao       kPa
- *      volume        mL
- *      tempo         ms
- *      resistencia   kPa*ms/mL
- *      complacencia  mL/kPa
- *
- *  A conversao para a unidade de pressao da mecanica (Pa ou kPa, conforme
- *  -kpa2p) e feita por quem chama, em cardiac_cycle.cpp. Esta classe NAO
- *  conhece a malha nem o solver.
- *
- *  ---------------------------------------------------------------------
- *  AS CINCO FASES (mais a fase 0 de inicializacao)
- *  ---------------------------------------------------------------------
- *
- *  Fase 0 - INIT (inicializacao, so no primeiro batimento)
- *      Rampa linear de 0 ate a pressao de diastase P_DS, ao longo de
- *      t_init. Serve para inflar a malha a partir da configuracao de
- *      referencia sem choque de carga.
- *
- *  Fase 1 - FILLING (enchimento diastolico ativo, "chute atrial")
- *      Rampa linear de P_DS ate EDP ao longo de t_EDP, imitando a
- *      contracao atrial. O fim desta fase e o FIM DA DIASTOLE: o volume
- *      medido ali e V_ED, e e nesse instante que a ativacao eletrica deve
- *      disparar (ver activation_time()).
- *
- *  Fase 2 - IVC (contracao isovolumetrica)
- *      dP = -(1/Cp_iso)(V - V_lock) - (1/Cv_iso) dV/dt
- *      com V_lock = V_ED. O primeiro termo e proporcional ao desvio de
- *      volume, o segundo amortece a taxa; juntos seguram o volume
- *      constante enquanto a tensao ativa sobe.
- *      Saida: quando P alcanca o limiar de ejecao.
- *
- *  Fase 3 - EJECTION (ejecao)
- *      Windkessel de dois elementos:
- *          C_art dP_art/dt + P_art/R_art = -dV/dt,   P = P_art
- *      Saida: quando o fluxo reverte, isto e, dV/dt > 0.
- *
- *      ATENCAO: integrada com ESTABILIZACAO. Tomada ao pe da letra, com
- *      dV/dt medido no passo anterior, esta equacao e instavel: a cavidade
- *      responde a P com V ~ C_cav P, e o modo de periodo 2 do esquema
- *      escalonado tem ganho C_cav/C_art. Para os proprios numeros do
- *      artigo (C_art = 1.39 mL/kPa, elastancia sistolica ~0.45 kPa/mL,
- *      logo C_cav ~ 2.2 mL/kPa) o ganho ja passa de 1.
- *      A cura, na mesma linha do termo de estabilizacao de Regazzoni &
- *      Quarteroni para a tensao ativa, e separar de dV/dt a parte que vem
- *      da propria variacao de pressao e trata-la implicitamente:
- *          (C_art + C_stab) dP/dt + P/R = -[ dV/dt - C_stab dP/dt|_ant ]
- *      O ponto fixo NAO muda (quando dP/dt -> 0 os termos se cancelam e
- *      sobra P/R = -dV/dt); muda so o transiente. Qualquer
- *      C_stab >= C_cav torna o esquema incondicionalmente estavel, e a
- *      complacencia DIASTOLICA medida serve porque superestima a
- *      sistolica -- erra para o lado seguro.
- *
- *  Fase 4 - IVR (relaxamento isovolumetrico)
- *      Mesma equacao da fase 2, com V_lock = V_ES.
- *      Saida: quando P cai abaixo da pressao atrial.
- *
- *  Fase 5 - PASSIVE (enchimento passivo)
- *      dP = -(1/Cp_fill)(V - DSV) - (1/Cv_fill) dV/dt
- *      que devolve o volume ao valor de diastase DSV.
- *      Saida: pelo relogio, no inicio da fase 1 do batimento seguinte.
- *
- *  ---------------------------------------------------------------------
- *  AMBIGUIDADE DE NOTACAO NO ARTIGO, E O QUE FOI FEITO AQUI
- *  ---------------------------------------------------------------------
- *  O artigo escreve as fases 2, 4 e 5 como "dP = ..." (um INCREMENTO de
- *  pressao) e a fase 3 como "C dP/dt + ... = ..." (uma EQUACAO
- *  DIFERENCIAL). Lido ao pe da letra, o ganho das fases isovolumetricas
- *  depende de dt, o que e desconfortavel.
- *
- *  Como nao da para decidir isso pelo texto, as duas leituras estao
- *  implementadas e selecionadas por set_rate_form():
- *
- *      false (default, literal)  P += dP
- *      true  (forma de taxa)     P += dt * dP
- *
- *  No modo de taxa as unidades de Cp e Cv mudam por um fator de tempo
- *  (Cp passa a mL*ms/kPa, Cv a mL/kPa); o log de describe() imprime a
- *  convencao ativa para evitar calibrar contra a errada. A fase 3 e
- *  sempre integrada como equacao diferencial, nas duas leituras.
- *
- *  ---------------------------------------------------------------------
- *  GANHO AUTOMATICO DAS PENALIDADES (Cp/Cv <= 0), E POR QUE E O DEFAULT
- *  ---------------------------------------------------------------------
- *  O artigo NAO tabela Cp e Cv: eles aparecem so como "inverse of penalty
- *  terms". Qualquer valor fixo escolhido aqui seria um chute, e o chute
- *  tem consequencia dura. Linearizando a cavidade em torno do ponto de
- *  travamento, V - V_lock ~ C_cav (P - P_lock), a fase isovolumetrica na
- *  forma literal itera o erro de volume como
- *
- *      e_{n+1} = e_n (1 - C_cav / Cp),
- *
- *  ou seja, ela SO converge se 0 < C_cav/Cp < 2, e e exata (deadbeat) se
- *  Cp = C_cav. C_cav e a complacencia da cavidade, e para os proprios
- *  numeros do artigo ela vale cerca de (105 - 80) mL / (1.3 - 0.6) kPa
- *  ~ 36 mL/kPa. Um Cp fixo da ordem de 20 ja estaria do lado divergente.
- *
- *  Por isso o default e Cp <= 0 = AUTOMATICO: o controlador MEDE a
- *  complacencia diastolica da propria malha (fim da fase 0 contra fim da
- *  fase 1) e usa
- *
- *      dP = -[ (V - V_lock) + damping * dt * dV/dt ] / C_cav,
- *
- *  que e dimensionalmente limpa (mL / (mL/kPa) = kPa), nao depende da
- *  leitura literal/taxa e e sempre estavel: durante a sistole a cavidade
- *  fica MAIS rigida que na diastole, entao C_cav medido na diastole
- *  superestima a complacencia e o ganho erra para o lado lento.
- *
- *  Dar um valor positivo a Cp_iso/Cv_iso/Cp_fill/Cv_fill desliga o modo
- *  automatico daquela penalidade e volta a formula literal do artigo.
+ *  GANHO AUTOMATICO DAS PENALIDADES (Cp/Cv <= 0, o default). O artigo nao
+ *  tabela Cp e Cv. Linearizando a cavidade, a fase isovolumetrica literal
+ *  itera e_{n+1} = e_n (1 - C_cav/Cp): so converge se 0 < C_cav/Cp < 2. Por
+ *  isso o default MEDE a complacencia diastolica da propria malha e usa
+ *      dP = -[ (V - V_lock) + damping*dt*dV/dt ] / C_cav
+ *  (deadbeat com amortecimento; sempre estavel, pois a cavidade sistolica e
+ *  mais rigida que a diastolica). Um valor positivo em Cp/Cv volta a formula
+ *  literal do artigo: dP = -(1/Cp)(V - V_lock) - (1/Cv) dV/dt, com P += dP
+ *  (rate_form = false) ou P += dt*dP (rate_form = true; as unidades de Cp e Cv
+ *  mudam por um fator de tempo). A fase 3 e sempre uma EDO.
  */
 class PiecewisePVLoop
 {
@@ -191,20 +99,20 @@ public:
   // -------------------------------------------------------------------
   struct ChamberParams
   {
-    double P_DS;        //!< pressao de diastase, alvo da fase 0 [kPa]
-    double EDP;         //!< pressao de fim de diastole, alvo da fase 1 [kPa]
-    double P_ejection;  //!< limiar de abertura da valva arterial [kPa]
-    double P_atrium;    //!< pressao atrial: encerra a fase 4 [kPa]
+    double P_DS;        //!< pressao de diastase, alvo da fase 0 [Pa]
+    double EDP;         //!< pressao de fim de diastole, alvo da fase 1 [Pa]
+    double P_ejection;  //!< limiar de abertura da valva arterial [Pa]
+    double P_atrium;    //!< pressao atrial: encerra a fase 4 [Pa]
 
     //! Volume de diastase alvo da fase 5 [mL]. Negativo = automatico:
     //! usa o volume medido no fim da fase 0, que e por construcao o
     //! estado de diastase desta malha com esta pressao P_DS.
     double DSV;
 
-    double C_art;       //!< complacencia arterial [mL/kPa]
-    double R_art;       //!< resistencia arterial [kPa*ms/mL]
+    double C_art;       //!< complacencia arterial [mL/Pa]
+    double R_art;       //!< resistencia arterial [Pa*ms/mL]
 
-    //! Complacencia de ESTABILIZACAO da fase de ejecao [mL/kPa].
+    //! Complacencia de ESTABILIZACAO da fase de ejecao [mL/Pa].
     //! <= 0 (default) = usa a complacencia medida C_cav. Ver a nota sobre
     //! a fase 3 no cabecalho da classe. Nao altera o estado estacionario,
     //! so o transiente; existe para tornar o esquema explicito estavel.
@@ -213,8 +121,8 @@ public:
     //! Penalidades das fases isovolumetricas (2 e 4).
     //! <= 0 (default) = AUTOMATICO a partir da complacencia medida; ver a
     //! nota no cabecalho da classe.
-    //! Positivo, forma literal: Cp_iso [mL/kPa], Cv_iso [mL/(kPa*ms)].
-    //! Positivo, forma de taxa: Cp_iso [mL*ms/kPa], Cv_iso [mL/kPa].
+    //! Positivo, forma literal: Cp_iso [mL/Pa], Cv_iso [mL/(Pa*ms)].
+    //! Positivo, forma de taxa: Cp_iso [mL*ms/Pa], Cv_iso [mL/Pa].
     double Cp_iso;
     double Cv_iso;
 
@@ -227,7 +135,7 @@ public:
     //! devagar. So tem efeito onde Cp correspondente e <= 0.
     double damping;
 
-    //! Teto de |dP| por passo [kPa]. 0 desativa. E uma rede de seguranca
+    //! Teto de |dP| por passo [Pa]. 0 desativa. E uma rede de seguranca
     //! numerica, nao um parametro fisiologico: se ela dispara com
     //! frequencia, o ganho da penalidade esta alto demais para o dt.
     double dP_max;
@@ -239,9 +147,9 @@ public:
   struct ChamberState
   {
     Phase  phase;
-    double P;         //!< pressao endocardica corrente [kPa]
-    double P_art;     //!< pressao arterial do Windkessel [kPa]
-    double P_art_prev;//!< P_art do passo anterior [kPa]
+    double P;         //!< pressao endocardica corrente [Pa]
+    double P_art;     //!< pressao arterial do Windkessel [Pa]
+    double P_art_prev;//!< P_art do passo anterior [Pa]
     double V;         //!< ultimo volume medido no 3D [mL]
     double V_prev;    //!< volume medido no passo anterior [mL]
     double Vdot;      //!< dV/dt medido [mL/ms]
@@ -251,7 +159,7 @@ public:
     double V_ES;      //!< volume de fim de sistole [mL]
     double V_ref;     //!< volume da malha na configuracao de referencia [mL]
 
-    //! Complacencia diastolica MEDIDA da cavidade [mL/kPa]. Estimada no
+    //! Complacencia diastolica MEDIDA da cavidade [mL/Pa]. Estimada no
     //! fim da fase 0 e refinada no fim de cada fase 1. E o ganho do modo
     //! automatico das penalidades; ver o cabecalho da classe.
     double C_cav;
@@ -263,13 +171,10 @@ public:
 
   // ---- configuracao -------------------------------------------------
 
-  //! Le o bloco <pvloop_piecewise> da malha (se existir) e em seguida
-  //! aplica as sobrescritas de linha de comando. Uma unica funcao de
-  //! parsing, de proposito: parametro lido em dois lugares e parametro
-  //! que uma hora diverge.
-  //!
-  //! Todo atributo ausente mantem o default da Tabela 1 do artigo.
-  void configure(const std::string & mshfile);
+  //! Le o bloco <pvloop_piecewise> da malha (se existir) e em seguida as
+  //! flags -pw*. Atributo ausente = default da Tabela 1 do artigo.
+  //! rr_ms > 0 (a flag global -rr) sobrescreve o periodo do XML.
+  void configure(const std::string & mshfile, double rr_ms = -1.0);
 
   Timing       & timing() { return tim; }
   ChamberParams & lv()    { return par_lv; }
@@ -313,8 +218,8 @@ public:
 
   // ---- consultas ----------------------------------------------------
 
-  double pressure_LV() const { return st_lv.P; }   //!< [kPa]
-  double pressure_RV() const { return st_rv.P; }   //!< [kPa]
+  double pressure_LV() const { return st_lv.P; }   //!< [Pa]
+  double pressure_RV() const { return st_rv.P; }   //!< [Pa]
 
   const ChamberState & state_LV() const { return st_lv; }
   const ChamberState & state_RV() const { return st_rv; }

@@ -24,7 +24,6 @@ protected:
 
 private:
   std::string base_;
-  double      solver_ms_ = 1000.0;
 
   // parametros do <pvloop>
   double c_art_ = 0, c_ven_ = 0, Rmv_ = 0, Rven_ = 0, Rao_ = 0, Rper_ = 0;

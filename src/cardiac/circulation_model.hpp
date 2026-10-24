@@ -17,8 +17,10 @@
 //    RegazzoniCirculation  circulacao 0D fechada (Regazzoni 2022), -circ 1
 //    PiecewiseCirculation  PV loop por fases (Wang et al. 2025),   -pw 1
 //
-//  Todos os tempos desta interface estao em MILISSEGUNDOS. A conversao para
-//  a unidade do solver da EP (-tunit) acontece em um unico lugar, no laco.
+//  UNIDADES, em todo o cardiac_cycle e nos tres modelos, sem conversoes:
+//      tempo ms | comprimento um | pressao Pa | volume mL
+//  (A unica fronteira com outra unidade e o modelo celular: Cells converte o
+//  tempo para a unidade nativa de cada modelo, e CellProfile converte Ta.)
 
 //! O lado 3D, como o modelo de circulacao o enxerga: aplica pressoes nas
 //! cavidades e devolve volumes. E a UNICA porta entre os dois mundos.
@@ -27,28 +29,25 @@ class CavityMechanics
 public:
   virtual ~CavityMechanics() {}
 
-  //! UMA solucao mecanica com as pressoes dadas [unidades de pressao do modelo]
+  //! UMA solucao mecanica com as pressoes dadas [Pa]
   virtual void apply_pressures(double t_ms, double p_lv, double p_rv) = 0;
 
   virtual double volume_LV() = 0;            //!< [mL]
   virtual double volume_RV() = 0;            //!< [mL]
   virtual double volume_total() = 0;         //!< cavidade total [mL]
 
-  virtual double pressure_unit_per_mmHg() const = 0;
-  virtual double pressure_unit_per_kPa()  const = 0;
-
   //! false nos passos em que o log detalhado esta suprimido
   virtual bool verbose() const = 0;
 };
 
-//! Entradas de tempo ja resolvidas por config(), entregues a configure()
+//! Entradas de tempo lidas por config() e entregues a configure(). Tudo em ms.
 struct TimeBase
 {
-  double      solver_ms = 1000.0;  //!< ms por unidade de tempo da EP (-tunit)
-  std::string unit      = "s";     //!< "s" ou "ms"
-  double      dt        = 0.0;     //!< passo da EP [unidades do solver]
-  double      ceiling   = -1.0;    //!< -t [unidades do solver]; <= 0 se ausente
-  int         beats     = 1;       //!< -beats
+  double ceiling_ms = -1.0;  //!< -t: TETO da rodada; <= 0 se ausente
+  double step_ms    = 1.0;   //!< -dt_mech: passo de acoplamento. O legado o
+                             //!< ignora: seu passo e a amostragem da curva.
+  int    beats      = 1;     //!< -beats
+  double period_ms  = -1.0;  //!< -rr: periodo cardiaco; <= 0 = o de cada modelo
 };
 
 //! O que o laco precisa saber da rodada. Preenchido por configure().
@@ -60,6 +59,8 @@ struct RunPlan
   int    nsteps            = 0;     //!< numero de passos
   double period_ms         = 0.0;   //!< periodo cardiaco (0 = nao se aplica)
   double stim_offset_ms    = 0.0;   //!< origem do relogio do estimulo LAT
+  double ep_dt_hint_ms     = 0.0;   //!< passo da EP sugerido pelo modelo (0 = o
+                                    //!< do modelo celular); usado se -dt faltar
   int    span_margin_steps = 2;     //!< folga do span da EP, em passos da EP
   int    default_out_every = 8;     //!< default de -prc
   bool   store_stress      = false; //!< gravar tambem o campo de tensoes

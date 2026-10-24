@@ -34,24 +34,21 @@ private:
   double volume_LV() override;
   double volume_RV() override;
   double volume_total() override;
-  double pressure_unit_per_mmHg() const override { return mmHg_to_p; }
-  double pressure_unit_per_kPa()  const override { return kPa_to_p; }
   bool   verbose() const override { return !quiet_solve; }
 
-  void configure_units(const std::string &cellmodel);
   void configure_fibers();
   void configure_mef(const std::string &cellmodel);
-  void describe_active_tension_pipeline();
+  void describe_active_tension_pipeline(double tascale);
 
   // ---- um passo ----------------------------------------------------------
   //! Avanca a EP n_sub sub-passos (com estimulo LAT, se o modelo celular o
   //! pede) e atualiza Ta. Devolve true se algum no foi estimulado.
-  bool advance_cells(int n_sub, const RunPlan &plan, double ep_per_ms);
+  bool advance_cells(int n_sub, const RunPlan &plan);
 
-  //! Quantos sub-passos da EP cabem em um passo de acoplamento
-  int  cell_substeps(const RunPlan &plan, double ep_per_ms);
-
-  void ensure_ep_covers(const RunPlan &plan, double ep_per_ms);
+  //! N = quantos passos da EP cabem em um passo de acoplamento. Confere que o
+  //! relogio da EP cobre a rodada inteira (senao o modelo celular para de
+  //! integrar no meio, e Eikonal::advance() vira um no-op silencioso).
+  int  cell_substeps(const RunPlan &plan);
 
   void write_frame(int frame, const RunPlan &plan);
 
@@ -76,26 +73,23 @@ private:
   TimerSection      timer;
   std::string       filename;
 
-  // ---- unidades (entram so pela linha de comando) -----------------------
-  double kPa_to_p  = 1000.0;       //!< unidades de pressao do modelo por kPa (-kpa2p)
-  double mmHg_to_p = 133.322387415;//!< derivado de kPa_to_p: um sistema de unidades so
-
   // ---- tensao ativa ------------------------------------------------------
   double T_ref = 1.0;              //!< escala de Ta fenomenologico (<pvloop T_ref>)
-  arma::vec ta;                    //!< Ta nodal, ja em unidades de pressao e x -tascale
+  arma::vec ta;                    //!< Ta nodal, ja em unidades de pressao (ta_gain)
 
-  //! Escala GLOBAL de contratilidade (-tascale). Multiplica Ta em todos os
-  //! nos por igual, depois da conversao kPa -> unidade de pressao. E o botao
-  //! de calibracao fisiologica: muda de rodada para rodada.
+  //! Ganho ESCALAR de Ta: conversao do modelo celular para Pa vezes -tascale
+  //! (contratilidade global, o botao de calibracao). Um numero so, aplicado a
+  //! Ta e a Ka.
   //!
-  //! Distinto do ta_scale POR MATERIAL do XML, que e um atributo anatomico
-  //! fixo pela geometria (1 = miocardio contratil, 0 = plug valvar, valores
-  //! intermediarios = cicatriz). Os dois se multiplicam.
-  double ta_scale_global = 1.0;
+  //! O ta_scale do MATERIAL e outra coisa: um CAMPO por elemento fixado pela
+  //! geometria (1 = miocardio, 0 = plug valvar, intermediario = cicatriz).
+  //! Um escalar nao o substitui, e o campo nao substitui o escalar sem
+  //! reeditar o XML a cada calibracao. Os dois se multiplicam, na montagem.
+  double ta_gain = 1.0;
 
   //! Tensao ativa EFETIVA por elemento, ta_nodal * ta_scale do material.
-  //! E o que a mecanica aplica de fato; 'ta' guarda o valor BRUTO do modelo
-  //! celular, antes da escala por material.
+  //! Usada so para log e saida (a montagem recebe 'ta' e aplica o mapa por
+  //! conta propria), entao so e calculada quando alguem vai le-la.
   arma::vec ta_applied;
 
   //! Mapa do multiplicador ta_scale por elemento (constante no tempo).
@@ -155,8 +149,8 @@ private:
 
   //! Evaluate lambda_f from the current mechanical state and push it into
   //! the cell model. dt_solver is the interval since the previous call, in
-  //! the EP SOLVER's time unit (s or ms, per -tunit); it is converted to the
-  //! cell model's own unit internally and is only used for the rate.
+  //! ms (the EP solver's unit); it is converted to the cell model's own unit
+  //! internally and is only used for the rate.
   void update_fiber_stretch(double dt_solver);
 };
 

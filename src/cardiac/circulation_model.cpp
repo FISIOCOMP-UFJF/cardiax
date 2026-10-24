@@ -8,19 +8,17 @@ int CirculationModel::limit_beats(const TimeBase & tb, int beats,
                                   double period_ms, double lead_in_ms)
 {
   if (beats < 1) beats = 1;
-  if (tb.ceiling <= 0.0) return beats;
+  if (tb.ceiling_ms <= 0.0) return beats;
 
-  const double lead = lead_in_ms / tb.solver_ms;
-  const double rr   = period_ms  / tb.solver_ms;
-  const int fits = static_cast<int>(std::floor((tb.ceiling - lead) / rr + 1e-9));
+  const int fits = static_cast<int>(
+      std::floor((tb.ceiling_ms - lead_in_ms) / period_ms + 1e-9));
 
   if (fits < beats)
   {
-    std::cout << " *** -t " << tb.ceiling << " " << tb.unit
-              << " cobre apenas " << fits << " batimento(s) de " << rr
-              << " " << tb.unit;
+    std::cout << " *** -t " << tb.ceiling_ms << " ms cobre apenas " << fits
+              << " batimento(s) de " << period_ms << " ms";
     if (lead_in_ms > 0.0)
-      std::cout << " apos a fase 0 de " << lead << " " << tb.unit;
+      std::cout << " apos a fase 0 de " << lead_in_ms << " ms";
     std::cout << "; -beats " << beats << " reduzido para "
               << std::max(1, fits) << std::endl;
     beats = std::max(1, fits);

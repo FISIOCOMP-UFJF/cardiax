@@ -9,8 +9,7 @@ using std::endl;
 
 void LegacyCirculation::configure(const std::string & mshfile, const TimeBase & tb)
 {
-  base_      = mshfile;
-  solver_ms_ = tb.solver_ms;
+  base_ = mshfile;
 
   pugi::xml_document doc;
   pugi::xml_parse_result result = doc.load_file(mshfile.c_str());
@@ -44,7 +43,7 @@ void LegacyCirculation::configure(const std::string & mshfile, const TimeBase & 
   // proprias; senao so ha a do VE e o VD fica a zero.
   for (pugi::xml_node node = pv.child("step"); node; node = node.next_sibling("step"))
   {
-    curr_time_.push_back(node.attribute("time").as_double() * 1000.0);
+    curr_time_.push_back(node.attribute("time").as_double());
     p_lv_.push_back(node.attribute(biv ? "pressure_lv" : "pressure").as_double());
     p_rv_.push_back(biv ? node.attribute("pressure_rv").as_double() : 0.0);
   }
@@ -53,22 +52,34 @@ void LegacyCirculation::configure(const std::string & mshfile, const TimeBase & 
                              "nenhum <step>. Use -circ 1 ou -pw 1, ou forneca a curva.");
   cout << " pvloop curve: " << p_lv_.size() << " step(s)" << endl;
 
-  // T: do <pvloop>, ou do -t (aqui -t e a duracao, nao um teto)
-  double T = pv.attribute("total_time").as_double();
-  if (tb.ceiling > 0.0 && tb.ceiling != T)
+  // O <pvloop> usa as unidades do cardiax: total_time e <step time=...> em ms,
+  // pressoes em Pa. O passo de acoplamento e a amostragem da curva: p_lv_[i] so
+  // faz sentido se um passo avanca exatamente um <step>, entao -dt_mech nao vale
+  // aqui. A EP pode usar um passo menor (-dt): o laco faz os sub-passos.
+  const double total_ms = pv.attribute("total_time").as_double();
+  const int    size     = static_cast<int>(p_lv_.size());
+  if (size < 2 || total_ms <= 0.0)
+    throw std::runtime_error("Caminho legado: <pvloop> sem total_time/steps validos.");
+  if (total_ms < 50.0)
+    throw std::runtime_error("<pvloop total_time=\"" + std::to_string(total_ms) +
+        "\"> parece estar em SEGUNDOS. O cardiax usa ms: multiplique por 1000 "
+        "total_time e todos os <step time=...>.");
+  const double step_ms = total_ms / (size - 1);
+
+  // Duracao: a da curva, ou a de -t (aqui -t e a duracao, nao um teto)
+  double T_ms = total_ms;
+  if (tb.ceiling_ms > 0.0 && tb.ceiling_ms != T_ms)
   {
-    cout << " total_time from the mesh (" << T << ") overridden by -t "
-         << tb.ceiling << endl;
-    T = tb.ceiling;
+    cout << " total_time from the mesh (" << T_ms << " ms) overridden by -t "
+         << tb.ceiling_ms << " ms" << endl;
+    T_ms = tb.ceiling_ms;
   }
-  if (tb.dt <= 0.0)
-    throw std::runtime_error("Caminho legado: passo de tempo invalido (<= 0). "
-                             "Verifique -dt e o size do <pvloop>.");
 
   plan_.beats             = 1;
-  plan_.run_ms            = T * tb.solver_ms;
-  plan_.step_ms           = tb.dt * tb.solver_ms;
-  plan_.nsteps            = static_cast<int>(std::round(T / tb.dt));
+  plan_.run_ms            = T_ms;
+  plan_.step_ms           = step_ms;
+  plan_.nsteps            = static_cast<int>(std::round(T_ms / step_ms));
+  plan_.ep_dt_hint_ms     = step_ms;      // sem -dt: um passo da EP por passo da curva
   plan_.period_ms         = 0.0;          // o warm up sai de T
   plan_.span_margin_steps = 0;
   plan_.default_out_every = 1;            // um frame por passo, como sempre
@@ -205,7 +216,7 @@ void LegacyCirculation::advance(const StepContext & s)
          << ", p_LA = " << p_LA_[i] << endl;
 
   if (history_.is_open())
-    history_ << s.t_ms / solver_ms_ << " " << p_lv_[i] << " " << volume_[i] << " "
+    history_ << s.t_ms << " " << p_lv_[i] << " " << volume_[i] << " "
              << 0.0 << " "
              << p_art_[i] << " " << p_ven_[i] << " " << p_LA_[i] << " "
              << V_art0_ << " " << V_ven0_ << " " << V_LA0_ << " "

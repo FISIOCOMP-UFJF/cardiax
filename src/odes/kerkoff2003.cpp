@@ -39,7 +39,7 @@ void Kerkoff2003::equation(const double time,
   values[0] = ((Ea * (ls0 - lc) - 1.0) * v0);
   values[1] = 0.0; //the lat is constant
 
-  double _time = time-lat; //
+  double _time = time-(lat/1000.0); //
   double tmax = b * (ls0 - ld);
   if (_time < 0.0 || _time > tmax)
     active_stress = 0.0;

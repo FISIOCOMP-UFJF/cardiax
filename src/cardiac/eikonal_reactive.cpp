@@ -135,20 +135,14 @@ void EikonalReactive::read_eikonal_solution(const std::string &mshfile) {
 void EikonalReactive::initial_conditions() {
     tip.reset();
     cells->init();
-    cout<<"aqui 1"<<endl; 
     warmup_cells(lat);
-    cout<<"aqui 2"<<endl; 
 
     int lat_idx = cells->get_model().lat_var_index();
-    cout<<"aqui 3"<<endl; 
 
     if (lat_idx >= 0)
         cells->set_var(lat_idx, lat);
-    cout<<"aqui 4"<<endl; 
 
     cells->advance(tip.time(), timestep, stim_val, stim_nodes);
-    cout<<"aqui 5"<<endl; 
-
 }
 
 void EikonalReactive::advance() {

@@ -1,6 +1,7 @@
 #include "petsc_linear_solver.hpp"
 #include "util/command_line_args.h"
 #include <chrono>
+#include <sstream>
 
 namespace petsc
 {
@@ -16,6 +17,72 @@ void callback(const char *msg, int length)
         const char *aux = msg;
 }
 
+/* Escolha do backend, feita em runtime (o PETSc e sempre compilado; o AMGX
+   so quando encontrado pelo CMake):
+     -linsolver petsc|amgx  escolha explicita;
+     sem -linsolver         PETSc se houver opcoes -ksp_* / -pc_* no banco de
+                            opcoes do PETSc (linha de comando, PETSC_OPTIONS,
+                            .petscrc), senao AMGX quando disponivel.
+   A decisao e tomada uma vez por processo e impressa na primeira chamada. */
+bool LinearSolver::select_amgx()
+{
+  static int cached = -1;
+  if (cached >= 0) return cached == 1;
+
+#ifdef AMGX_SOLVER
+  const bool have_amgx = true;
+#else
+  const bool have_amgx = false;
+#endif
+
+  const std::string choice = CommandLineArgs::read("-linsolver", std::string("auto"),
+      "backend do solver linear: auto | petsc | amgx (auto: amgx se compilado, "
+      "petsc se houver opcoes -ksp_*/-pc_*)", "solver linear");
+
+  // Procura opcoes de KSP/PC sem prefixo no banco de opcoes do PETSc.
+  bool petsc_opts = false;
+  std::string petsc_opt_name;
+  char * all = nullptr;
+  if (PetscOptionsGetAll(NULL, &all) == 0 && all)
+  {
+    std::istringstream is(all);
+    std::string tok;
+    while (is >> tok)
+      if (tok.rfind("-ksp_", 0) == 0 || tok.rfind("-pc_", 0) == 0)
+      { petsc_opts = true; petsc_opt_name = tok; break; }
+    PetscFree(all);
+  }
+
+  bool use_amgx;
+  std::string why;
+  if (choice == "petsc")
+  { use_amgx = false; why = "-linsolver petsc"; }
+  else if (choice == "amgx")
+  {
+    use_amgx = have_amgx;
+    why = have_amgx ? "-linsolver amgx"
+                    : "-linsolver amgx pedido, mas o cardiax foi compilado sem AMGX";
+  }
+  else
+  {
+    if (choice != "auto")
+      std::cout << "[LinearSolver] WARNING: -linsolver '" << choice
+                << "' desconhecido, usando auto." << std::endl;
+    if (petsc_opts)
+    { use_amgx = false; why = "opcao PETSc " + petsc_opt_name + " na linha de comando"; }
+    else if (have_amgx)
+    { use_amgx = true;  why = "padrao (AMGX disponivel)"; }
+    else
+    { use_amgx = false; why = "padrao (compilado sem AMGX)"; }
+  }
+
+  std::cout << "[LinearSolver] backend: " << (use_amgx ? "AMGX" : "PETSc KSP")
+            << " (" << why << ")" << std::endl;
+
+  cached = use_amgx ? 1 : 0;
+  return use_amgx;
+}
+
 void LinearSolver::init()
 {
   ierr = KSPCreate(PETSC_COMM_WORLD, &_ksp);
@@ -26,7 +93,11 @@ void LinearSolver::init()
   ierr = KSPSetFromOptions (_ksp);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
 
+  _use_amgx = select_amgx();
+
 #ifdef AMGX_SOLVER
+  if (!_use_amgx) return;
+
   // AMGX_initialize() is global and must be paired with exactly one
   // AMGX_finalize(). _amgx_live counts the instances that currently hold AMGX
   // objects, so the library is brought up on the first one and taken down by
@@ -635,10 +706,9 @@ const char* LinearSolver::getConfig(const std::string &configName)
 
 
 #ifdef AMGX_SOLVER
-std::pair<PetscInt, PetscReal> LinearSolver::solve(petsc::Matrix &A,
-                                                  petsc::Vector &x,
-                                                  petsc::Vector &b,
-                                                  const double tol)
+std::pair<PetscInt, PetscReal> LinearSolver::solve_amgx(petsc::Matrix &A,
+                                                       petsc::Vector &x,
+                                                       petsc::Vector &b)
 {
     int its = 0;
     double rnorm = 0.0;
@@ -689,10 +759,9 @@ std::pair<PetscInt, PetscReal> LinearSolver::solve(petsc::Matrix &A,
 }
 
 std::pair<PetscInt, PetscReal>
-LinearSolver::solve_constant_matrix(petsc::Matrix &A,
+LinearSolver::solve_constant_matrix_amgx(petsc::Matrix &A,
                     petsc::Vector &x,
-                    petsc::Vector &b,
-                    const double tol)
+                    petsc::Vector &b)
 {
     int its = 0;
     double rnorm = 0.0;
@@ -761,13 +830,21 @@ LinearSolver::solve_constant_matrix(petsc::Matrix &A,
 }
 #endif
 
-#ifdef PETSC_SOLVER
-
-
 std::pair<PetscInt, PetscReal> LinearSolver::solve (petsc::Matrix & A,
                                                     petsc::Vector & x,
                                                     petsc::Vector & b,
                                                     const double tol)
+{
+#ifdef AMGX_SOLVER
+  if (_use_amgx) return solve_amgx(A, x, b);
+#endif
+  return solve_petsc(A, x, b, tol);
+}
+
+std::pair<PetscInt, PetscReal> LinearSolver::solve_petsc (petsc::Matrix & A,
+                                                          petsc::Vector & x,
+                                                          petsc::Vector & b,
+                                                          const double tol)
 {
   PetscInt its;
   PetscReal rnorm;
@@ -826,9 +903,11 @@ LinearSolver::solve_constant_matrix(petsc::Matrix &A,
                     petsc::Vector &b,
                     const double tol)
 {
-  return solve(A, x, b, tol);
-}
+#ifdef AMGX_SOLVER
+  if (_use_amgx) return solve_constant_matrix_amgx(A, x, b);
 #endif
+  return solve_petsc(A, x, b, tol);
+}
 
    
 void LinearSolver::use_umfpack()

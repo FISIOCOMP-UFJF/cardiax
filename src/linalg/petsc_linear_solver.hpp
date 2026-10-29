@@ -142,7 +142,26 @@ private:
   //! whatever was on the stack.
   KSP _ksp = NULL;
 
+  //! Backend escolhido em init(): AMGX (se compilado) ou KSP do PETSc.
+  bool _use_amgx = false;
+
+  //! Decide o backend da rodada a partir da linha de comando / opcoes PETSc.
+  static bool select_amgx();
+
+  std::pair<PetscInt, PetscReal> solve_petsc (petsc::Matrix & A,
+                                              petsc::Vector & x,
+                                              petsc::Vector & b,
+                                              const double tol);
+
   #ifdef AMGX_SOLVER
+      std::pair<PetscInt, PetscReal> solve_amgx (petsc::Matrix & A,
+                                                 petsc::Vector & x,
+                                                 petsc::Vector & b);
+
+      std::pair<PetscInt, PetscReal> solve_constant_matrix_amgx (petsc::Matrix & A,
+                                                                 petsc::Vector & x,
+                                                                 petsc::Vector & b);
+
       // AMGX handles. Same reasoning as _ksp, and the consequence is worse
       // here: AMGX decodes the mode (precision, host/device) from the handle
       // itself, so destroying an uninitialised one makes the library look up

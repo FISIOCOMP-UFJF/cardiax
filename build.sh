@@ -28,7 +28,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  -h, --help            Show this help message"
-            echo "  --force-petsc-solver  Force PETSc linear solver (CPU only)"
+            echo "  --force-petsc-solver  Build without AMGX (PETSc only). Not needed to run PETSc: use -linsolver petsc"
             echo ""
             exit 0
             ;;

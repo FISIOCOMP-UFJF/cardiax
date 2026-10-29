@@ -152,10 +152,12 @@ else()
 endif()
 
 # --- Defining Solver ---
+# O solver PETSc (KSP) e sempre compilado. AMGX_SOLVER apenas indica que o AMGX
+# tambem esta disponivel; a escolha entre os dois e feita em runtime
+# (-linsolver auto|petsc|amgx, ver src/linalg/petsc_linear_solver.cpp).
 if(FORCE_PETSC_SOLVER)
     # Se a flag foi ativada, ignora o AMGx completamente
-    message(STATUS "FORCE_PETSC_SOLVER is ON. Bypassing AMGx and forcing PETSC_SOLVER.")
-    add_compile_definitions(PETSC_SOLVER)
+    message(STATUS "FORCE_PETSC_SOLVER is ON. Building without AMGx (PETSc only).")
 elseif(AMGX_LIBRARY AND AMGX_INCLUDE_DIR)
     # AMGx foi found. What about CUDA?
     message(STATUS "AMGx found: ")
@@ -163,7 +165,7 @@ elseif(AMGX_LIBRARY AND AMGX_INCLUDE_DIR)
     message(STATUS "  Libraries: ${AMGX_LIBRARY} ")
 
     if(CUDA_FOUND_MANUAL)
-        message(STATUS "AmgX and CUDA found. Enabling AMGX_SOLVER.")
+        message(STATUS "AmgX and CUDA found. Enabling AMGX_SOLVER (PETSc remains available at runtime).")
         
         # Define AMGX_SOLVER 
         add_compile_definitions(AMGX_SOLVER)
@@ -177,14 +179,11 @@ elseif(AMGX_LIBRARY AND AMGX_INCLUDE_DIR)
         )
         
     else()
-        message(WARNING "AMGx was found, but CUDA libraries are missing! AMGx requires CUDA to work properly.")
-        add_compile_definitions(PETSC_SOLVER)
+        message(WARNING "AMGx was found, but CUDA libraries are missing! AMGx requires CUDA to work properly. Building PETSc only.")
     endif()
 else()
     # AMGx not founded. Fallback to PETSC_SOLVER.
-    message(STATUS "AmgX not found. Falling back to PETSC_SOLVER.")
-    
-    add_compile_definitions(PETSC_SOLVER)
+    message(STATUS "AmgX not found. Building PETSc only.")
 endif()
 
 

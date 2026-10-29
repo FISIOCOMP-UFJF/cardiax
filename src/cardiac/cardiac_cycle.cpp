@@ -169,6 +169,16 @@ void CardiacElectromechanic::config(const std::string &basename)
       "Global contractility scale (multiplies Ta at every node)", "mechanics");
   ta_gain = cell.ta_unit * tascale;
 
+  // Ta prescrita: a tabela ja esta em Pa, entao o ganho e so o -tascale
+  const std::string ta_curve_file = CommandLineArgs::read("-ta_curve", "",
+      "Prescribed Ta(t) table (t [ms], Ta [Pa]), repeated every period; replaces"
+      " the cell model's Ta", "mechanics");
+  if (!ta_curve_file.empty())
+  {
+    ta_curve.load(ta_curve_file, plan.period_ms);
+    ta_gain = tascale;
+  }
+
   elas.active_scale_field(ta_scale_map);     // ta_scale do material, por elemento
   describe_active_tension_pipeline(tascale);
 
@@ -202,9 +212,13 @@ void CardiacElectromechanic::describe_active_tension_pipeline(double tascale)
   if (ta_scale_map.n_elem == 0) return;
 
   const double smax = ta_scale_map.max();
-  cout << "\n Active tension pipeline:\n"
-       << "   Ta (cell model) x " << cell.ta_unit << " (-> Pa) x " << tascale
-       << " (-tascale) = x" << ta_gain << " at every node  -> 'active_stress'\n"
+  cout << "\n Active tension pipeline:\n";
+  if (ta_curve.active())
+    cout << "   Ta (-ta_curve, Pa) x " << tascale << " (-tascale) at every node  -> 'active_stress'\n";
+  else
+    cout << "   Ta (cell model) x " << cell.ta_unit << " (-> Pa) x " << tascale
+         << " (-tascale) = x" << ta_gain << " at every node  -> 'active_stress'\n";
+  cout
        << "   x ta_scale of the element's material, in [" << ta_scale_map.min()
        << ", " << smax << "] (per element)  -> 'Ta_applied'" << endl;
 
@@ -291,7 +305,7 @@ void CardiacElectromechanic::solve()
       cout << endl;
     }
 
-    if (i == 0 && arma::max(arma::abs(ta)) == 0.0)
+    if (i == 0 && !ta_curve.active() && arma::max(arma::abs(ta)) == 0.0)
     {
       cout << " *** WARNING: the active tension is zero at the start of the run.\n"
            << "     With Kerckhoffs, Ta is non-zero only for lat <= t <= lat + 483 ms,"
@@ -417,7 +431,10 @@ void CardiacElectromechanic::update_active_tension()
 {
   // Quem sabe de onde vem Ta e o CellProfile: fenomenologicos (Kerckhoffs) o
   // publicam como valor monitorado 0; ionicos (ToRORdLand), no estado 49.
-  if (cell.ta_var < 0)
+  // Com -ta_curve, a Ta e a da tabela, igual em todos os nos.
+  if (ta_curve.active())
+    ta.fill(ta_curve(ephy.get_time_parameters().time()));
+  else if (cell.ta_var < 0)
     ephy.get_cells().get_monitored_values(0, ta);
   else
     ephy.get_cells().get_var(cell.ta_var, ta);

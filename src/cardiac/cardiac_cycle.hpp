@@ -87,6 +87,9 @@ private:
   //! reeditar o XML a cada calibracao. Os dois se multiplicam, na montagem.
   double ta_gain = 1.0;
 
+  //! Ta prescrita (-ta_curve): quando ativa, substitui a Ta do modelo celular
+  TaCurve ta_curve;
+
   //! Tensao ativa EFETIVA por elemento, ta_nodal * ta_scale do material.
   //! Usada so para log e saida (a montagem recebe 'ta' e aplica o mapa por
   //! conta propria), entao so e calculada quando alguem vai le-la.

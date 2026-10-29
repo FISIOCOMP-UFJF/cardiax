@@ -1,6 +1,9 @@
 #include "cell_coupling.hpp"
+#include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include "util/command_line_args.h"
 #include "odes/torord_land.hpp"   // land_active_stiffness()
@@ -176,4 +179,55 @@ void LandCoupling::report_negative_ta(const Cells & cells, const arma::vec & ta,
            << rate_clip << "): tightening the clip alone"
            << " will not fix this." << endl;
   }
+}
+// ======================================================================
+//  Tensao ativa prescrita (-ta_curve)
+// ======================================================================
+
+void TaCurve::load(const std::string & path, double period_ms)
+{
+  std::ifstream in(path);
+  if (!in)
+    throw std::runtime_error("-ta_curve: nao foi possivel abrir '" + path + "'");
+
+  t_.clear();
+  ta_.clear();
+  std::string line;
+  while (std::getline(in, line))
+  {
+    const std::size_t c = line.find('#');
+    if (c != std::string::npos) line.erase(c);
+    std::istringstream ss(line);
+    double t, ta;
+    if (!(ss >> t >> ta)) continue;          // linha vazia ou so comentario
+    if (!t_.empty() && t <= t_.back())
+      throw std::runtime_error("-ta_curve: o tempo tem de ser crescente em '" + path + "'");
+    t_.push_back(t);
+    ta_.push_back(ta);
+  }
+  if (t_.size() < 2)
+    throw std::runtime_error("-ta_curve: '" + path + "' precisa de pelo menos 2 linhas (t [ms], Ta [Pa])");
+
+  period_ = period_ms;
+
+  cout << " Active tension: PRESCRIBED from '" << path << "' (" << t_.size()
+       << " points, t = " << t_.front() << ".." << t_.back() << " ms, Ta max = "
+       << *std::max_element(ta_.begin(), ta_.end()) << " Pa)" << endl;
+  if (period_ > 0.0)
+    cout << "   repeated every " << period_ << " ms; the cell model is still integrated"
+         << " but its Ta is ignored" << endl;
+}
+
+double TaCurve::operator()(double t_ms) const
+{
+  double t = t_ms;
+  if (period_ > 0.0)
+    t = std::fmod(std::fmod(t, period_) + period_, period_);
+
+  if (t <= t_.front()) return ta_.front();
+  if (t >= t_.back())  return ta_.back();
+
+  const std::size_t i = std::upper_bound(t_.begin(), t_.end(), t) - t_.begin();
+  const double w = (t - t_[i - 1]) / (t_[i] - t_[i - 1]);
+  return (1.0 - w) * ta_[i - 1] + w * ta_[i];
 }

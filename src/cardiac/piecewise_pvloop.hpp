@@ -32,13 +32,16 @@
  *              eletrica dispara neste instante (activation_time()).
  *  2 IVC       contracao isovolumetrica: PD sobre a pressao, V travado em V_ED.
  *              Sai quando P >= limiar de ejecao (P_ejection, ou P_art).
- *  3 EJECTION  Windkessel de 2 elementos: C_art dP_art/dt + P_art/R_art = -dV/dt,
- *              P = P_art. Integrado com C_stab (estabilizacao, ver abaixo).
+ *  3 EJECTION  Windkessel de 3 elementos: C_art dP_art/dt + P_art/R_art = Q,
+ *              P = P_art + R_c Q, Q = -dV/dt. R_c = 0 (default) e o de 2
+ *              elementos do artigo. Integrado com C_stab (estabilizacao, ver abaixo).
  *              Sai quando o fluxo reverte (dV/dt > 0), ou P <= P_atrium.
  *  4 IVR       relaxamento isovolumetrico: PD com V travado em V_ES.
  *              Sai quando P <= P_atrium.
- *  5 PASSIVE   enchimento passivo: PD devolve o volume a V_DS. Sai pelo relogio,
- *              no inicio da fase 1 do batimento seguinte.
+ *  5 PASSIVE   enchimento passivo: PD devolve o volume a V_DS, ou, com fill_rate > 0,
+ *              segue V = V_entrada + fill_rate (t - t_entrada) (vazao prescrita,
+ *              como o PrescribedInflow do pulse). Sai pelo relogio, no inicio da
+ *              fase 1 do batimento seguinte.
  *
  *  ESTABILIZACAO DA EJECAO. Com dV/dt do passo anterior, a equacao da fase 3
  *  tomada ao pe da letra e instavel (ganho C_cav/C_art > 1 nos numeros do
@@ -112,6 +115,11 @@ public:
     double C_art;       //!< complacencia arterial [mL/Pa]
     double R_art;       //!< resistencia arterial [Pa*ms/mL]
 
+    //! Impedancia caracteristica [Pa*ms/mL]: resistencia em serie entre a
+    //! cavidade e a complacencia arterial, P = P_art + R_c Q. 0 = Windkessel
+    //! de 2 elementos (o do artigo).
+    double R_c;
+
     //! Complacencia de ESTABILIZACAO da fase de ejecao [mL/Pa].
     //! <= 0 (default) = usa a complacencia medida C_cav. Ver a nota sobre
     //! a fase 3 no cabecalho da classe. Nao altera o estado estacionario,
@@ -135,6 +143,16 @@ public:
     //! devagar. So tem efeito onde Cp correspondente e <= 0.
     double damping;
 
+    //! Antecipacao no modo automatico das penalidades (fases 2 e 4): alem
+    //! do desvio de volume, compensa a parte de dV/dt que NAO vem da variacao
+    //! de pressao do passo anterior (encurtamento ou relaxamento pela Ta),
+    //!     dP = -[ (V - V_alvo) + dt (dV/dt - C_cav dP_ant/dt) ] / C_cav.
+    //! Substitui o termo de damping. Estavel enquanto C_real/C_cav < ~4/3.
+    bool feedforward;
+
+    //! Vazao de enchimento da fase 5 [mL/ms]. <= 0 = PD de volta a V_DS.
+    double fill_rate;
+
     //! Teto de |dP| por passo [Pa]. 0 desativa. E uma rede de seguranca
     //! numerica, nao um parametro fisiologico: se ela dispara com
     //! frequencia, o ganho da penalidade esta alto demais para o dt.
@@ -149,15 +167,16 @@ public:
     Phase  phase;
     double P;         //!< pressao endocardica corrente [Pa]
     double P_art;     //!< pressao arterial do Windkessel [Pa]
-    double P_art_prev;//!< P_art do passo anterior [Pa]
+    double P_prev;    //!< pressao da cavidade no passo anterior [Pa]
     double V;         //!< ultimo volume medido no 3D [mL]
     double V_prev;    //!< volume medido no passo anterior [mL]
     double Vdot;      //!< dV/dt medido [mL/ms]
-    double V_lock;    //!< volume travado nas fases 2 e 4 [mL]
+    double V_lock;    //!< volume travado nas fases 2 e 4; volume de entrada na 5 [mL]
     double V_DS;      //!< volume de diastase efetivo [mL]
     double V_ED;      //!< volume de fim de diastole [mL]
     double V_ES;      //!< volume de fim de sistole [mL]
     double V_ref;     //!< volume da malha na configuracao de referencia [mL]
+    bool   has_ejected; //!< ja houve ao menos uma ejecao (-pwwk 2)
 
     //! Complacencia diastolica MEDIDA da cavidade [mL/Pa]. Estimada no
     //! fim da fase 0 e refinada no fim de cada fase 1. E o ganho do modo
@@ -199,6 +218,10 @@ public:
   //!        a fase 3 comeca quando P >= P_art. E o comportamento
   //!        fisiologico da aorta, e faz a pressao diastolica arterial
   //!        emergir do modelo em vez de ser prescrita.
+  //!
+  //! hold_until_ejection (-pwwk 2): como true, mas P_art so comeca a drenar
+  //!        depois da PRIMEIRA ejecao da cavidade (P_art = P_ejection ate la),
+  //!        como o pulse.cycle (has_ejected).
   void set_continuous_windkessel(bool c) { continuous_wk = c; }
 
   // ---- ciclo de vida ------------------------------------------------
@@ -261,6 +284,7 @@ private:
 
   bool rate_form;
   bool continuous_wk;
+  bool wk_hold_until_ejection;
 
   //! Instante em que comeca a fase 1 do batimento b [ms].
   double filling_start(int beat) const
@@ -286,7 +310,8 @@ private:
   //! 5). Escolhe entre o modo automatico (Cp <= 0) e a formula literal do
   //! artigo, e ja aplica o teto dP_max.
   double penalty_dP(ChamberState & st, const ChamberParams & p,
-                    double V_target, double Cp, double Cv, double dt) const;
+                    double V_target, double Cp, double Cv, double dt,
+                    bool allow_ff = true) const;
 
   //! Complacencia diastolica a partir de dois pontos (V,P) da propria
   //! malha. Devolve 0 se os pontos nao forem utilizaveis.

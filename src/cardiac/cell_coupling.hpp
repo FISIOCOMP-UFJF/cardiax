@@ -2,6 +2,7 @@
 #define CELL_COUPLING_HPP
 
 #include <string>
+#include <vector>
 #include <armadillo>
 #include "odes/cells.hpp"
 
@@ -78,6 +79,30 @@ private:
   //! Buffers do diagnostico, membros para nao realocar quatro vetores nodais
   //! a cada chamada.
   arma::vec buf_xs_, buf_xw_, buf_zetas_, buf_zetaw_;
+};
+
+//! Tensao ativa PRESCRITA: uma curva Ta(t) tabelada, igual em todos os nos,
+//! que substitui a Ta do modelo celular (-ta_curve <arquivo>). Serve para
+//! comparar a mecanica e a circulacao com outro codigo usando exatamente a
+//! mesma ativacao.
+//!
+//! Arquivo: duas colunas, t [ms] e Ta [Pa], t crescente; linhas com '#' sao
+//! comentario. A curva e repetida com o periodo cardiaco (t mod periodo);
+//! fora da faixa da tabela vale o valor da ponta mais proxima.
+class TaCurve
+{
+public:
+  //! Le a tabela. period_ms <= 0 desliga a repeticao.
+  void load(const std::string & path, double period_ms);
+
+  bool active() const { return !t_.empty(); }
+
+  //! Ta [Pa] no instante t [ms], interpolada linearmente
+  double operator()(double t_ms) const;
+
+private:
+  std::vector<double> t_, ta_;
+  double period_ = -1.0;
 };
 
 #endif

@@ -2,7 +2,9 @@
 #include <cassert>
 #include <cmath>
 #include <algorithm>
+#include <cstdio>
 #include <stdexcept>
+#include <highfive/highfive.hpp>
 #include "util/command_line_args.h"
 #include "util/pugixml.hpp"
 #include "cardiac_cycle.hpp"
@@ -140,6 +142,7 @@ void CardiacElectromechanic::config(const std::string &basename)
 
   elas.config(mesh, mesh);
   elas.set_output_step(false);
+  elas.save_checkpoint(false);   // o checkpoint e do cardiac_cycle, nao por incremento
   elas.init();
 
   // Frames: +2 porque o frame 0 sai antes de qualquer solucao
@@ -183,6 +186,12 @@ void CardiacElectromechanic::config(const std::string &basename)
   describe_active_tension_pipeline(tascale);
 
   ephy.read_eikonal_solution(basename);      // LAT por no, em ms
+
+  checkpoint_interval = CommandLineArgs::read("-save_state", -1.0,
+      "Save a checkpoint every N ms (checkpoint_t_<t>ms.h5 in the CWD)", "checkpoint");
+  restore_file = CommandLineArgs::read("-restore", std::string(""),
+      "Restart from a checkpoint written by -save_state (same flags and mesh)",
+      "checkpoint");
 
   if (CommandLineArgs::read("-dumpflags", 1,
         "print all flags used after config()", "Diagnosis"))
@@ -260,13 +269,24 @@ void CardiacElectromechanic::solve()
          << " (Kerckhoffs), so activation does NOT honour the phase offset;"
          << " consider shifting the mesh LAT by " << plan.stim_offset_ms << " ms." << endl;
 
+  // Com -restore, o estado inteiro (celulas, mecanica, circulacao, laco) vem
+  // do checkpoint e sobrescreve o que foi inicializado acima
   int frame = 0;
-  write_frame(frame, plan);
+  int first = 0;
+  double t_ms = 0.0;
+  if (!restore_file.empty())
+    first = restore_checkpoint(restore_file, t_ms, frame);
+  else
+    write_frame(frame, plan);
+
+  // Checkpoint a cada N passos de acoplamento
+  const int checkpoint_rate = (checkpoint_interval > 0.0)
+      ? std::max(1, static_cast<int>(std::round(checkpoint_interval / plan.step_ms))) : -1;
+
   cout << " Output every " << out_every << " step(s), log every " << log_every
        << " step(s)\n\n Legend: [ODE] cell model" << endl;
 
-  double t_ms = 0.0;
-  for (int i = 0; i < plan.nsteps; i++)
+  for (int i = first; i < plan.nsteps; i++)
   {
     const bool log_now = (i % log_every == 0) || (i == plan.nsteps - 1);
     quiet_solve = !log_now;
@@ -322,6 +342,10 @@ void CardiacElectromechanic::solve()
     // 3. Saida
     if (i % out_every == 0 && frame < n_frames - 1)
       write_frame(++frame, plan);
+
+    // 4. Checkpoint
+    if (checkpoint_rate > 0 && (i + 1) % checkpoint_rate == 0)
+      save_checkpoint(i, t_ms, frame);
   }
 
   quiet_solve = false;
@@ -392,6 +416,143 @@ void CardiacElectromechanic::write_frame(int frame, const RunPlan &plan)
   elas.output_vtk(0, frame);
   if (plan.store_stress) elas.storeStress(frame);
   save_node_fields(frame);
+}
+
+// ======================================================================
+//  Checkpoint (-save_state / -restore)
+// ======================================================================
+
+void CardiacElectromechanic::save_checkpoint(int step, double t_ms, int frame)
+{
+  timer.enter("Save Checkpoint");
+  const TimeParameters &tip = ephy.get_time_parameters();
+  const Cells &cells = ephy.get_cells();
+
+  // 1. EP + mecanica (x, fext0), como no electromech
+  arma::vec vm(elas.get_mesh().get_n_points());
+  cells.get_var(0, vm);
+  elas.save_coupled_checkpoint(tip.it(), tip.time(), vm.memptr(),
+                               cells.get_state_vars(), cells.get_ode_size());
+
+  // 2. O resto, no mesmo arquivo. O nome e o de WriterHDF5::write_coupled_checkpoint.
+  char time_buf[64];
+  std::snprintf(time_buf, sizeof(time_buf), "%.2f", tip.time());
+  const std::string file = "checkpoint_t_" + std::string(time_buf) + "ms.h5";
+  cout << " Saving checkpoint at t = " << t_ms << " ms (step " << step + 1 << "/"
+       << circulation->plan().nsteps << ") -> " << file << endl;
+
+  HighFive::File h5(file, HighFive::File::ReadWrite);
+
+  // Mecanica: o que save_coupled_checkpoint nao grava. eL entra na pressao da
+  // proxima solucao; F e lido por update_fiber_stretch() ANTES dela.
+  const std::vector<arma::mat33*> &vecF = elas.get_vec_F();
+  std::vector<double> F(9 * vecF.size());
+  for (size_t k = 0; k < vecF.size(); k++)
+    std::copy(vecF[k]->memptr(), vecF[k]->memptr() + 9, F.begin() + 9 * k);
+  HighFive::Group gm = h5.getGroup("/mechanics");
+  gm.createDataSet("lagrange_multipliers",
+                   arma::conv_to<std::vector<double>>::from(elas.lagrange_multipliers()));
+  gm.createDataSet("F", F);
+
+  // Laco e realimentacao mecano-eletrica
+  HighFive::Group gc = h5.createGroup("/cardiac_cycle");
+  gc.createAttribute("next_step", step + 1);
+  gc.createAttribute("t_ms", t_ms);
+  gc.createAttribute("frame", frame);
+  gc.createAttribute("circulation", std::string(circulation->name()));
+  gc.createAttribute("lambda_step_count", lambda_step_count);
+  gc.createAttribute("lambda_prev_valid", lambda_prev_valid ? 1 : 0);
+  const std::pair<const char*, const arma::vec*> mef[] = {
+    { "lambda_node", &lambda_node }, { "lambda_raw", &lambda_raw },
+    { "lambda_prev", &lambda_prev }, { "lambda_rate_node", &lambda_rate_node } };
+  for (const auto &m : mef)
+    if (m.second->n_elem > 0)
+      gc.createDataSet(m.first, arma::conv_to<std::vector<double>>::from(*m.second));
+
+  // Circulacao
+  CirculationModel::State st;
+  circulation->save_state(st);
+  HighFive::Group gq = h5.createGroup("/circulation");
+  for (const auto &kv : st)
+    gq.createDataSet(kv.first, kv.second);
+
+  timer.leave();
+}
+
+int CardiacElectromechanic::restore_checkpoint(const std::string &file, double &t_ms, int &frame)
+{
+  cout << "\n Restoring checkpoint " << file << endl;
+
+  HighFive::File h5(file, HighFive::File::ReadOnly);
+  if (!h5.exist("/cardiac_cycle"))
+    throw std::runtime_error("Checkpoint " + file + " was not written by cardiac_cycle"
+                             " (no /cardiac_cycle group)");
+  HighFive::Group gc = h5.getGroup("/cardiac_cycle");
+
+  std::string model;
+  gc.getAttribute("circulation").read(model);
+  if (model != circulation->name())
+    throw std::runtime_error("Checkpoint written with circulation model '" + model
+                             + "', but this run uses '" + circulation->name() + "'");
+
+  const Cells &cells = ephy.get_cells();
+  const std::vector<size_t> sv = h5.getDataSet("/ep/state_variables").getSpace().getDimensions();
+  if (sv.size() != 2 || sv[0] * sv[1] != cells.get_size() || sv[1] != cells.get_ode_size())
+    throw std::runtime_error("Checkpoint cell states do not match this mesh/cell model");
+
+  // 1. EP + mecanica, como no electromech
+  int ep_step;
+  double ep_time;
+  arma::vec vm(sv[0]);
+  elas.read_ep_checkpoint(file, vm.memptr(), cells.get_state_vars(), ep_step, ep_time);
+  elas.restore_checkpoint(file);
+  elas.lc.reset();
+  const_cast<TimeParameters &>(ephy.get_time_parameters()).restore_state(ep_step, ep_time);
+
+  HighFive::Group gm = h5.getGroup("/mechanics");
+  std::vector<double> eL, F;
+  gm.getDataSet("lagrange_multipliers").read(eL);
+  gm.getDataSet("F").read(F);
+  const std::vector<arma::mat33*> &vecF = elas.get_vec_F();
+  if (eL.size() != elas.lagrange_multipliers().n_elem || F.size() != 9 * vecF.size())
+    throw std::runtime_error("Checkpoint mechanics does not match this mesh");
+  elas.lagrange_multipliers() = arma::vec(eL);
+  for (size_t k = 0; k < vecF.size(); k++)
+    std::copy(F.begin() + 9 * k, F.begin() + 9 * (k + 1), vecF[k]->memptr());
+
+  // 2. Laco e realimentacao mecano-eletrica
+  int next_step, prev_valid;
+  gc.getAttribute("next_step").read(next_step);
+  gc.getAttribute("t_ms").read(t_ms);
+  gc.getAttribute("frame").read(frame);
+  gc.getAttribute("lambda_step_count").read(lambda_step_count);
+  gc.getAttribute("lambda_prev_valid").read(prev_valid);
+  lambda_prev_valid = (prev_valid != 0);
+  const std::pair<const char*, arma::vec*> mef[] = {
+    { "lambda_node", &lambda_node }, { "lambda_raw", &lambda_raw },
+    { "lambda_prev", &lambda_prev }, { "lambda_rate_node", &lambda_rate_node } };
+  for (const auto &m : mef)
+    if (gc.exist(m.first))
+    {
+      std::vector<double> v;
+      gc.getDataSet(m.first).read(v);
+      *m.second = arma::vec(v);
+    }
+
+  // 3. Circulacao (depois de begin(), que ela sobrescreve)
+  CirculationModel::State st;
+  HighFive::Group gq = h5.getGroup("/circulation");
+  for (const std::string &name : gq.listObjectNames())
+    gq.getDataSet(name).read(st[name]);
+  circulation->restore_state(st);
+
+  // Ta e Ka do estado restaurado (as mesmas do fim do passo salvo)
+  update_active_tension();
+
+  cout << " Restarting at t = " << t_ms << " ms, step " << next_step + 1 << "/"
+       << circulation->plan().nsteps << " (EP t = " << ep_time << " ms), frame "
+       << frame << endl;
+  return next_step;
 }
 
 // ======================================================================

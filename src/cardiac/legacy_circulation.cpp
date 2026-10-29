@@ -228,3 +228,30 @@ void LegacyCirculation::end()
 {
   if (history_.is_open()) history_.close();
 }
+void LegacyCirculation::save_state(State & st) const
+{
+  // Historicos inteiros: o Adams-Bashforth e as vazoes leem passos anteriores,
+  // e p_lv_ guarda tambem o resto da curva tabelada.
+  st["p_lv"]      = p_lv_;
+  st["p_rv"]      = p_rv_;
+  st["p_art"]     = p_art_;
+  st["p_ven"]     = p_ven_;
+  st["p_LA"]      = p_LA_;
+  st["volume"]    = volume_;
+  st["volume_rv"] = volume_rv_;
+  st["reservoirs"] = { V_LP0_, V_art0_, V_ven0_, V_LA0_ };
+}
+
+void LegacyCirculation::restore_state(const State & st)
+{
+  p_lv_      = state_entry(st, "p_lv");
+  p_rv_      = state_entry(st, "p_rv");
+  p_art_     = state_entry(st, "p_art");
+  p_ven_     = state_entry(st, "p_ven");
+  p_LA_      = state_entry(st, "p_LA");
+  volume_    = state_entry(st, "volume");
+  volume_rv_ = state_entry(st, "volume_rv");
+
+  const std::vector<double> & r = state_entry(st, "reservoirs");
+  V_LP0_ = r.at(0); V_art0_ = r.at(1); V_ven0_ = r.at(2); V_LA0_ = r.at(3);
+}

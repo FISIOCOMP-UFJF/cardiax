@@ -247,6 +247,10 @@ public:
   const ChamberState & state_LV() const { return st_lv; }
   const ChamberState & state_RV() const { return st_rv; }
 
+  //! Repoe o estado das cavidades (restauracao de checkpoint)
+  void set_states(const ChamberState & lv, const ChamberState & rv)
+  { st_lv = lv; st_rv = rv; }
+
   //! Instante da ativacao eletrica do batimento b (0-based), em ms:
   //! o fim da fase 1, que e onde o artigo posiciona o inicio da fase 2.
   double activation_time(int beat) const

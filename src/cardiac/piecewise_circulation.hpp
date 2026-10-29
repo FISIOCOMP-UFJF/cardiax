@@ -24,6 +24,9 @@ public:
   void advance(const StepContext & s) override;
   void end() override;
 
+  void save_state(State & st) const override;
+  void restore_state(const State & st) override;
+
 protected:
   void do_begin() override;
 

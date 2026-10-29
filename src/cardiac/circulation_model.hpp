@@ -2,7 +2,9 @@
 #define CIRCULATION_MODEL_HPP
 
 #include <fstream>
+#include <map>
 #include <string>
+#include <vector>
 
 // ======================================================================
 //  Interface entre o laco do cardiac_cycle e os modelos de circulacao
@@ -102,6 +104,14 @@ public:
   //! Fim da rodada: resumo e fechamento de arquivos
   virtual void end() {}
 
+  //! Estado para o checkpoint (-save_state / -restore): nome -> valores.
+  //! Tudo o que o modelo precisa para continuar a rodada exatamente de onde
+  //! parou. restore_state() e chamado DEPOIS de begin(), e sobrescreve o
+  //! que begin() inicializou.
+  typedef std::map<std::string, std::vector<double> > State;
+  virtual void save_state(State & st) const = 0;
+  virtual void restore_state(const State & st) = 0;
+
 protected:
   virtual void do_begin() = 0;
 
@@ -117,6 +127,10 @@ protected:
 
   //! Abre o arquivo de historico; header vazio = sem cabecalho
   void open_history(const std::string & path, const std::string & header);
+
+  //! Valores de `key` no estado lido do checkpoint (excecao se faltar)
+  static const std::vector<double> & state_entry(const State & st,
+                                                 const std::string & key);
 
   RunPlan           plan_;
   CavityMechanics * mech_ = nullptr;

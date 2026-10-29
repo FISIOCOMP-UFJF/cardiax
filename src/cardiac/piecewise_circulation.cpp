@@ -2,9 +2,39 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <stdexcept>
 
 using std::cout;
 using std::endl;
+
+namespace
+{
+typedef PiecewisePVLoop::ChamberState ChamberState;
+
+// ChamberState <-> vetor, campo a campo, na ordem da declaracao
+std::vector<double> pack(const ChamberState & s)
+{
+  return { double(s.phase), s.P, s.P_art, s.P_prev, s.V, s.V_prev, s.Vdot,
+           s.V_lock, s.V_DS, s.V_ED, s.V_ES, s.V_ref, s.has_ejected ? 1.0 : 0.0,
+           s.C_cav, s.t_phase, double(s.n_clipped) };
+}
+
+ChamberState unpack(const std::vector<double> & v)
+{
+  if (v.size() != 16)
+    throw std::runtime_error("Checkpoint: estado de cavidade do -pw com tamanho errado");
+  ChamberState s;
+  s.phase  = static_cast<PiecewisePVLoop::Phase>(static_cast<int>(v[0]));
+  s.P      = v[1];  s.P_art  = v[2];  s.P_prev = v[3];
+  s.V      = v[4];  s.V_prev = v[5];  s.Vdot   = v[6];
+  s.V_lock = v[7];  s.V_DS   = v[8];  s.V_ED   = v[9];
+  s.V_ES   = v[10]; s.V_ref  = v[11];
+  s.has_ejected = (v[12] != 0.0);
+  s.C_cav  = v[13]; s.t_phase = v[14];
+  s.n_clipped = static_cast<int>(v[15]);
+  return s;
+}
+} // namespace
 
 void PiecewiseCirculation::configure(const std::string & mshfile, const TimeBase & tb)
 {
@@ -114,4 +144,19 @@ void PiecewiseCirculation::end()
   if (slv.V_ES >= slv.V_ED)
     cout << " *** ATENCAO: V_ES >= V_ED no VE: nao houve ejecao liquida. Verifique"
          << " -tascale, o limiar -pwpej e se a ativacao caiu no fim da fase 1." << endl;
+}
+void PiecewiseCirculation::save_state(State & st) const
+{
+  st["lv"]       = pack(pw_.state_LV());
+  st["rv"]       = pack(pw_.state_RV());
+  st["counters"] = { double(solves_), double(beat_reported_) };
+}
+
+void PiecewiseCirculation::restore_state(const State & st)
+{
+  pw_.set_states(unpack(state_entry(st, "lv")), unpack(state_entry(st, "rv")));
+
+  const std::vector<double> & c = state_entry(st, "counters");
+  solves_        = static_cast<int>(c.at(0));
+  beat_reported_ = static_cast<int>(c.at(1));
 }

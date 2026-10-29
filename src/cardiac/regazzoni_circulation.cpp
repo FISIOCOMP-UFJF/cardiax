@@ -237,3 +237,31 @@ void RegazzoniCirculation::pressures_for_volumes(double Vlv_target, double Vrv_t
   plv = p_lv_cur_;
   prv = p_rv_cur_;
 }
+void RegazzoniCirculation::save_state(State & st) const
+{
+  Regazzoni2020 & c = const_cast<Regazzoni2020 &>(circ_);
+  std::vector<double> y(Regazzoni2020::NSTATE);
+  for (int k = 0; k < Regazzoni2020::NSTATE; k++) y[k] = c[k];
+
+  st["y"]        = y;
+  st["clock"]    = { t_ms_, p_lv_cur_, p_rv_cur_ };
+  st["Jpv"]      = { Jpv_(0,0), Jpv_(1,0), Jpv_(0,1), Jpv_(1,1), Jpv_valid_ ? 1.0 : 0.0 };
+  st["counters"] = { double(solves_) };
+}
+
+void RegazzoniCirculation::restore_state(const State & st)
+{
+  const std::vector<double> & y = state_entry(st, "y");
+  if (y.size() != Regazzoni2020::NSTATE)
+    throw std::runtime_error("Checkpoint: estado do Regazzoni com tamanho errado");
+  for (int k = 0; k < Regazzoni2020::NSTATE; k++) circ_[k] = y[k];
+
+  const std::vector<double> & c = state_entry(st, "clock");
+  t_ms_ = c.at(0); p_lv_cur_ = c.at(1); p_rv_cur_ = c.at(2);
+
+  const std::vector<double> & J = state_entry(st, "Jpv");
+  Jpv_(0,0) = J.at(0); Jpv_(1,0) = J.at(1); Jpv_(0,1) = J.at(2); Jpv_(1,1) = J.at(3);
+  Jpv_valid_ = (J.at(4) != 0.0);
+
+  solves_ = static_cast<int>(state_entry(st, "counters").at(0));
+}

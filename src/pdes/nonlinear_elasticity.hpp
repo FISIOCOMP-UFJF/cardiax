@@ -78,6 +78,10 @@ public:
   Mesh & get_mesh() { return msh; }
   const std::vector<arma::mat33*> & get_vec_F() { return vecF; };
 
+  //! Multiplicadores de Lagrange por elemento. Mudam a cada solucao
+  //! (al_augment) e entram na pressao da proxima: fazem parte do checkpoint.
+  arma::vec & lagrange_multipliers() { return eL; }
+
   //! Fibre stretch lambda_f = sqrt(I4f) = sqrt(f0.C.f0) = ||F f0||, one
   //! value per ELEMENT (averaged over its integration points). Uses the
   //! deformation gradient left in vecF by the last solve, so it is only

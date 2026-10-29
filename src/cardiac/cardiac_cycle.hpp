@@ -52,6 +52,19 @@ private:
 
   void write_frame(int frame, const RunPlan &plan);
 
+  // ---- checkpoint (-save_state / -restore) -------------------------------
+  //! Grava o estado completo ao fim do passo `step` (0-based): EP e mecanica
+  //! pelo mesmo caminho do electromech (save_coupled_checkpoint), e depois,
+  //! no mesmo arquivo, o que so o cardiac_cycle tem (laco, MEF, circulacao).
+  void save_checkpoint(int step, double t_ms, int frame);
+
+  //! Le um checkpoint de save_checkpoint(). Chamado depois de begin().
+  //! Devolve o proximo passo do laco e repoe t_ms e frame.
+  int  restore_checkpoint(const std::string &file, double &t_ms, int &frame);
+
+  double      checkpoint_interval = -1.0;  //!< -save_state [ms]; <= 0 desliga
+  std::string restore_file;                //!< -restore
+
   // ---- tensao ativa ------------------------------------------------------
   //! Le Ta do modelo celular para `ta` e deriva ta_applied e ka
   void update_active_tension();

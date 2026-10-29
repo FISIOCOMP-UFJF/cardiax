@@ -3,6 +3,7 @@
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <stdexcept>
 
 int CirculationModel::limit_beats(const TimeBase & tb, int beats,
                                   double period_ms, double lead_in_ms)
@@ -45,4 +46,13 @@ void CirculationModel::open_history(const std::string & path,
   history_.open(path.c_str());
   if (history_.is_open() && !header.empty())
     history_ << header << "\n";
+}
+const std::vector<double> & CirculationModel::state_entry(const State & st,
+                                                          const std::string & key)
+{
+  State::const_iterator it = st.find(key);
+  if (it == st.end())
+    throw std::runtime_error("Checkpoint: estado da circulacao sem a entrada '"
+                             + key + "'");
+  return it->second;
 }

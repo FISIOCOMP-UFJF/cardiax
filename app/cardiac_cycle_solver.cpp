@@ -40,6 +40,9 @@ void usage()
   cout << "    -prc  <n>          save the mesh every n steps (legacy 1, others 8)" << endl;
   cout << "    -logc <n>          detailed log every n steps (25)" << endl;
   cout << "    -dumpflags <0|1>   print every flag read, [cli]/[default] (1)" << endl;
+  cout << endl << " Checkpoint" << endl;
+  cout << "    -save_state <ms>   save the full state every <ms> (checkpoint_t_<t>ms.h5 in the CWD)" << endl;
+  cout << "    -restore <file>    restart from a checkpoint (same mesh and flags as the original run)" << endl;
   cout << endl << " Per-model flags (-circ, -pw, cell model, mechano-electric feedback):" << endl;
   cout << " see the flag table, or the block \"flags desta rodada\" printed at the" << endl;
   cout << " end of the configuration." << endl;

@@ -100,11 +100,6 @@ int NewtonLineSearch::solve()
     // recompute tangent matrix and residual
     nlp->jacobian(*K);
     //nlp->evaluate(*r);
-
-    // TODO: pressure
-    //NonlinearElasticity * nelas = dynamic_cast<NonlinearElasticity*>(nlp);
-    ///nelas->assemble_pressure();
-    //Derived<int> *d = dynamic_cast<Derived<int> *>(b);
   }
 
   if (nits >= nmax)

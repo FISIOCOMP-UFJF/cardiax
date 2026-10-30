@@ -16,12 +16,6 @@ public:
   //! Default destructor
   ~TotalLagrangian();
 
-  //! Assemble stiffness matrix
-  void assemble_stiff();
-
-  //! Assemble stiffness matrix for the first step (constitutive part only)
-  void assemble_const();
-
   //! Assemble load vector associated with an active (initial) stress state
   void assemble_active(const arma::vec & is,
                        std::vector<arma::mat33*> & vstrs,
@@ -52,14 +46,6 @@ protected:
   void Bl_matrix (const arma::mat & gradn, const arma::mat * F,
                   arma::mat & Bl) const;
 
-  //! Compute element (initial) stiffness matrix
-  void calc_elmat_const (const int e, const MxFE * fe, const Quadrature * qd,
-                         arma::mat & elmat);
-
-  //! Compute element stiffness matrix and load vector
-  void calc_elmatvec (const int e, const MxFE * fe, const Quadrature * qd,
-                      arma::mat & Ke, arma::vec & Re);
-  
   //! Compute element residual/reaction vectors
   void elem_resid (const int e, const MxFE * fe, const Quadrature * qd, 
                    arma::vec & Re);

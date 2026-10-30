@@ -95,7 +95,6 @@ public:
   //! Falls back to unweighted averaging if vol0 has not been filled yet
   //! (calc_volume(true), called from pre_solve()). Resizes lam_n to n_points.
   void fiber_stretch_nodes(arma::vec & lam_n);
-  petsc::Matrix & get_K() { return K; }
   void get_displacements(arma::mat & umat);
   void get_displacements(arma::vec & u);
 
@@ -243,14 +242,9 @@ public:
   //!
   virtual void solve() = 0;
   virtual void pre_solve() = 0;
-  virtual void assemble_stiff() = 0;
-  virtual void assemble_const() = 0;
   virtual void assemble_active(const arma::vec & s,
                                std::vector<arma::mat33*> & vs,
                                std::vector<arma::mat33*> & vf) = 0;
-
-  //! Assemble pressure matrix and vector
-  void assemble_pressure();
 
   //! NonlinearProblem stuff
   void evaluate  (petsc::Vector & r);
@@ -327,8 +321,7 @@ protected:
   arma::vec eps0;                 //!< Initial penalty parameter
   arma::vec vol0;                 //!< Initial element volume
 
-  //! PETSc vectors and matrix for system Ku = r
-  petsc::Matrix K;                //!< Tangent stiffness matrix
+  //! PETSc vectors for system Ku = r
   petsc::Vector u;                //!< Displacement vector
   petsc::Vector r;                //!< Residual vector (Fint - Fext)
   petsc::Vector react;            //!< Reaction forces
@@ -378,10 +371,6 @@ protected:
   void calc_neumann_elvec(const int eindex, const MxFE * fe,
                           arma::vec & elvec);
 
-  //! Computes boundary elemental normal pressures
-  void calc_pforce_kpress(const int elem_id, const MixedFiniteElement * fe,
-                          const std::vector<int> & bdof, arma::vec & belvec,
-                          arma::mat & belmat);
   //! Compute cavity volume contribution of a boundary element.
   //! Returns 0 if the element marker differs from cavity_marker.
   double calc_cavity_volume(const int elem_id, const MxFE * fe,
@@ -427,9 +416,6 @@ protected:
 
   //! Initialize vectors and matrices
   void init_matvecs();
-
-  //! Clean stiffness and residual
-  void init_resid_stiff();
 
   //! Perform quadratic line search
   void line_search(double & eta0, double & eta, double & rtu0, double & rtu);

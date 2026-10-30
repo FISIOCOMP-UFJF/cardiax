@@ -19,12 +19,6 @@ public:
   //! Destructor
   ~UpdatedLagrangian() {};
 
-  //! Assemble stiffness matrix
-  void assemble_stiff();
-
-  //! Assemble stiffness matrix for the first step (constitutive part only)
-  void assemble_const();
-
   //! Assemble load vector associated with an active (initial) stress state
   //! The assembly of the active stress is performed on the reference
   //! configuration since it is easier....therefore we should use the
@@ -74,15 +68,6 @@ protected:
 
   //! Do the augmentation step (update Lagrange multipliers Lambda)
   double al_augment(double tol);
-
-  //! Compute element (initial) stiffness matrix
-  void calc_elmat_const (const int e, const MxFE * fe, const Quadrature * qd,
-                         arma::mat & elmat);
-
-  //! Calculates the internal nodal forces, geometrical and constitutive
-  //! parts of the stiffness matrix (internal, kconst, ksigma)
-  void calc_elmatvec (const int e, const MxFE * fe, const Quadrature * qd,
-                      arma::mat & Ke, arma::vec & Re);
 
   //! Computes the B operator
   void calc_B_matrix (const arma::mat & gradn, arma::mat & B) const;

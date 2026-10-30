@@ -88,54 +88,6 @@ void NonlinearElasticity::assemble_traction()
   delete bfe;
 }
 
-void NonlinearElasticity::assemble_pressure()
-{
-  MixedFiniteElement * bfe = fespace.create_boundary_FE();
-
-  if (bfe != NULL && pressure_map.size() > 0)
-  {
-    cout << " Assembling pressure component of stiffness matrix" << endl;
-    int nu  = bfe->get_ndofs_u();
-    int nb = msh.get_n_boundary_elements();
-    double xlamb = lc.load();
-    arma::mat belmat(nu,nu);
-    arma::vec belvec(nu);
-    vector<int> bdof;
-
-    for(int i=0; i<nb; i++)
-    {
-      fespace.get_boundary_element_dofs_u(i,bdof);
-      calc_pforce_kpress(i,bfe,bdof,belvec,belmat);
-
-      // assembles the pressure component of the stiffness matrix
-      for(int j=0; j<nu; j++)
-        for(int k=0; k<nu; k++)
-          K.add(bdof[j], bdof[k], belmat(j,k));
-
-      // assembles the nodal forces due to normal pressure
-      for(int k=0; k<nu; k++)
-      {
-
-        if(ldgof[bdof[k]])
-        {
-          r.add(bdof[k], xlamb * belvec(k));
-          //fext(bdof[k]) += belvec(k);
-          tload(bdof[k]) += belvec(k);
-        }
-        else
-          react.add(bdof[k], -xlamb * belvec(k));
-      }
-    }
-  }
-
-  K.assemble();
-  r.assemble();
-  apply_boundary(K);
-
-
-  delete bfe;
-}
-
 void NonlinearElasticity::set_mesh_units(const std::string & units)
 {
   if (units == "m" || units == "meter" || units == "meters")
@@ -897,122 +849,6 @@ void NonlinearElasticity::elem_kpress(const int elem_id, const MxFE * fe,
       show_error("Boundary index for pressure load not found");
     }
   }
-}
-
-void NonlinearElasticity::calc_pforce_kpress(const int elem_id, const MxFE * fe,
-                                             const std::vector<int> & bdof,
-                                             arma::vec & belvec,
-                                             arma::mat & belmat)
-{
-  int ndim = fe->get_ndim();
-  int ndof = fe->get_ndofs_u();
-  int neln = ndof/ndim;
-  int index;
-  double detJxW, press;
-  arma::vec shape;
-  arma::mat dshape, dxis(3,2);
-
-  // third order alternating tensor
-  arma::cube eps = arma::zeros(3,3,3);
-  eps(0,1,2) = 1; eps(1,2,0) = 1; eps(2,0,1) = 1;
-  eps(0,2,1) = -1; eps(1,0,2) = -1; eps(2,1,0) = -1;
-
-  // get current coordinates of the element
-  std::vector<arma::vec3> xe(neln);
-  get_boundary_element_x (elem_id, xe);
-
-  // boundary element mapping
-  SurfaceMapping sm = fe->get_boundary_mapping(elem_id, xe);
-
-  std::map<int,double>::iterator it;
-  index = sm.get_index();
-  it = pressure_map.find(index);
-
-  if(pressure_map.find(index) != pressure_map.end())
-  {
-    belvec.zeros();
-    belmat.zeros();
-    press = it->second;
-
-    // create quadrature rule (need to check if order is ok)
-    Quadrature * qd;
-    qd = Quadrature::create(fe->get_order_u(), fe->get_type());
-    //qd = Quadrature::create(2, fe->get_type());
-
-    // quadrature loop
-    for(int q=0; q<qd->get_num_ipoints(); q++)
-    {
-      fe->calc_shape_u(qd->get_point(q),shape);
-      fe->calc_deriv_shape_u(qd->get_point(q),dshape);
-      sm.calc_jacobian(dshape, neln);
-
-      // Ajuste !
-      detJxW = qd->get_weight(q);
-
-      //
-      // evaluates dx/dxi, dx/deta
-      //
-      dxis.zeros();
-
-      // for 2D set dx/deta = (0,0,-1)
-      if(ndim==2) dxis(2,1) = -1.0;
-
-      for(int id=0; id<ndim; id++)
-	    for(int jd=0; jd<ndim-1; jd++)
-	      for(int in=0; in<neln; in++)
-	      {
-	        //int ip = bdof[in];
-		int ip = bdof[in]/ndim;
-	        dxis(id,jd) = dxis(id,jd) + x[ip][id] * dshape(in,jd);
-	      }
-
-      //
-      // computes pressure force (nodal forces)
-      // subroutine pforce
-      //
-      arma::vec3 xnorm = arma::cross(dxis.col(0), dxis.col(1));
-      for(int in=0; in<neln; in++)
-      {
-	    double vl = press * shape(in) * detJxW;
-	    for(int id=0; id<ndim; id++)
-          belvec(in + id*neln) += xnorm(id) * vl;
-      }
-
-      //
-      // computes the pressure component of the stiffness matrix
-      // subroutine kpress
-      //
-      double sum, val, val2, val3;
-      double apress = press * lc.load();
-
-      val = -(apress * detJxW)/2.0;
-
-      for(int in=0; in<neln; in++)
-	    for(int jn=0; jn<neln; jn++)
-	    {
-	      val2 = val * (shape(in)*dshape(jn,0) - shape(jn)*dshape(in,0));
-	      val3 = 0.0;
-
-	      if(ndim==3)
-	        val3 = val * (shape(in)*dshape(jn,1) - shape(jn)*dshape(in,1));
-
-	      for(int id=0; id<ndim; id++)
-	        for(int jd=0; jd<ndim; jd++)
-	        {
-	          sum = 0.0;
-	          for(int kd=0; kd<3; kd++)
-		        sum = sum + eps(id,jd,kd) * (val2 * dxis(kd,1) - val3 * dxis(kd,0));
-
-              // write in the elemental pressure stiffness matrix
-	          belmat(in + id*neln, jn + jd*neln) += sum;
-	        }
-	    }
-    }
-    // end of integration loop
-    std::cout << "belmat: \n" << belmat <<std::endl;
-    delete qd;
-  }
-
 }
 
 double NonlinearElasticity::calc_cavity_volume(const int elem_id, const MxFE * fe,
@@ -1932,7 +1768,6 @@ void NonlinearElasticity::init_matvecs()
 
   // Allocate matrices and vectors
   cout << "N: " << N << endl;
-  K.create(N,N,120); K = 0.0;
   u.create(N);       u = 0.0;
   r.create(N);       r = 0.0;
   react.create(N);   react = 0.0;
@@ -1975,17 +1810,6 @@ void NonlinearElasticity::init_matvecs()
   // config() before init(), so the mesh is still empty at parsing time.
   // init_matvecs() runs after the mesh is loaded in both entry points.
   report_active_regions();
-}
-
-void NonlinearElasticity::init_resid_stiff()
-{
-  K = 0.0;
-  react = 0.0;
-  double xlamb = lc.load();
-  for(int i=0; i<fespace.get_ndofs(); i++)
-  {
-    r.set(i, fext0(i) + xlamb * fext(i) );
-  }
 }
 
 void NonlinearElasticity::line_search(double & eta0, double & eta,
@@ -2369,9 +2193,6 @@ void NonlinearElasticity::prescribe_displacements()
 
 void NonlinearElasticity::reset()
 {
-  K.assemble();
-
-  K = 0.0;
   u = 0.0;
   udisp.zeros();
   lc.reset();

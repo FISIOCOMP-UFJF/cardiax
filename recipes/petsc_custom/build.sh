@@ -11,11 +11,11 @@ export LIBRARY_PATH=$PREFIX/lib:$LIBRARY_PATH
 # Python 3.10 (do ambiente) roda o configure sem erro xdrlib
 python3 ./configure \
   --prefix=$PREFIX \
-  --with-petsc-arch=arch-linux2-c-debug \
-  --COPTFLAGS="-O2 -g" \
-  --CXXOPTFLAGS="-O2 -g" \
-  --FOPTFLAGS="-O2 -g -std=legacy" \
-  --with-debugging=yes \
+  --with-petsc-arch=arch-linux2-c-opt \
+  --COPTFLAGS="-O3" \
+  --CXXOPTFLAGS="-O3" \
+  --FOPTFLAGS="-O3 -std=legacy" \
+  --with-debugging=0 \
   --download-mpich \
   --download-fblaslapack \
   --download-hypre \
@@ -30,7 +30,7 @@ python3 ./configure \
   LIBS="-lgfortran -lquadmath -lgomp"
 
 # Compilação
-make PETSC_DIR=$PWD PETSC_ARCH=arch-linux2-c-debug all
+make PETSC_DIR=$PWD PETSC_ARCH=arch-linux2-c-opt all
 
 # Instalação
-make PETSC_DIR=$PWD PETSC_ARCH=arch-linux2-c-debug install
+make PETSC_DIR=$PWD PETSC_ARCH=arch-linux2-c-opt install

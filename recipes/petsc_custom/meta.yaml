@@ -10,7 +10,7 @@ source:
   url: ../../dependencies/petsc-3.19.6.tar.gz
 
 build:
-  number: 0
+  number: 1
   skip: True  # [not linux]
 
 requirements:
@@ -30,5 +30,5 @@ requirements:
 
 about:
   home: https://petsc.org/
-  summary: "PETSc 3.19.6 Custom Build (Debug + Python 3.10)"
+  summary: "PETSc 3.19.6 Custom Build (Optimized + Python 3.10)"
   license: BSD-2-Clause

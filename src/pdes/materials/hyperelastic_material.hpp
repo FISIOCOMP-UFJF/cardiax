@@ -38,7 +38,7 @@ public:
   //! Set the active stress
   void set_Ta(arma::vec Ta) { active_stress = Ta; }
 
-  arma::vec get_Ta() { return active_stress; }
+  const arma::vec & get_Ta() const { return active_stress; }
 
   void set_dTa(arma::vec val) { delta_active_stress = val; }
 

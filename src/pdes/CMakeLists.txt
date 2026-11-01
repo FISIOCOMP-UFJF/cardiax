@@ -34,6 +34,8 @@ target_include_directories(PDE PRIVATE
 # Isso garante que qualquer alvo que linkar 'PDE' (como 'Cardiac')
 # também receba as propriedades de 'FEM', 'ODE', e 'LinAlg'.
 target_link_libraries(PDE PUBLIC
+    Mesh      # GmshIO, WriterHDF5
+    NLS       # NewtonLineSearch
     FEM
     ODE
     LinAlg

@@ -26,5 +26,6 @@ target_include_directories(LinAlg PRIVATE
 # Nós simplesmente linkamos contra o alvo 'ext_libs'
 # que já contém TODAS elas.
 target_link_libraries(LinAlg PUBLIC
+    Util      # print_error, CommandLineArgs
     ext_libs
 )

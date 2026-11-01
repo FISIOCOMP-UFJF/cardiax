@@ -22,6 +22,7 @@ target_include_directories(Mesh PRIVATE
 # Baseado nos seus arquivos (writer_hdf5.cpp) e testes,
 # Mesh depende de Util, LinAlg e libs externas.
 target_link_libraries(Mesh PUBLIC
+    FEM       # Mapping, SurfaceMapping (static libraries: CMake handles the cycle)
     Util
     LinAlg
     ext_libs # Nosso alvo que tem HDF5, PETSc, Armadillo

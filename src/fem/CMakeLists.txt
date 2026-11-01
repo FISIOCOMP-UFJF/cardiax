@@ -24,6 +24,7 @@ target_include_directories(FEM PRIVATE
 # PUBLIC significa que qualquer alvo que linkar 'FEM'
 # também receberá 'Util', 'LinAlg' e 'ext_libs'.
 target_link_libraries(FEM PUBLIC
+    Mesh
     Util
     LinAlg
     ext_libs # Adiciona nosso alvo de interface

@@ -235,6 +235,7 @@ add_subdirectory(src/nls)
 
 add_subdirectory(app)
 
-# if(BUILD_TESTS)
-#   add_subdirectory(test)
-# endif()
+# --- Test suite (tests/README.md) ---
+# Not part of `all`: ./build.sh stays as it was, ./run_tests.sh builds and runs it.
+enable_testing()
+add_subdirectory(tests EXCLUDE_FROM_ALL)

@@ -65,9 +65,8 @@ TorordLand::TorordLand() : CellModel(50) {
 
   // ---------------------------------------------------------------------
   // Variaveis resolvidas com Rush-Larsen (portas de Hodgkin-Huxley).
-  // Para os indices abaixo, equation() escreve em rDY[i] o VALOR JA
-  // ATUALIZADO da variavel; o laco do Euler em ExplicitEuler::advance()
-  // faz y[i] = rDY[i] em vez de y[i] += dt*rDY[i].
+  // Para os indices abaixo, equation() preenche rl_inf[i] e rl_tau[i], e
+  // ExplicitEuler::advance() faz y[i] = y_inf + (y[i] - y_inf)*exp(-dt/tau).
   // ---------------------------------------------------------------------
   for (int i = 9; i <= 28; i++) rlvars.insert(i);  // m..jca  (INa, INaL, Ito, ICaL)
   rlvars.insert(31);                               // ffp
@@ -83,14 +82,14 @@ TorordLand::TorordLand() : CellModel(50) {
   for (int i = 37; i <= 41; i++) rlvars.insert(i); // IKr Markov: c0,c1,c2,o,i
 #endif
 
-  // Variaveis algebricas (nao sao EDOs): tambem entram como "valor direto"
+  // Variavel algebrica (nao e EDO): tau ~ 0 faz o passo devolver y_inf
   rlvars.insert(49);                               // Ta (tensao ativa)
 
-//   // RL arrays + fast lookup (new convention: equation() stores inf/tau, solver applies exp)
-//   rl_inf.resize(get_num_state_vars());
-//   rl_tau.resize(get_num_state_vars());
-//   is_rl.assign(get_num_state_vars(), false);
-//   for (int i : rlvars) is_rl[i] = true;
+  // equation() guarda y_inf e tau de cada variavel acima; ExplicitEuler aplica o passo
+  rl_inf.resize(get_num_state_vars());
+  rl_tau.resize(get_num_state_vars());
+  is_rl.assign(get_num_state_vars(), false);
+  for (int i : rlvars) is_rl[i] = true;
 
 }
 
@@ -1217,69 +1216,81 @@ rDY[49] = Ta;
 //  Isso e A-estavel para qualquer dt (o Euler explicito exige dt < 2*tau,
 //  e o menor tau do ToRORd - taum, tauh - fica na casa de 1e-2 ms).
 //
-//  ATENCAO: para os indices em 'rlvars', ExplicitEuler::advance() faz
-//           y[i] = rDY[i]. Logo aqui sobrescrevemos rDY com o VALOR NOVO,
-//           e nao com a derivada.
+//  ExplicitEuler::advance() aplica essa formula aos indices com is_rl: aqui so
+//  se guardam y_inf e tau. rDY continua com a derivada, para os outros solvers.
 // =====================================================================
-const double dt_rl = dt_solver;   // passo de tempo fornecido pelo ExplicitEuler
+auto set_rl = [this](int i, double y_inf, double tau) {
+  rl_inf[i] = y_inf;
+  rl_tau[i] = tau;
+};
 
 // INa
-rDY[ 9] = rush_larsen(m,     mss,   taum,   dt_rl);
-rDY[10] = rush_larsen(hp,    hssp,  tauh,   dt_rl);
-rDY[11] = rush_larsen(h,     hss,   tauh,   dt_rl);
-rDY[12] = rush_larsen(j,     jss,   tauj,   dt_rl);
-rDY[13] = rush_larsen(jp,    jss,   taujp,  dt_rl);
+set_rl(9, mss, taum);
+set_rl(10, hssp, tauh);
+set_rl(11, hss, tauh);
+set_rl(12, jss, tauj);
+set_rl(13, jss, taujp);
 
 // INaL
-rDY[14] = rush_larsen(mL,    mLss,  tmL,    dt_rl);
-rDY[15] = rush_larsen(hL,    hLss,  thL,    dt_rl);
-rDY[16] = rush_larsen(hLp,   hLssp, thLp,   dt_rl);
+set_rl(14, mLss, tmL);
+set_rl(15, hLss, thL);
+set_rl(16, hLssp, thLp);
 
 // Ito
-rDY[17] = rush_larsen(a,     ass,   ta,     dt_rl);
-rDY[18] = rush_larsen(iF,    iss,   tiF,    dt_rl);
-rDY[19] = rush_larsen(iS,    iss,   tiS,    dt_rl);
-rDY[20] = rush_larsen(ap,    assp,  ta,     dt_rl);
-rDY[21] = rush_larsen(iFp,   iss,   tiFp,   dt_rl);
-rDY[22] = rush_larsen(iSp,   iss,   tiSp,   dt_rl);
+set_rl(17, ass, ta);
+set_rl(18, iss, tiF);
+set_rl(19, iss, tiS);
+set_rl(20, assp, ta);
+set_rl(21, iss, tiFp);
+set_rl(22, iss, tiSp);
 
 // ICaL
-rDY[23] = rush_larsen(d,     dss,   td,     dt_rl);
-rDY[24] = rush_larsen(ff,    fss,   tff,    dt_rl);
-rDY[25] = rush_larsen(fs,    fss,   tfs,    dt_rl);
-rDY[26] = rush_larsen(fcaf,  fcass, tfcaf,  dt_rl);
-rDY[27] = rush_larsen(fcas,  fcass, tfcas,  dt_rl);
-rDY[28] = rush_larsen(jca,   jcass, tjca,   dt_rl);
-rDY[31] = rush_larsen(ffp,   fss,   tffp,   dt_rl);
-rDY[32] = rush_larsen(fcafp, fcass, tfcafp, dt_rl);
+set_rl(23, dss, td);
+set_rl(24, fss, tff);
+set_rl(25, fss, tfs);
+set_rl(26, fcass, tfcaf);
+set_rl(27, fcass, tfcas);
+set_rl(28, jcass, tjca);
+set_rl(31, fss, tffp);
+set_rl(32, fcass, tfcafp);
 
 // IKs
-rDY[33] = rush_larsen(xs1,   xs1ss, txs1,   dt_rl);
-rDY[34] = rush_larsen(xs2,   xs2ss, txs2,   dt_rl);
+set_rl(33, xs1ss, txs1);
+set_rl(34, xs2ss, txs2);
 
 // Jrel (RyR)
-rDY[35] = rush_larsen(Jrel_np, Jrel_inf,  tau_rel,  dt_rl);
-rDY[42] = rush_larsen(Jrel_p,  Jrel_infp, tau_relp, dt_rl);
+set_rl(35, Jrel_inf, tau_rel);
+set_rl(42, Jrel_infp, tau_relp);
 
 #if TORORD_RL_MARKOV
 // ---------------------------------------------------------------------
-// Rush-Larsen generalizado:  dy/dt = a*y + b, com 'b' congelado no passo.
+// Rush-Larsen generalizado:  dy/dt = a*y + b, com 'b' congelado no passo, o que
+// equivale a y_inf = -b/a e tau = -1/a. Os 'a' abaixo sao -(soma das taxas de
+// saida), logo negativos; com taxa ~ 0 o limite a -> 0 recai em Euler explicito.
 //   nca / nca_i : dnca = anca*k2n - nca*km2n  ->  a = -km2n, b = anca*k2n
 //   IKr (Markov): para cada estado, 'a' = -(soma das taxas de saida) e
 //                 'b' = soma dos fluxos de entrada vindos dos outros estados.
 // Obs.: a soma c0+c1+c2+o+i deixa de ser conservada exatamente (erro O(dt^2)),
 //       como acontece em qualquer integrador exponencial desacoplado.
 // ---------------------------------------------------------------------
-rDY[29] = rush_larsen_ab(nca,   -km2n,   anca*k2n,   dt_rl);
-rDY[30] = rush_larsen_ab(nca_i, -km2n,   anca_i*k2n, dt_rl);
+auto set_rl_ab = [&set_rl](int i, double y, double a, double b) {
+  const double rate = std::max(-a, 1.0e-8);
+  set_rl(i, (std::fabs(a) < 1.0e-8) ? y + b / rate : b / rate, 1.0 / rate);
+};
 
-rDY[37] = rush_larsen_ab(c0, -alpha,                     c1*beta,                           dt_rl);
-rDY[38] = rush_larsen_ab(c1, -(beta + alpha1),           c0*alpha + c2*beta1,               dt_rl);
-rDY[39] = rush_larsen_ab(c2, -(beta1 + alpha2 + alphac2ToI),
-                                                        c1*alpha1 + o*beta2 + I*betaItoC2, dt_rl);
-rDY[40] = rush_larsen_ab(o,  -(beta2 + alphai),          c2*alpha2 + I*betai,               dt_rl);
-rDY[41] = rush_larsen_ab(I,  -(betaItoC2 + betai),       c2*alphac2ToI + o*alphai,          dt_rl);
+set_rl_ab(29, nca, -km2n,   anca*k2n);
+set_rl_ab(30, nca_i, -km2n,   anca_i*k2n);
+
+set_rl_ab(37, c0, -alpha,                     c1*beta);
+set_rl_ab(38, c1, -(beta + alpha1),           c0*alpha + c2*beta1);
+set_rl_ab(39, c2, -(beta1 + alpha2 + alphac2ToI),
+                                                        c1*alpha1 + o*beta2 + I*betaItoC2);
+set_rl_ab(40, o, -(beta2 + alphai),          c2*alpha2 + I*betai);
+set_rl_ab(41, I, -(betaItoC2 + betai),       c2*alphac2ToI + o*alphai);
 #endif
+
+// Ta e algebrica: rDY[49] guarda o valor, e o passo o devolve direto
+set_rl(49, Ta, 1.0e-12);
 
 }
 

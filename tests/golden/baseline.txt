@@ -44,7 +44,7 @@ cycle.circ.plv_last 1043.684044
 cycle.circ.vlv_last 109.940913
 cycle.legacy.plv_last 1939.25
 cycle.legacy.vlv_last 91.2344
-cycle.pw.vlv_last 113.254605
+cycle.pw.vlv_last 79.311062764
 eikonal.cable.latmax 107.321
 eikonal.cube.latmax 15588.5
 eikonal.donut.latmax 8428.46

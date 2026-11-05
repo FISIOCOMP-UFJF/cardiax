@@ -37,7 +37,7 @@ std::unique_ptr<CirculationModel> select_circulation()
   const int use_circ = CommandLineArgs::read("-circ", 0,
       "0D circulation in closed loop (Regazzoni 2022)", "regazzoni");
   const int use_pw = CommandLineArgs::read("-pw", 0,
-      "Piecewise pvloop (Wang et al. 2025 / Alya)", "piecewise");
+      "Piecewise PV loop: pulse.cycle five-phase controller, quasi-static", "piecewise");
 
   if (use_circ && use_pw)
     throw std::runtime_error("-circ 1 and -pw 1 are mutually exclusive: "

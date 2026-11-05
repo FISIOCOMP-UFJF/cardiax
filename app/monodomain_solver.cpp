@@ -206,12 +206,9 @@ int main(int argc, const char *argv[])
         exit(1);
       }
       cp.setup(mshname, pkmshname, cellmodel, odesolver, dt, T, tp, tp);
-              
       cp.get_monodomain()->set_parameters(cfg);
-      
       cp.get_purkinje()->set_parameters(cfg);
-
-      cp.init();                                  // <-- lê malhas, monta matrizes, cria PMJs
+      cp.init(); // read meshes, assemble mats, create PMJs
       cp.solve();
     }
   }

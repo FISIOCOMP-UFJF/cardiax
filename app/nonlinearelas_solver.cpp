@@ -1,5 +1,7 @@
 #include <iostream>
 #include <string>
+#include <limits>
+#include "util/toml.hpp"
 #include "util/util.hpp"
 #include "util/command_line_args.h"
 #include "pdes/total_lagrangian.hpp"
@@ -11,79 +13,166 @@ using namespace std;
 
 void usage()
 {
-  cout << "\n Usage: nonlinear_elasticity_solver [OPTIONS]" << endl << endl;
-  cout << "    -f   \t mesh file" << endl;
-  cout << "    -p   \t parameter file" << endl;
-  cout << "    -o   \t output directory" << endl;
-  cout << "    -s   \t solution method: ul or tl" << endl;
-  cout << "         \t    tl : Total Lagrangian" << endl;
-  cout << "         \t    ul : Updated Lagrangian" << endl;
-  cout << "    -restore \t restore state file" <<endl; 
-  cout << "-save_state \t save checkpoint (0 or 1)" << endl; 
-  cout << "-num_threads\t number of OpenMP threads " << endl;
+  cout << "\n Usage: nonlinear_elasticity -f <config.toml> [OPTIONS]" << endl << endl;
+  cout << "    -f          <config.toml>   TOML input file (required)" << endl;
+  cout << endl;
+  cout << "  Command-line options override the values from the TOML file:" << endl;
+  cout << "    -o          <outdir>        output directory" << endl;
+  cout << "    -s          <ul|tl>         solution method (ul=Updated, tl=Total Lagrangian)" << endl;
+  cout << "    -restore    <restorefile>   restore state file" << endl;
+  cout << "    -save_state <0|1>           save checkpoint" << endl;
+  cout << "    -num_threads <n>            number of OpenMP threads" << endl;
   cout << endl;
   exit(0);
 }
 
+// Push every key under [solver.petsc] in the TOML into PETSc's options
+// database, as if they had been passed on the command line (-<key> <value>).
+//
+// Call AFTER PetscInitialize() and BEFORE any KSPSetFromOptions()/
+// SNESSetFromOptions(). Options actually passed on the command line take
+// precedence: we skip any option already present in the database.
+void apply_petsc_options_from_toml(const toml::table & cfg)
+{
+  // navigate to [solver.petsc]
+  auto solver = cfg["solver"].as_table();
+  if (!solver) return;
+  auto petsc = (*solver)["petsc"].as_table();
+  if (!petsc) return;
+
+  for (auto && [key, node] : *petsc)
+  {
+    const std::string flag = "-" + std::string(key.str());   // "ksp_type" -> "-ksp_type"
+
+    // Command line wins: if this option was already set (e.g. on argv,
+    // parsed by PetscInitialize), leave it untouched.
+    PetscBool already = PETSC_FALSE;
+    PetscOptionsHasName(NULL, NULL, flag.c_str(), &already);
+    if (already) continue;
+
+    // PETSc options are strings; stringify whatever TOML type we got.
+    std::string value;
+    if      (auto s = node.value<std::string>()) value = *s;
+    else if (auto b = node.value<bool>())        value = (*b ? "true" : "false");
+    else if (auto i = node.value<int64_t>())     value = std::to_string(*i);
+    else if (auto d = node.value<double>())      value = std::to_string(*d);
+    else continue;   // unsupported type -> skip
+
+    PetscOptionsSetValue(NULL, flag.c_str(), value.c_str());
+  }
+}
+
+void print_banner()
+{
+  cout << "========================================" << endl;
+  cout << "  E L A S T I C I T Y   S O L V E R     " << endl;
+  cout << "========================================" << endl;
+}
+
+namespace {
+
+template <typename T>
+T require(const toml::table & cfg, std::string_view path)
+{
+  auto v = cfg.at_path(path).value<T>();
+  if (!v)
+  {
+    cerr << " *** ERROR: missing mandatory config key: " << path << endl;
+    exit(1);
+  }
+  return *v;
+}
+
+void override_str(std::string & value, const char * flag)
+{
+  static const std::string SENT = "\x01__unset__\x01";
+  std::string got = CommandLineArgs::read(flag, SENT);
+  if (got != SENT) value = got;
+}
+
+void override_int(int & value, const char * flag)
+{
+  const int SENT = std::numeric_limits<int>::lowest();
+  int got = CommandLineArgs::read(flag, SENT);
+  if (got != SENT) value = got;
+}
+
+} // namespace
+
 int main(int argc, const char* argv[])
 {
-  std::string smethod, mshfile, parfile, outdir, extension, restorefile;
-  bool save_checkpoint = false; 
-  int num_threads = 1; 
-  // Parse command line options
-  if (argc <= 1) usage();
-
   CommandLineArgs::init(argc, argv);
-  outdir  = CommandLineArgs::read("-o","output/");
-  mshfile = CommandLineArgs::read("-f","null");
-  parfile = CommandLineArgs::read("-p","null");
-  smethod = CommandLineArgs::read("-s","ul");
-  restorefile = CommandLineArgs::read("-restore", "");
-  save_checkpoint = CommandLineArgs::read("-save_state", 0) == 0 ? 0 : 1;
-  num_threads = CommandLineArgs::read("-num_threads", omp_get_max_threads() > 0 ? omp_get_max_threads() : 1);
 
-  extension = file_extension(mshfile);
-  if(extension == "xml")
-    parfile = mshfile;
+  // -f is mandatory: the TOML config file.
+  std::string inputfile = CommandLineArgs::read("-f", "");
+  if (inputfile.empty()) usage();
 
-  if(extension != "xml" && !file_exists(parfile))
-    print_error("elasticity_solver.cpp", "open mesh file", "parameters file not found");
+  // Parse the TOML file.
+  toml::table cfg;
+  try
+  {
+    cfg = toml::parse_file(inputfile);
+  }
+  catch (const toml::parse_error & err)
+  {
+    cerr << " *** ERROR parsing '" << inputfile << "':\n" << err << endl;
+    return 1;
+  }
+
+  print_banner();
+
+  // values from the TOML (base configuration) 
+  std::string mshfile = require<std::string>(cfg, "problem.mesh");
+  std::string smethod = cfg["solver"]["method"].value_or("ul");      // ul | tl
+  std::string outdir  = cfg["output"]["directory"].value_or("output/");
+  std::string restorefile = cfg["restore"]["file"].value_or("");
+  int save_flag = cfg["restore"]["save_checkpoint"].value_or(0);
+  int num_threads = cfg["solver"]["num_threads"].value_or(
+                      omp_get_max_threads() > 0 ? omp_get_max_threads() : 1);
+
+  // command-line overrides: any flag passed wins over the file
+  override_str(mshfile,     "-f_mesh");   // see note
+  override_str(smethod,     "-s");
+  override_str(outdir,      "-o");
+  override_str(restorefile, "-restore");
+  override_int(save_flag,   "-save_state");
+  override_int(num_threads, "-num_threads");
+
+  bool save_checkpoint = (save_flag != 0);
 
   if (!file_exists(mshfile))
     print_error("nonlinearelas_solver.cpp", "open file", "mesh file not found");
 
-  // Start PETSC
-  PetscMPIInt rank;
-  PetscMPIInt size;
+  //
+  // Start PETSc
+  //
+  PetscMPIInt rank, size;
   PetscErrorCode ierr;
-
   ierr = PetscInitialize(&argc, (char ***)&argv, (char *) 0, help); CHKERRQ(ierr);
   ierr = MPI_Comm_rank(PETSC_COMM_WORLD, &rank); CHKERRQ(ierr);
-  ierr = MPI_Comm_size(PETSC_COMM_WORLD,&size); CHKERRQ(ierr);
+  ierr = MPI_Comm_size(PETSC_COMM_WORLD, &size); CHKERRQ(ierr);
+
+  apply_petsc_options_from_toml(cfg);   // TOML [solver.petsc] -> PETSc options DB
 
   cout << "Nonlinear Elasticity FEM Solver" << endl;
-
-  omp_set_num_threads(num_threads); 
+  omp_set_num_threads(num_threads);
   std::cout << "Solving Mechanical problem with: " << num_threads << " OpenMP threads." << std::endl;
 
-  // Start PDE solver
   {
     NonlinearElasticity * esolver;
 
-    if(smethod=="ul")
+    if(smethod == "ul")
     {
       msg("Updated Lagrangian Formulation");
       esolver = new UpdatedLagrangian();
-      msg("Solving problem");
       esolver->save_checkpoint(save_checkpoint);
-      esolver->run(mshfile, parfile, restorefile);
+      esolver->run(mshfile, cfg, restorefile); 
     }
-    else if(smethod=="tl")
+    else if(smethod == "tl")
     {
       msg("Total Lagrangian Formulation");
       esolver = new TotalLagrangian();
-      msg("Solving problem");
-      esolver->run(mshfile, parfile);
+      esolver->run(mshfile, cfg, "");
     }
     else
     {
@@ -94,8 +183,9 @@ int main(int argc, const char* argv[])
   }
 
   msg("Done.");
-
-  ierr = PetscFinalize(); CHKERRQ(ierr);
+  
+  ierr = PetscFinalize(); 
+  CHKERRQ(ierr);
 
   return 0;
 }

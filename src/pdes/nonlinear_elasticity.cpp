@@ -1,5 +1,6 @@
 #include "nonlinear_elasticity.hpp"
 #include "util/pugixml.hpp"
+
 #include <map>
 #include <algorithm>
 #include <cstddef>
@@ -36,6 +37,190 @@ NonlinearElasticity::~NonlinearElasticity()
   for(uint i=0; i<vecF.size(); i++)
     delete vecF[i];
 }
+
+
+// =====================================================================
+//  NonlinearElasticity::set_parameters
+//
+//  Replaces the old config(mshfile, parfile). Split of sources:
+//    - VALUES and counts (material coefficients, ninc, pressure value,
+//      elasticity type)  -> come from the TOML cfg
+//    - BC TOPOLOGY that marks nodes/elements/surfaces (which markers,
+//      which fixed node ids, traction/spring/load node lists)
+//      -> still read from the mesh XML
+//
+//  NOTE: assumes the mesh (msh) is already loaded before this is called,
+//  because the tail calls material->allocate_Ta(msh.get_n_points()).
+// =====================================================================
+
+void NonlinearElasticity::set_parameters(const toml::table & cfg)
+{
+  cout << "Setup of non-linear elasticity problem (TOML values + XML markers)" << endl;
+
+  // -------------------------------------------------------------------
+  //  VALUES FROM TOML
+  // -------------------------------------------------------------------
+
+  // elasticity problem type  (problem.type:  THREE_DIM | PLANE_STRAIN | PLANE_STRESS)
+  std::string etype = cfg["problem"]["type"].value_or(std::string("THREE_DIM"));
+  ElasticityType elastype;
+  if      (std::strncmp(etype.c_str(), "PLANE_STRAIN", 12) == 0) elastype = PLANE_STRAIN;
+  else if (std::strncmp(etype.c_str(), "PLANE_STRESS", 12) == 0) elastype = PLANE_STRESS;
+  else if (std::strncmp(etype.c_str(), "THREE_DIM",     9) == 0) elastype = THREE_DIM;
+  else throw std::runtime_error("Unknown elasticity type.");
+
+  // load control: number of increments  (solver.n_increments <- <ninc>)
+  int num_increments = cfg["solver"]["n_increments"].value_or(1);
+  lc.set_nincs(num_increments);
+
+  // material type + coefficients  ([material] name + coefficients)
+  std::string mtype = cfg["material"]["name"].value_or(std::string("Guccione"));
+  std::vector<double> matprop;
+  if (auto arr = cfg["material"]["coefficients"].as_array())
+  {
+    for (auto & el : *arr)
+    {
+      if (auto d = el.value<double>())        matprop.push_back(*d);
+      else if (auto i = el.value<int64_t>())  matprop.push_back(double(*i));  // bare ints
+    }
+  }
+  if (matprop.empty())
+    throw std::runtime_error("missing or empty material.coefficients");      
+
+  material = HyperelasticMaterial::create(mtype, elastype, matprop);
+  cout << " Hyperelastic material: " << mtype << endl;
+  cout << " Material properties: ";
+  for (double c : matprop) cout << c << " ";
+  cout << endl;
+
+  // pressure value(s) keyed by surface marker  ([[pressure]] marker + value)
+  if (auto parr = cfg["pressure"].as_array())            // array-of-tables
+  {
+    for (auto & item : *parr)
+      if (auto t = item.as_table())
+        pressure_map.insert(std::pair<int,double>(
+            (*t)["marker"].value_or(0), (*t)["value"].value_or(0.0)));
+  }
+  else if (auto ptab = cfg["pressure"].as_table())       // single [pressure]
+  {
+    pressure_map.insert(std::pair<int,double>(
+        (*ptab)["marker"].value_or(0), (*ptab)["value"].value_or(0.0)));
+  }
+
+  // -------------------------------------------------------------------
+  //  BC TOPOLOGY FROM THE MESH XML
+  //  (markers / node ids that tag the geometry stay in the XML)
+  // -------------------------------------------------------------------
+  std::string meshxml = cfg["problem"]["mesh"].value_or(std::string(""));
+  if (meshxml.empty())
+    throw std::runtime_error("missing mandatory config key: problem.mesh");
+
+  pugi::xml_document doc;
+  pugi::xml_parse_result result = doc.load_file(meshxml.c_str());
+  if (!result)
+  {
+    std::cout << "XML parsed with errors\n";
+    std::cout << "Error description: " << result.description() << "\n";
+  }
+
+  // body force (ex: gravity)
+  pugi::xml_node bf = doc.child("elasticity").child("body_forces");
+  if (bf)
+  {
+    std::string strbf = bf.text().as_string();
+    parse_to_vector(strbf, bforce);
+  }
+
+  // neumann (traction) BCs
+  pugi::xml_node nodes = doc.child("elasticity").child("neumann");
+  for (pugi::xml_node node = nodes.child("node"); node; node = node.next_sibling("node"))
+  {
+    int marker = node.attribute("marker").as_int();
+    arma::vec3 t;
+    t(0) = node.attribute("t0").as_double();
+    t(1) = node.attribute("t1").as_double();
+    t(2) = node.attribute("t2").as_double();
+    neumann_map.insert(std::pair<int, arma::vec3>(marker, t));
+  }
+
+  // dirichlet (marker + direction)
+  pugi::xml_node dnodes = doc.child("elasticity").child("dirichlet");
+  for (pugi::xml_node node = dnodes.child("node"); node; node = node.next_sibling("node"))
+  {
+    int marker = node.attribute("marker").as_int();
+    int dir = node.attribute("direction").as_int();
+    dirichlet_map.insert(std::pair<int, int>(marker, dir));
+  }
+
+  // dirichlet - fixed nodes (prescribed displacement; node-id based, stays in XML)
+  pugi::xml_node fnodes = doc.child("elasticity").child("prescribed_displacement");
+  for (pugi::xml_node node = fnodes.child("node"); node; node = node.next_sibling("node"))
+  {
+    int idx = node.attribute("id").as_int();
+    int dir = node.attribute("direction").as_int();
+    double val = node.attribute("value").as_double();
+    NodalData nd(dir, val);
+    fixed_nodes_map.insert(std::pair<int, NodalData>(idx, nd));
+  }
+
+  // pressure SURFACE markers come from the XML <pressure> block as well, but
+  // the VALUE now comes from the TOML. We only need the XML here if the marker
+  // set is defined there; the pressure_map values were already set above from
+  // the TOML. (If the XML still lists <pressure> nodes, they are ignored for
+  // the value and only the TOML value is used.)
+
+  // spring (Robin) BCs
+  pugi::xml_node snodes = doc.child("elasticity").child("spring");
+  for (pugi::xml_node node = snodes.child("node"); node; node = node.next_sibling("node"))
+  {
+    int marker = node.attribute("marker").as_int();
+    double val = node.attribute("value").as_double();
+    spring_map.insert(std::pair<int, double>(marker, val));
+    int stype = 0;
+    std::string type_str = node.attribute("type").as_string("normal");
+    if (type_str == "isotropic") stype = 1;
+    spring_type_map.insert(std::pair<int, int>(marker, stype));
+  }
+
+  // nodal loads (node-id based, stays in XML)
+  pugi::xml_node lnodes = doc.child("elasticity").child("loads");
+  for (pugi::xml_node node = lnodes.child("node"); node; node = node.next_sibling("node"))
+  {
+    int idx = node.attribute("id").as_int();
+    int dir = node.attribute("direction").as_int();
+    double val = node.attribute("value").as_double();
+    NodalData nd(dir, val);
+    nodal_loads_map.insert(std::pair<int, NodalData>(idx, nd));
+  }
+
+  // -------------------------------------------------------------------
+  //  MESH-DERIVED SETUP (tail of the old config)
+  // -------------------------------------------------------------------
+  assert(file_exists(meshxml.c_str()));
+  filename = meshxml;
+  std::string::size_type idx = meshxml.rfind(".xml");
+  basename = filename.substr(0, idx);
+
+  // print info
+  cout << " Number of nodal loads: "              << nodal_loads_map.size() << endl;
+  cout << " Number of prescribed displ.: "        << fixed_nodes_map.size() << endl;
+  cout << " Number of traction (Neumann) loads: " << neumann_map.size()     << endl;
+  cout << " Number of dirichlet boundary conds:"  << dirichlet_map.size()   << endl;
+  cout << " Number of normal pressure loads: "    << pressure_map.size()    << endl;
+  cout << " Number of spring boundary conds: "    << spring_map.size();
+  if (spring_map.size() > 0)
+  {
+    cout << " (";
+    for (auto &st : spring_type_map)
+      cout << "marker " << st.first << ": " << (st.second == 0 ? "normal" : "isotropic") << " ";
+    cout << ")";
+  }
+  cout << endl;
+
+  int npoints = msh.get_n_points();
+  material->allocate_Ta(npoints);
+}
+
 
 void NonlinearElasticity::apply_boundary(petsc::Matrix & Ks)
 {
@@ -2216,25 +2401,22 @@ void NonlinearElasticity::set_active_stabilization(const arma::vec & ka,
   material->set_active_stabilization(ka, lam_prev);
 }
 
-void NonlinearElasticity::run(const string & mshfile, const string & parfile, const string & restorefile)
+void NonlinearElasticity::run(const string & mshfile, const toml::table & cfg, const string & restorefile)
 {
-  // TODO: esta fixo para formato XML, mas pensando em remover codigo do .par
-
   // setup mesh filename
   assert(file_exists(mshfile.c_str()));
   std::string::size_type idx = mshfile.rfind(".xml");
   filename = mshfile;
   basename = filename.substr(0,idx);
 
-  // init(); // -> init_mesh(); init_matvecs();
-
-  init_mesh(); 
+  init_mesh();
 
   msg("Setting material and elasticity type");
   msg("Setting boundary conditions");
-  config(mshfile, parfile);
+
+  set_parameters(cfg);   // uses TOML and replaces config(mshfile, parfile)
   set_output_step(true);
-  
+
   std::cout << "Output step: " << output_step << std::endl;
   // setup data writer
   if(output_step)
@@ -2249,27 +2431,19 @@ void NonlinearElasticity::run(const string & mshfile, const string & parfile, co
   cout << "Initial LV cavity volume: " << volume_LV() << "\n";
   cout << "Initial RV cavity volume: " << volume_RV() << "\n";
 
-  // standalone run: the load ramp is monotonic, so per-increment PV data
-  // is physically meaningful
   set_pv_record_increments(true);
-
 
   if(restorefile != "")
   {
     restore_checkpoint(restorefile);
   }
 
-
   solve();
-  
+
   storeStress(lc.get_nincs());
-  
   storeLVvolumes(this->basename);
-  
   close_pv_history();
-  
-  //cout << "Final cavity volume: " << total_volume_cavity() << "\n";
-  
+
   timer.summary();
 }
 

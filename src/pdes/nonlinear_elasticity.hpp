@@ -11,6 +11,7 @@
 #include "util/util.hpp"
 #include "util/load_control.hpp"
 #include "util/parameters.hpp"
+#include "util/toml.hpp"
 #include "linalg/linalg.h"
 #include "nls/nonlinear_problem.hpp"
 #include "nls/nonlinear_solver.hpp"
@@ -111,6 +112,8 @@ public:
                   const std::vector<arma::mat33*> & vecfsn);
   void storeStress(int step);
 
+  void set_parameters(const toml::table & cfg);
+
   //! Write a node-centred scalar field (e.g. "vm", "active_stress") into the
   //! HDF5/XDMF output for the given output step.
   //! Tensao ativa EFETIVA por elemento: a media nodal de Ta sobre os nos do
@@ -142,7 +145,7 @@ public:
   void reset();
 
   //! Run simulation
-  void run(const string & mshfile, const string & parfile, const string & restorefile = "");
+  void run(const string & mshfile, const toml::table & cfg, const string & restorefile = "");
 
   void set_pressure_Ta(int mlv, double plv, int mrv, double prv, arma::vec ta);
 

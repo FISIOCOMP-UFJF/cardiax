@@ -2,7 +2,7 @@
 # They detect unintended changes and do not prove physical correctness.
 # After an INTENDED change: ./run_tests.sh --update-golden, then review the
 # diff of this file before keeping it.
-active.guccione.unorm 1.4523994882073
+active.guccione.unorm 1.451463027146994
 bidomain.TT2.vm_end 0
 cell.FHN.norm 0.56577065117008
 cell.FHN.y0 0.19334789949617
@@ -40,17 +40,17 @@ cell.TT2.ylast 136.89139261748
 cell.ToRORdLand.norm50ms 201.39311304699
 cell.ToRORdLand.ta50ms 2.4063988029957
 cell.ToRORdLand.v50ms 19.125699967957
-cycle.circ.plv_last 1043.684044
-cycle.circ.vlv_last 109.940913
-cycle.legacy.plv_last 1939.25
+cycle.circ.plv_last 1041.032978
+cycle.circ.vlv_last 109.907002
+cycle.legacy.plv_last 1958.11
 cycle.legacy.vlv_last 91.2344
-cycle.pw.vlv_last 79.311062764
+cycle.pw.vlv_last 79.053464328
 eikonal.cable.latmax 107.321
 eikonal.cube.latmax 15588.5
 eikonal.donut.latmax 8428.46
 monodomain.TT2.cv 1250
 monodomain.TT2.vm_last 19.538686975664
-passive.guccione.unorm 1.4496942357236
+passive.guccione.unorm 1.449963276597054
 passive.holzapfel.unorm 0.53320094456642
 prob2.umax 5.5763315885526
 prob2.unorm 214.35904333019

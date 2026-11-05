@@ -26,7 +26,7 @@ void usage()
   cout << "    -amgx <file>       AMGX config (./configs/CG_DILU.json)" << endl;
   cout << endl << " Circulation model (default: legacy pressure curve)" << endl;
   cout << "    -circ <0|1>        closed-loop 0D circulation (Regazzoni 2022)" << endl;
-  cout << "    -pw   <0|1>        piecewise PV loop: pulse.cycle five-phase controller" << endl;
+  cout << "    -pw   <0|1>        piecewise PV loop: five-phase controller" << endl;
   cout << "                       (preload, IVC, ejection into a 3-element Windkessel, IVR," << endl;
   cout << "                       filling), quasi-static; exclusive with -circ. Flags -pw*" << endl;
   cout << "    -beats <n>         beats to run (-circ / -pw)" << endl;

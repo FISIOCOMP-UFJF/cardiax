@@ -12,7 +12,8 @@
  *  - Guccione and Holzapfel-Ogden: energy against the published formula, and fibre terms
  *    that only act in tension (Holzapfel-Ogden).
  *  - The finite-difference elasticity tensor: major and minor symmetries.
- *  - Active stress: the active energy gives the stress Ta (f x f - I/3) at F = I, and the
+ *  - Active stress: the active energy gives the stress Ta f x f at F = I (I4f of the full
+ *    C; the isochoric split is for the passive part only), and the
  *    Regazzoni-Quarteroni stabilisation term behaves as an elastic force of stiffness Ka.
  *  - active_scale: the region -> contractility map, including the legacy rule. A region
  *    silently left with zero active tension is hard to notice in the results.
@@ -474,7 +475,7 @@ TEST_CASE("Volumetric penalty: both cardiac laws charge K/2 (J - 1)^2 for a pure
 
 // ---- Active stress ----------------------------------------------------------
 
-TEST_CASE("Active stress: at F = I it is Ta (f x f - I/3)")
+TEST_CASE("Active stress: at F = I it is Ta f x f")
 {
   const double Ta = 7.0;
   for (const NamedMaterial & m :
@@ -490,7 +491,7 @@ TEST_CASE("Active stress: at F = I it is Ta (f x f - I/3)")
     mat->calc_fd_stress(0, &md, S);
 
     const arma::vec3 f = e.get_fiber();
-    const arma::mat expected = Ta * (f * f.t() - arma::eye(3, 3) / 3.0);
+    const arma::mat expected = Ta * (f * f.t());
     CHECK_MSG(arma::abs(S - expected).max() < 1e-5,
               m.name << " max gap " << arma::abs(S - expected).max());
   }

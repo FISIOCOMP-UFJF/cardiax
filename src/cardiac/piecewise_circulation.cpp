@@ -12,10 +12,10 @@ namespace
 {
 typedef PiecewisePVLoop::ChamberState ChamberState;
 
-constexpr double kJacobianPerturbation = 6.666119371;   // Pa (0.05 mmHg), como no -circ
-constexpr double kMaxNewtonStep        = 5000.0;        // Pa por iteracao
+constexpr double kJacobianPerturbation = 6.666119371;   // Pa (0.05 mmHg)
+constexpr double kMaxNewtonStep        = 5000.0;        // Pa per iteration
 
-// ChamberState <-> vetor, campo a campo, na ordem da declaracao
+// ChamberState <-> vector, field by field in declaration order
 std::vector<double> pack(const ChamberState & s)
 {
   return { double(s.phase), double(s.n_beats), s.last_phase_change, s.volume_n,
@@ -53,17 +53,17 @@ void PiecewiseCirculation::configure(const std::string & mshfile, const TimeBase
   cout << "\n" << pw_.describe() << endl;
 
   tol_V_  = CommandLineArgs::read("-pwtol", tol_V_,
-      "tolerancia das restricoes de volume/Windkessel, mL", "pvloop por fases (pulse.cycle)");
+      "tolerancia das restricoes de volume/Windkessel, mL", "pvloop por fases");
   max_it_ = CommandLineArgs::read("-pwmaxit", max_it_,
-      "iteracoes maximas do Newton nas pressoes por passo", "pvloop por fases (pulse.cycle)");
+      "iteracoes maximas do Newton nas pressoes por passo", "pvloop por fases");
 
-  // Como no complete_cycle.py: a rodada e beats*periodo, desde t = 0
+  // Run length is beats*period from t = 0
   plan_.beats             = limit_beats(tb, tb.beats, pw_.period());
   plan_.period_ms         = pw_.period();
   plan_.run_ms            = pw_.total_time(plan_.beats);
   plan_.step_ms           = tb.step_ms;
   plan_.nsteps            = static_cast<int>(std::round(plan_.run_ms / tb.step_ms));
-  // A Bestel do pulse tem t_sys = t_end_diastole
+  // Activation starts at the end of diastole
   plan_.stim_offset_ms    = pw_.activation_time();
   plan_.span_margin_steps = 2;
   plan_.default_out_every = 8;
@@ -71,7 +71,7 @@ void PiecewiseCirculation::configure(const std::string & mshfile, const TimeBase
 
 void PiecewiseCirculation::do_begin()
 {
-  // controller.initialize(t0 = 0): volume da malha descarregada, pressao 0
+  // Start from the unloaded mesh volume at zero pressure
   const double v_lv0 = mech_->volume_LV();
   const double v_rv0 = mech_->volume_RV();
   pw_.initialize(0.0, v_lv0, 0.0, v_rv0, 0.0);
@@ -107,7 +107,7 @@ void PiecewiseCirculation::announce(const StepContext & s)
 }
 
 // ----------------------------------------------------------------------
-//  Restricoes -> pressoes
+//  Constraints -> pressures
 // ----------------------------------------------------------------------
 
 void PiecewiseCirculation::mech_solve(double t, const double p[2], double V[2])
@@ -139,7 +139,7 @@ void PiecewiseCirculation::rebuild_jacobian(double t, const double p[2], const d
 void PiecewiseCirculation::solve_constrained(double t, const Constraint c[2],
                                              double p[2], double V[2])
 {
-  // Chute: a pressao convergida do passo anterior (como a incognita do pulse)
+  // Initial guess: last converged pressure; prescribed cavities take P
   bool free[2];
   int n_free = 0;
   for (int i = 0; i < 2; i++)
@@ -154,7 +154,7 @@ void PiecewiseCirculation::solve_constrained(double t, const Constraint c[2],
   last_res_ = 0.0;
   if (n_free == 0) return;
 
-  // Residuo em mL. AFFINE: p = A + B V  <=>  V = (p - A)/B
+  // Residual in mL. AFFINE: p = A + B V  <=>  V = (p - A)/B
   auto residual = [&](const double pp[2], const double VV[2], double F[2])
   {
     double r = 0.0;
@@ -167,7 +167,7 @@ void PiecewiseCirculation::solve_constrained(double t, const Constraint c[2],
     }
     return r;
   };
-  // dF_i/dp_i do termo da restricao (0 em VOLUME)
+  // dF_i/dp_i of the constraint term (0 for VOLUME)
   double g[2];
   for (int i = 0; i < 2; i++)
     g[i] = (c[i].kind == Constraint::AFFINE) ? -1.0 / c[i].B : 0.0;
@@ -185,7 +185,7 @@ void PiecewiseCirculation::solve_constrained(double t, const Constraint c[2],
       rebuilt_here = true;
     }
 
-    // Sistema reduzido as cavidades livres
+    // Newton system restricted to the free cavities
     arma::vec2 dp(arma::fill::zeros);
     if (n_free == 2)
     {
@@ -216,7 +216,7 @@ void PiecewiseCirculation::solve_constrained(double t, const Constraint c[2],
     mech_solve(t, p_new, V_new);
     it++;
 
-    // Broyden em dV/dp (so as colunas livres mudam: dp e zero nas outras)
+    // Broyden update of dV/dp (only free columns change: dp is 0 elsewhere)
     arma::vec2 dV = { V_new[0] - V[0], V_new[1] - V[1] };
     Jpv_ += ((dV - Jpv_ * dp) * dp.t()) / arma::dot(dp, dp);
 
@@ -225,7 +225,7 @@ void PiecewiseCirculation::solve_constrained(double t, const Constraint c[2],
     const double res_old = res;
     res = residual(p, V, F);
 
-    // Convergencia ruim: refaz o Jacobiano na proxima iteracao
+    // Poor convergence: rebuild the Jacobian on the next iteration
     if (res > 0.5 * res_old && !rebuilt_here) col_valid_[0] = col_valid_[1] = false;
   }
 
@@ -242,18 +242,18 @@ void PiecewiseCirculation::solve_constrained(double t, const Constraint c[2],
 
 void PiecewiseCirculation::advance(const StepContext & s)
 {
-  // 1. restricoes a partir do estado do inicio do passo (_apply_control)
+  // 1. constraints from the state at the start of the step
   const Constraint c[2] = { pw_.constraint_LV(s.t_ms, s.dt_ms),
                             pw_.constraint_RV(s.t_ms, s.dt_ms) };
 
-  // 2. solucao (pulse: um Newton monolitico; aqui, Newton nas pressoes)
+  // 2. impose them with the Newton on the pressures
   double p[2], V[2];
   const int solves0 = solves_;
   solve_constrained(s.t_ms, c, p, V);
   p_cur_[0] = p[0];
   p_cur_[1] = p[1];
 
-  // 3. Windkessel e transicoes com o estado convergido
+  // 3. Windkessel and phase transitions on the converged state
   pw_.commit(s.t_ms, s.dt_ms, V[0], p[0], V[1], p[1]);
 
   if (s.log)

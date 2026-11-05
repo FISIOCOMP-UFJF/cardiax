@@ -11,7 +11,7 @@
  *  - cardiac_cycle with each circulation model:
  *      legacy (tabulated curve): the prescribed pressure reaches the cavity,
  *      -circ 1 (Regazzoni): total blood volume conserved, the 3D volume follows the 0D one,
- *      -pw 1 (piecewise, pulse.cycle): the phases advance in order, the pressure ramp
+ *      -pw 1 (piecewise five-phase): the phases advance in order, the pressure ramp
  *      of PRELOAD is prescribed, the isovolumic contraction keeps its volume and the
  *      filling follows the prescribed inflow.
  *  - Ta unit: the mechanics receive Pa. The ceiling -t only reduces beats.
@@ -227,7 +227,7 @@ TEST_CASE("cardiac_cycle: the result does not depend on the number of threads")
 
 TEST_CASE("cardiac_cycle -pw 1: phases go in order, and the volume constraints are met")
 {
-  // pulse.cycle with a short period: PRELOAD ramp up to 15 ms, then IVC. The small mesh
+  // Short period: PRELOAD ramp up to 15 ms, then IVC. The small mesh
   // only reaches ~1300 Pa, so the arterial pressures are lowered for the valves to open
   write_ta_curve("pw", 40.0);
   const AppResult r = cycle("pw", "-pw 1 -pwinit 10 -pwedp 5 -rr 40 -beats 1"

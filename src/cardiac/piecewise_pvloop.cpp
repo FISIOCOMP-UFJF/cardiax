@@ -8,14 +8,14 @@
 #include "util/pugixml.hpp"
 
 // ======================================================================
-//  Utilitarios locais
+//  Local helpers
 // ======================================================================
 
 namespace
 {
-  constexpr double kMmHg = 133.322387415;   // Pa (o mesmo de pulse.circulation.mmHg)
+  constexpr double kMmHg = 133.322387415;   // Pa
 
-  // mmHg*s/mL -> Pa*ms/mL  e  mL/mmHg -> mL/Pa
+  // mmHg*s/mL -> Pa*ms/mL  and  mL/mmHg -> mL/Pa
   constexpr double res(double mmHg_s_per_mL) { return mmHg_s_per_mL * kMmHg * 1000.0; }
   constexpr double comp(double mL_per_mmHg)  { return mL_per_mmHg / kMmHg; }
 
@@ -28,9 +28,11 @@ namespace
 }
 
 // ======================================================================
-//  Windkessel (pulse.cycle.Windkessel)
+//  Windkessel
 // ======================================================================
 
+// Implicit Euler with Q = -(V - V_n)/dt, D = 1 + dt/(R C):
+//   P_c = (P_c,n + dt Q/C)/D,  P = P_c + Rc Q  =>  P = A + B V
 void PiecewisePVLoop::Windkessel::ejection_law(double P_c, double V_n, double dt,
                                                double & A, double & B) const
 {
@@ -43,6 +45,7 @@ void PiecewisePVLoop::Windkessel::advance(double P_c, double V, double V_n, doub
                                           bool ejecting, bool has_ejected,
                                           double & P_c_new, double & Q) const
 {
+  // Valve closed: P_c is held before the first ejection, then drains through R
   const double D = 1.0 + dt / (R * C);
   if (ejecting)
   {
@@ -57,7 +60,7 @@ void PiecewisePVLoop::Windkessel::advance(double P_c, double V, double V_n, doub
 }
 
 // ======================================================================
-//  Construcao e defaults: os do complete_cycle.py do pulse (BiV UKB)
+//  Construction and defaults (BiV)
 // ======================================================================
 
 PiecewisePVLoop::PiecewisePVLoop()
@@ -72,9 +75,9 @@ PiecewisePVLoop::PiecewisePVLoop()
   par_lv.windkessel.C          = comp(1.5);
   par_lv.windkessel.R          = res(1.1);
   par_lv.windkessel.Rc         = res(0.03);
-  par_lv.fill_rate             = 0.104;    // 0.104 mL / 1e-3 s
+  par_lv.fill_rate             = 0.104;
   par_lv.min_ejection_duration = 10.0;
-  par_lv.dvol_eps              = 1e-4;     // 1e-10 m^3
+  par_lv.dvol_eps              = 1e-4;
 
   par_rv = par_lv;
   par_rv.preload_pressure      = 200.0;
@@ -103,22 +106,21 @@ const char * PiecewisePVLoop::phase_name(Phase p)
 }
 
 // ======================================================================
-//  Configuracao: XML primeiro, linha de comando depois
+//  Configuration: XML first, then the command line
 // ======================================================================
 
 void PiecewisePVLoop::configure(const std::string & mshfile, double rr_ms)
 {
-  // ---- 1. bloco <pvloop_piecewise> da malha, se existir ---------------
-  // Atributos com os nomes do pulse.cycle.CycleParams, nas unidades do
-  // cardiax. Tempos no proprio no; o resto em <lv>/<rv>.
+  // ---- 1. <pvloop_piecewise> block of the mesh, if present --------------
+  // Times are attributes of the block itself; the rest go in <lv>/<rv>.
   pugi::xml_document doc;
   pugi::xml_node root;
   if (doc.load_file(mshfile.c_str()))
     root = doc.child("mesh").child("pvloop_piecewise");
 
   std::cout << (root ? " <pvloop_piecewise> encontrado na malha"
-                     : " <pvloop_piecewise> ausente na malha; usando os defaults do"
-                       " complete_cycle.py do pulse") << std::endl;
+                     : " <pvloop_piecewise> ausente na malha; usando os defaults")
+            << std::endl;
 
   ChamberParams * pp[2] = { &par_lv, &par_rv };
   const char * child[2] = { "lv", "rv" };
@@ -143,9 +145,8 @@ void PiecewisePVLoop::configure(const std::string & mshfile, double rr_ms)
     p.windkessel.Rc    = xml_attr(n, "characteristic_impedance", p.windkessel.Rc);
   }
 
-  // ---- 2. linha de comando -------------------------------------------
-  // Os nomes antigos foram mantidos onde o significado e o mesmo.
-  const char * G = "pvloop por fases (pulse.cycle)";
+  // ---- 2. command line ----------------------------------------------
+  const char * G = "pvloop por fases";
   if (rr_ms > 0.0) par_lv.period = rr_ms;
 
   const double t_zero = CommandLineArgs::read("-pwinit", par_lv.t_zero,
@@ -189,18 +190,8 @@ void PiecewisePVLoop::configure(const std::string & mshfile, double rr_ms)
     p.windkessel.Rc = CommandLineArgs::read(f[c].Rc, p.windkessel.Rc,
         (std::string("Windkessel characteristic_impedance") + t + ", Pa*ms/mL").c_str(), G);
     p.fill_rate = CommandLineArgs::read(f[c].rate, p.fill_rate,
-        (std::string("PrescribedInflow rate") + t + ", mL/ms").c_str(), G);
+        (std::string("fill rate (prescribed inflow)") + t + ", mL/ms").c_str(), G);
   }
-
-  // Flags do esquema antigo (penalidades/feed-forward) nao existem mais:
-  // passadas por engano, mudariam o resultado sem aviso.
-  for (const char * old : { "-pwwk", "-pwdamp", "-pwff", "-pwcstab", "-pwrate", "-pwdsv",
-                            "-pwdsv_rv", "-pwdpmax", "-pwcpiso", "-pwcviso", "-pwcpfill",
-                            "-pwcvfill", "-pwcpiso_rv", "-pwcviso_rv", "-pwcpfill_rv",
-                            "-pwcvfill_rv" })
-    if (CommandLineArgs::hasSwitch(old))
-      std::cout << " *** ATENCAO: " << old << " pertencia ao esquema antigo do -pw"
-                << " (penalidades) e e ignorado: o -pw agora e o pulse.cycle." << std::endl;
 
   if (par_lv.t_end_diastole >= par_lv.period)
     std::cout << " *** ATENCAO: t_end_diastole (" << par_lv.t_end_diastole
@@ -208,7 +199,7 @@ void PiecewisePVLoop::configure(const std::string & mshfile, double rr_ms)
 }
 
 // ======================================================================
-//  CycleController
+//  Cycle control
 // ======================================================================
 
 void PiecewisePVLoop::initialize(double t0, double V_lv, double P_lv, double V_rv, double P_rv)
@@ -237,8 +228,8 @@ void PiecewisePVLoop::initialize(double t0, double V_lv, double P_lv, double V_r
 double PiecewisePVLoop::preload_pressure(const ChamberState & st, const ChamberParams & p,
                                          double t)
 {
-  // pulse.cycle._preload_pressure, inclusive a comparacao com t absoluto no
-  // primeiro trecho (so o 1o batimento sobe de 0)
+  // First ramp 0 -> preload_pressure compares absolute t, so only the first
+  // beat starts from 0; later beats ramp preload_pressure -> p_end_diastole.
   if (t <= p.t_zero)
     return p.preload_pressure * t / p.t_zero;
   if (p.t_end_diastole > p.t_zero)
@@ -363,12 +354,12 @@ bool PiecewisePVLoop::commit(double t, double dt, double V_lv, double P_lv,
 }
 
 // ======================================================================
-//  Consultas e saida
+//  Queries and output
 // ======================================================================
 
 int PiecewisePVLoop::beat_of(double t) const
 {
-  // O passo que termina exatamente em k*periodo ainda pertence ao batimento k-1
+  // A step ending exactly at k*period still belongs to beat k-1
   return static_cast<int>(std::floor((t - 1e-9) / period()));
 }
 
@@ -387,7 +378,7 @@ double PiecewisePVLoop::ejection_fraction_RV() const
 std::string PiecewisePVLoop::describe() const
 {
   std::ostringstream os;
-  os << " PV loop por fases: port do pulse.cycle (fenicsx-pulse), quase-estatico\n";
+  os << " PV loop por fases, quase-estatico\n";
   os << "   unidades: mL, Pa, ms\n";
   os << "   periodo = " << period() << " ms; t_zero = " << par_lv.t_zero
      << " ms; t_end_diastole = " << par_lv.t_end_diastole << " ms (inicio da ativacao)\n";
@@ -413,7 +404,7 @@ std::string PiecewisePVLoop::history_header()
 {
   return "# t[ms] phase_LV P_LV[Pa] V_LV[mL] Q_LV[mL/ms] Pc_LV[Pa]"
          " phase_RV P_RV[Pa] V_RV[mL] Q_RV[mL/ms] Pc_RV[Pa]"
-         "   (fases do pulse.cycle: 0 PRELOAD 1 IVC 2 EJECTION 3 IVR 4 FILLING;"
+         "   (fases: 0 PRELOAD 1 IVC 2 EJECTION 3 IVR 4 FILLING;"
          " a fase e a do passo resolvido)";
 }
 

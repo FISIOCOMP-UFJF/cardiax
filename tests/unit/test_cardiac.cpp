@@ -10,7 +10,7 @@
  *  - Regazzoni2020 (0D closed loop, no 3D model): conservation of blood volume, a
  *    limit cycle with physiological pressures and valve behaviour, the timing rules
  *    (RR scaling, atrial anchoring, clamping), and the 3D coupling hook.
- *  - PiecewisePVLoop (port of pulse.cycle) against a lumped cavity whose constraints are
+ *  - PiecewisePVLoop (five-phase controller) against a lumped cavity whose constraints are
  *    solved exactly: the five phases in order and at the prescribed times, the preload
  *    ramp, the 3-element Windkessel (affine law and drain), the valve rules, the exact
  *    volume of the isovolumic phases, stroke volume and ejection fraction.
@@ -518,7 +518,6 @@ double lumped_pressure(const PwConstraint & c, double V0, double C, double a)
 }
 
 // One step of the controller on the lumped cavity, with the constraints solved exactly
-// (what the monolithic Newton of pulse does)
 void lumped_step(PiecewisePVLoop & pw, LumpedCavity & mech, double t, double dt)
 {
   const PwConstraint cl = pw.constraint_LV(t, dt), cr = pw.constraint_RV(t, dt);
@@ -531,12 +530,12 @@ void lumped_step(PiecewisePVLoop & pw, LumpedCavity & mech, double t, double dt)
 
 } // namespace
 
-TEST_CASE("PiecewisePVLoop: phase names, defaults of complete_cycle.py, activation and run length")
+TEST_CASE("PiecewisePVLoop: phase names, defaults, activation and run length")
 {
   PiecewisePVLoop pw;
   CHECK_EQ(std::string(PiecewisePVLoop::phase_name(PiecewisePVLoop::EJECTION)).empty(), false);
 
-  // Numbering of pulse.cycle.Phase
+  // Phase numbering
   CHECK_EQ(int(PiecewisePVLoop::PRELOAD), 0);
   CHECK_EQ(int(PiecewisePVLoop::IVC), 1);
   CHECK_EQ(int(PiecewisePVLoop::EJECTION), 2);

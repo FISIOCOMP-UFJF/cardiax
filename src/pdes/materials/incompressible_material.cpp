@@ -23,10 +23,13 @@ double IncompressibleMaterial::active_strain_energy(MaterialData * md,
 
   // right Cauchy-Green deformation tensor
   arma::mat C = 2*E + I;
-  double J = sqrt(arma::det(C));
 
-  arma::mat Cbar = pow(J,-(2.0/3.0)) * C;
-  double I4f  = dot(f0, Cbar*f0);
+  // Active energy psi_a = Ta/2 (I4f - 1), I4f = f0.C.f0 with the full C, so
+  // S_a = Ta f0 x f0. The isochoric split applies to the passive part only.
+  // double J = sqrt(arma::det(C));
+  // arma::mat Cbar = pow(J,-(2.0/3.0)) * C;
+  // double I4f  = dot(f0, Cbar*f0);
+  double I4f  = dot(f0, C*f0);
 
   double psi = 0.5 * md->get_active_stress() * (I4f - 1.0);
 

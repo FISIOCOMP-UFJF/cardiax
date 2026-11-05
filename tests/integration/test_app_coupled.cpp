@@ -11,7 +11,9 @@
  *  - cardiac_cycle with each circulation model:
  *      legacy (tabulated curve): the prescribed pressure reaches the cavity,
  *      -circ 1 (Regazzoni): total blood volume conserved, the 3D volume follows the 0D one,
- *      -pw 1 (piecewise): the phases advance in order, one 3D solve per step.
+ *      -pw 1 (piecewise five-phase): the phases advance in order, the pressure ramp
+ *      of PRELOAD is prescribed, the isovolumic contraction keeps its volume and the
+ *      filling follows the prescribed inflow.
  *  - Ta unit: the mechanics receive Pa. The ceiling -t only reduces beats.
  *  - -ta_curve replaces the active tension of the cell model.
  *  - Mechano-electric feedback (-lam, -lamrate): the stretch reaches the cell.
@@ -223,26 +225,51 @@ TEST_CASE("cardiac_cycle: the result does not depend on the number of threads")
 
 // ---- cardiac_cycle, piecewise -----------------------------------------------
 
-TEST_CASE("cardiac_cycle -pw 1: phases go in order, with one 3D solve per step")
+TEST_CASE("cardiac_cycle -pw 1: phases go in order, and the volume constraints are met")
 {
-  write_ta_curve("pw", 30.0);
-  const AppResult r = cycle("pw", "-pw 1 -pwinit 20 -pwedp 10 -rr 30 -beats 1 -ta_curve ta.txt");
+  // Short period: PRELOAD ramp up to 15 ms, then IVC. The small mesh
+  // only reaches ~1300 Pa, so the arterial pressures are lowered for the valves to open
+  write_ta_curve("pw", 40.0);
+  const AppResult r = cycle("pw", "-pw 1 -pwinit 10 -pwedp 5 -rr 40 -beats 1"
+                                  " -pwpej 1150 -pwpej_rv 450 -ta_curve ta.txt");
   CHECK_MSG(r.exit_code == 0, tail(r.log));
+  CHECK(r.log.find("passo(s) terminaram sem satisfazer") == std::string::npos);
 
+  // Columns: t, then per cavity: phase, P, V, Q, P_c (phase under which the step was solved)
   const arma::mat h = read_table(history("pw", "_piecewise.dat"));
-  REQUIRE(h.n_rows == 50);
+  REQUIRE(h.n_rows == 40);
   CHECK(h.is_finite());
 
-  // The phase column of the LV never goes back within the beat
-  // (the last row is already the start of the next beat)
-  for (arma::uword i = 1; i + 1 < h.n_rows; i++)
-    CHECK_MSG(h(i, 1) >= h(i - 1, 1), "phase went from " << h(i - 1, 1) << " to " << h(i, 1));
-  CHECK_NEAR(h(0, 1), 0.0, 0.0);
-  CHECK_MSG(h(h.n_rows - 1, 1) >= 1.0, "stuck in phase 0");
+  // The phase of each cavity never goes back within the beat
+  for (int k : {1, 6})
+  {
+    for (arma::uword i = 1; i < h.n_rows; i++)
+      CHECK_MSG(h(i, k) >= h(i - 1, k), "phase went from " << h(i - 1, k) << " to " << h(i, k));
+    CHECK_NEAR(h(0, k), 0.0, 0.0);
+    CHECK_MSG(h(h.n_rows - 1, k) == 4.0, "did not reach FILLING: " << h(h.n_rows - 1, k));
+  }
 
-  // Phase 0 is a pressure ramp
-  CHECK_MSG(h(19, 2) > h(0, 2), "pressure did not grow in the ramp");
-  CHECK_GOLDEN("cycle.pw.vlv_last", h(h.n_rows - 1, 3), 1e-5);
+  // PRELOAD is a prescribed pressure ramp: 0 -> 500 Pa at t_zero = 10 ms (LV defaults)
+  CHECK_NEAR(h(9, 2), 500.0, 1e-6);
+  CHECK_MSG(h(9, 2) > h(0, 2), "pressure did not grow in the ramp");
+
+  // Isovolumic contraction keeps the end-diastolic volume, within -pwtol (1e-3 mL)
+  for (int k : {1, 6})
+  {
+    double v_ed = 0.0;
+    for (arma::uword i = 0; i < h.n_rows; i++)
+    {
+      if (h(i, k) == 0.0) v_ed = h(i, k + 2);
+      if (h(i, k) == 1.0)
+        CHECK_MSG(std::fabs(h(i, k + 2) - v_ed) < 1.1e-3,
+                  "t = " << h(i, 0) << ": V moved " << h(i, k + 2) - v_ed << " mL in IVC");
+    }
+  }
+  // FILLING prescribes the inflow (defaults 0.104 and 0.057 mL/ms)
+  const arma::uword n = h.n_rows;
+  CHECK_NEAR(h(n - 1, 3) - h(n - 2, 3), 0.104, 1.1e-3);
+  CHECK_NEAR(h(n - 1, 8) - h(n - 2, 8), 0.057, 1.1e-3);
+  CHECK_GOLDEN("cycle.pw.vlv_last", h(n - 1, 3), 1e-5);
 }
 
 // ---- Active tension ---------------------------------------------------------
@@ -387,15 +414,18 @@ TEST_CASE("cardiac_cycle: restart continues the -circ 1 run with feedback exactl
 TEST_CASE("cardiac_cycle: restart continues the -pw 1 run exactly")
 {
   // Ta from a table: with the cell model's Ta and a period this short, the mechanics diverges
-  const std::string flags = "-pw 1 -pwinit 20 -pwedp 10 -rr 30 -beats 1 -save_state 5 -ta_curve ta.txt";
-  write_ta_curve("chk_pw_full", 30.0);
-  write_ta_curve("chk_pw_rest", 30.0);
+  const std::string flags = "-pw 1 -pwinit 10 -pwedp 5 -rr 40 -beats 1 -pwpej 1150 -pwpej_rv 450"
+                            " -save_state 5 -ta_curve ta.txt";
+  write_ta_curve("chk_pw_full", 40.0);
+  write_ta_curve("chk_pw_rest", 40.0);
   REQUIRE(cycle_serial("chk_pw_full", flags).exit_code == 0);
-  fs::copy_file("chk_pw_full/checkpoint_t_25.00ms.h5", "chk_pw_rest/start.h5",
+  // Cut in the isovolumic contraction: the restart carries the Newton state and the
+  // Windkessel through the ejection
+  fs::copy_file("chk_pw_full/checkpoint_t_20.00ms.h5", "chk_pw_rest/start.h5",
                 fs::copy_options::overwrite_existing);
   const AppResult r = cycle_serial("chk_pw_rest", flags + " -restore start.h5");
   CHECK_MSG(r.exit_code == 0, tail(r.log));
-  check_checkpoints_match("chk_pw_full", "chk_pw_rest", {"30.00", "35.00", "40.00", "45.00", "50.00"});
+  check_checkpoints_match("chk_pw_full", "chk_pw_rest", {"25.00", "30.00", "35.00", "40.00"});
 }
 
 // ---- Invalid input ----------------------------------------------------------

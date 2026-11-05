@@ -10,8 +10,10 @@
  *  - Regazzoni2020 (0D closed loop, no 3D model): conservation of blood volume, a
  *    limit cycle with physiological pressures and valve behaviour, the timing rules
  *    (RR scaling, atrial anchoring, clamping), and the 3D coupling hook.
- *  - PiecewisePVLoop against a lumped cavity: the sequence of phases, the locked volume
- *    of the isovolumetric phases, the Windkessel, stroke volume and ejection fraction.
+ *  - PiecewisePVLoop (five-phase controller) against a lumped cavity whose constraints are
+ *    solved exactly: the five phases in order and at the prescribed times, the preload
+ *    ramp, the 3-element Windkessel (affine law and drain), the valve rules, the exact
+ *    volume of the isovolumic phases, stroke volume and ejection fraction.
  *  - CirculationModel implementations (Regazzoni, Piecewise, Legacy) driven through
  *    the CavityMechanics interface by a lumped mock, so that the couplings run in
  *    milliseconds: the pressure inversion reproduces the 0D volume, the -t ceiling
@@ -497,172 +499,237 @@ void run_steps(CirculationModel & m, int first, int last)
 
 // ---- PiecewisePVLoop --------------------------------------------------------
 
-TEST_CASE("PiecewisePVLoop: phase names, activation time and run length")
+namespace
+{
+
+typedef PiecewisePVLoop::Constraint PwConstraint;
+
+// Pressure that satisfies a constraint exactly on the lumped cavity
+// V = V0 + C (p - a), which is linear in p
+double lumped_pressure(const PwConstraint & c, double V0, double C, double a)
+{
+  switch (c.kind)
+  {
+    case PwConstraint::PRESSURE: return c.P;
+    case PwConstraint::VOLUME:   return (c.V - V0) / C + a;
+    case PwConstraint::AFFINE:   return (c.A + c.B * (V0 - C * a)) / (1.0 - c.B * C);
+  }
+  return std::nan("");
+}
+
+// One step of the controller on the lumped cavity, with the constraints solved exactly
+void lumped_step(PiecewisePVLoop & pw, LumpedCavity & mech, double t, double dt)
+{
+  const PwConstraint cl = pw.constraint_LV(t, dt), cr = pw.constraint_RV(t, dt);
+  const double a = mech.active(t);
+  const double pl = lumped_pressure(cl, mech.V0_lv, mech.C, a);
+  const double pr = lumped_pressure(cr, mech.V0_rv, mech.C, 0.3 * a);
+  mech.apply_pressures(t, pl, pr);
+  pw.commit(t, dt, mech.volume_LV(), pl, mech.volume_RV(), pr);
+}
+
+} // namespace
+
+TEST_CASE("PiecewisePVLoop: phase names, defaults, activation and run length")
 {
   PiecewisePVLoop pw;
   CHECK_EQ(std::string(PiecewisePVLoop::phase_name(PiecewisePVLoop::EJECTION)).empty(), false);
 
-  pw.timing().t_init = 300.0;
-  pw.timing().RR = 1000.0;
-  pw.timing().t_EDP = 150.0;
-  CHECK_NEAR(pw.activation_time(0), 450.0, 0.0);
-  CHECK_NEAR(pw.activation_time(2), 2450.0, 0.0);
-  CHECK_NEAR(pw.stimulus_offset(), 450.0, 0.0);
-  CHECK_NEAR(pw.total_time(3), 3300.0, 0.0);
-  CHECK_EQ(pw.beat_of(100.0), -1);
-  CHECK_EQ(pw.beat_of(350.0), 0);
-  CHECK_EQ(pw.beat_of(1350.0), 1);
+  // Phase numbering
+  CHECK_EQ(int(PiecewisePVLoop::PRELOAD), 0);
+  CHECK_EQ(int(PiecewisePVLoop::IVC), 1);
+  CHECK_EQ(int(PiecewisePVLoop::EJECTION), 2);
+  CHECK_EQ(int(PiecewisePVLoop::IVR), 3);
+  CHECK_EQ(int(PiecewisePVLoop::FILLING), 4);
+
+  CHECK_NEAR(pw.period(), 800.0, 0.0);
+  CHECK_NEAR(pw.lv().t_zero, 50.0, 0.0);
+  CHECK_NEAR(pw.lv().windkessel.p_init, 9000.0, 0.0);
+  CHECK_NEAR(pw.rv().windkessel.p_init, 2500.0, 0.0);
+  // 1.1 mmHg*s/mL and 1.5 mL/mmHg in Pa*ms/mL and mL/Pa
+  CHECK_NEAR(pw.lv().windkessel.R, 1.1 * 133.322387415 * 1000.0, 1e-9);
+  CHECK_NEAR(pw.lv().windkessel.C, 1.5 / 133.322387415, 1e-15);
+
+  pw.lv().t_end_diastole = 150.0;
+  CHECK_NEAR(pw.activation_time(), 150.0, 0.0);
+  CHECK_NEAR(pw.total_time(3), 2400.0, 0.0);
+  CHECK_EQ(pw.beat_of(1.0), 0);
+  CHECK_EQ(pw.beat_of(800.0), 0);   // the step that ends at the period is still beat 0
+  CHECK_EQ(pw.beat_of(801.0), 1);
 }
 
-TEST_CASE("PiecewisePVLoop: goes through the phases in order, with the published behaviour")
+TEST_CASE("PiecewisePVLoop: the preload ramp, 0 -> preload_pressure then -> p_end_diastole")
+{
+  PiecewisePVLoop pw;
+  pw.initialize(0.0, 80.0, 0.0, 90.0, 0.0);
+  const PiecewisePVLoop::ChamberParams & p = pw.lv();
+  auto P = [&](double t) {
+    const PwConstraint c = pw.constraint_LV(t, 1.0);
+    CHECK(c.kind == PwConstraint::PRESSURE);
+    return c.P;
+  };
+  CHECK_NEAR(P(0.5 * p.t_zero), 0.5 * p.preload_pressure, 1e-9);
+  CHECK_NEAR(P(p.t_zero), p.preload_pressure, 1e-9);
+  CHECK_NEAR(P(p.t_end_diastole), p.p_end_diastole, 1e-9);
+  CHECK_NEAR(P(0.5 * (p.t_zero + p.t_end_diastole)),
+             0.5 * (p.preload_pressure + p.p_end_diastole), 1e-9);
+
+  // In the next beats the ramp starts from preload_pressure, not from 0
+  PiecewisePVLoop::ChamberState s = pw.state_LV();
+  s.n_beats = 1;
+  pw.set_states(s, pw.state_RV());
+  CHECK_NEAR(P(p.period + p.t_zero), p.preload_pressure, 1e-9);
+  CHECK_NEAR(P(p.period + p.t_end_diastole), p.p_end_diastole, 1e-9);
+}
+
+TEST_CASE("PiecewisePVLoop: the 3-element Windkessel, ejection law and drain")
+{
+  PiecewisePVLoop pw;
+  const PiecewisePVLoop::Windkessel & w = pw.lv().windkessel;
+  const double P_c = 10000.0, V_n = 100.0, dt = 1.0, V = 99.5;
+
+  // The pressure imposed by the affine law is the one the Windkessel ends at
+  double A, B;
+  w.ejection_law(P_c, V_n, dt, A, B);
+  CHECK(B < 0.0);
+  double P_c1, Q;
+  w.advance(P_c, V, V_n, dt, true, true, P_c1, Q);
+  CHECK_NEAR(Q, 0.5, 1e-12);
+  CHECK_NEAR(A + B * V, P_c1 + w.Rc * Q, 1e-9 * P_c);
+  // Implicit Euler of C dP_c/dt = Q - P_c/R
+  CHECK_NEAR(w.C * (P_c1 - P_c) / dt, Q - P_c1 / w.R, 1e-12);
+
+  // Valve closed: P_c is frozen until the first ejection, then drains through R
+  w.advance(P_c, V, V_n, dt, false, false, P_c1, Q);
+  CHECK_NEAR(P_c1, P_c, 0.0);
+  CHECK_NEAR(Q, 0.0, 0.0);
+  w.advance(P_c, V, V_n, dt, false, true, P_c1, Q);
+  CHECK_NEAR(P_c1, P_c / (1.0 + dt / (w.R * w.C)), 1e-9);
+}
+
+TEST_CASE("PiecewisePVLoop: goes through the five phases in order on a lumped cavity")
 {
   LumpedCavity mech;
   PiecewisePVLoop pw;
-  pw.timing().t_init = 200.0;
-  pw.timing().t_EDP = 100.0;
-  pw.timing().RR = 1000.0;
-  mech.t_act = pw.activation_time(0);
+  mech.period = pw.period();
+  mech.t_act = pw.activation_time();
+  pw.initialize(0.0, mech.volume_LV(), 0.0, mech.volume_RV(), 0.0);
+  CHECK(pw.state_LV().phase == PiecewisePVLoop::PRELOAD);
 
-  pw.init(mech.volume_LV(), mech.volume_RV());
-  CHECK(pw.state_LV().phase == PiecewisePVLoop::INIT);
-
-  std::vector<int> order;
-  double p_max = 0.0;
-  double v_at_ivc_start = -1.0, v_gap_ivc = 0.0;
+  std::vector<int> order_lv, order_rv;
+  double p_max = 0.0, t_ivc = -1.0, t_back = -1.0, v_gap_ivc = 0.0, v_gap_ivr = 0.0;
 
   const double dt = 1.0;
-  const int nsteps = static_cast<int>(pw.total_time(1) / dt);
+  const int nsteps = static_cast<int>((pw.period() + pw.lv().t_zero + 10.0) / dt);
   for (int i = 0; i < nsteps; i++)
   {
     const double t = (i + 1) * dt;
-    pw.advance_pressure(t, dt);
-    mech.apply_pressures(t, pw.pressure_LV(), pw.pressure_RV());
-    pw.update_volumes(t, dt, mech.volume_LV(), mech.volume_RV());
+    const int before = pw.state_LV().phase;
+    lumped_step(pw, mech, t, dt);
+    const PiecewisePVLoop::ChamberState & s = pw.state_LV();
 
-    const int ph = pw.state_LV().phase;
-    if (order.empty() || order.back() != ph) order.push_back(ph);
-    p_max = std::max(p_max, pw.pressure_LV());
+    if (order_lv.empty() || order_lv.back() != s.phase) order_lv.push_back(s.phase);
+    const int ph_rv = pw.state_RV().phase;
+    if (order_rv.empty() || order_rv.back() != ph_rv) order_rv.push_back(ph_rv);
+    p_max = std::max(p_max, s.pressure_n);
 
-    if (ph == PiecewisePVLoop::IVC)
-    {
-      if (v_at_ivc_start < 0.0) v_at_ivc_start = pw.state_LV().V_lock;
-      v_gap_ivc = std::max(v_gap_ivc, std::fabs(mech.volume_LV() - v_at_ivc_start));
-    }
+    // The step was solved under `before`
+    if (before == PiecewisePVLoop::IVC)
+      v_gap_ivc = std::max(v_gap_ivc, std::fabs(s.volume_n - s.end_dia_vol));
+    if (before == PiecewisePVLoop::IVR)
+      v_gap_ivr = std::max(v_gap_ivr, std::fabs(s.volume_n - s.end_sys_vol));
+    if (s.phase == PiecewisePVLoop::IVC && t_ivc < 0.0) t_ivc = t;
+    if (before == PiecewisePVLoop::FILLING && s.phase == PiecewisePVLoop::PRELOAD) t_back = t;
   }
 
-  // The run ends right at the start of the next beat
-  const std::vector<int> expected = {0, 1, 2, 3, 4, 5, 1};
-  CHECK_MSG(order == expected, [&] {
+  const std::vector<int> expected = {0, 1, 2, 3, 4, 0};
+  auto show = [](const std::vector<int> & v) {
     std::ostringstream os;
-    for (int p : order) os << p << " ";
+    for (int p : v) os << p << " ";
     return os.str();
-  }());
+  };
+  CHECK_MSG(order_lv == expected, show(order_lv));
+  CHECK_MSG(order_rv == expected, show(order_rv));
 
-  CHECK(p_max > pw.lv().P_ejection);
-  CHECK_MSG(v_gap_ivc < 2.0, "volume moved " << v_gap_ivc << " mL during the isovolumetric phase");
+  // Phase changes at the prescribed times
+  CHECK_NEAR(t_ivc, pw.lv().t_end_diastole, 0.0);
+  CHECK_NEAR(t_back, pw.period() + pw.lv().t_zero, 0.0);
+  CHECK_EQ(pw.state_LV().n_beats, 1);
+
+  // Isovolumic phases keep the volume exactly (the constraint is solved, not penalised)
+  CHECK_MSG(v_gap_ivc < 1e-9, "volume moved " << v_gap_ivc << " mL in IVC");
+  CHECK_MSG(v_gap_ivr < 1e-9, "volume moved " << v_gap_ivr << " mL in IVR");
+  CHECK(p_max > pw.lv().windkessel.p_init);
 
   const double sv = pw.stroke_volume_LV();
   CHECK_MSG(sv > 0.0, "stroke volume " << sv);
   CHECK(pw.ejection_fraction_LV() > 0.0);
   CHECK(pw.ejection_fraction_LV() < 100.0);
-  CHECK_NEAR(pw.ejection_fraction_LV(), 100.0 * sv / pw.state_LV().V_ED, 1e-12);
+  CHECK_NEAR(pw.ejection_fraction_LV(), 100.0 * sv / pw.state_LV().end_dia_vol, 1e-12);
+  CHECK(pw.stroke_volume_RV() > 0.0);
 }
 
-TEST_CASE("PiecewisePVLoop: the init phase ramps the pressure to the diastasis value")
+TEST_CASE("PiecewisePVLoop: the valve opens when P > P_c, and stays open min_ejection_duration")
 {
-  LumpedCavity mech;
   PiecewisePVLoop pw;
-  pw.timing().t_init = 100.0;
-  pw.init(mech.volume_LV(), mech.volume_RV());
+  pw.initialize(0.0, 100.0, 0.0, 100.0, 0.0);
+  PiecewisePVLoop::ChamberState s = pw.state_LV();
+  s.phase = PiecewisePVLoop::IVC;
+  s.end_dia_vol = 100.0;
+  pw.set_states(s, pw.state_RV());
+  const double P_c = pw.state_LV().wdk_pressure_n;
 
-  double previous = 0.0;
-  for (int i = 0; i < 100; i++)
+  pw.commit(200.0, 1.0, 100.0, P_c - 1.0, 100.0, 0.0);
+  CHECK(pw.state_LV().phase == PiecewisePVLoop::IVC);
+  pw.commit(201.0, 1.0, 100.0, P_c + 1.0, 100.0, 0.0);
+  CHECK(pw.state_LV().phase == PiecewisePVLoop::EJECTION);
+  CHECK(pw.state_LV().has_ejected);
+
+  // No outflow at all, but the ejection lasts min_ejection_duration before closing
+  const double t_open = 201.0, d = pw.lv().min_ejection_duration;
+  double t = t_open;
+  while (pw.state_LV().phase == PiecewisePVLoop::EJECTION && t < t_open + 10.0 * d)
   {
-    const double t = i + 1.0;
-    pw.advance_pressure(t, 1.0);
-    CHECK(pw.pressure_LV() >= previous - 1e-9);
-    previous = pw.pressure_LV();
-    mech.apply_pressures(t, pw.pressure_LV(), pw.pressure_RV());
-    pw.update_volumes(t, 1.0, mech.volume_LV(), mech.volume_RV());
+    t += 1.0;
+    pw.commit(t, 1.0, 100.0, 2.0 * P_c, 100.0, 0.0);
   }
-  CHECK_NEAR(previous, pw.lv().P_DS, 1e-6 * pw.lv().P_DS + 1e-9);
-}
-
-TEST_CASE("PiecewisePVLoop: the dP limit caps the pressure change per step, and counts it")
-{
-  LumpedCavity mech;
-  mech.C = 0.001;       // a very stiff cavity asks for large corrections
-  PiecewisePVLoop pw;
-  pw.timing().t_init = 50.0;
-  pw.timing().t_EDP = 50.0;
-  pw.lv().dP_max = 50.0;
-  mech.t_act = pw.activation_time(0);
-  pw.init(mech.volume_LV(), mech.volume_RV());
-
-  double prev = 0.0, biggest_in_iso = 0.0;
-  for (int i = 0; i < 600; i++)
-  {
-    const double t = i + 1.0;
-    pw.advance_pressure(t, 1.0);
-    const int ph = pw.state_LV().phase;
-    if (ph == PiecewisePVLoop::IVC || ph == PiecewisePVLoop::IVR)
-      biggest_in_iso = std::max(biggest_in_iso, std::fabs(pw.pressure_LV() - prev));
-    prev = pw.pressure_LV();
-    mech.apply_pressures(t, pw.pressure_LV(), pw.pressure_RV());
-    pw.update_volumes(t, 1.0, mech.volume_LV(), mech.volume_RV());
-  }
-  CHECK_MSG(biggest_in_iso <= 50.0 + 1e-9, biggest_in_iso);
-  CHECK(pw.state_LV().n_clipped > 0);
-}
-
-TEST_CASE("PiecewisePVLoop: the Windkessel variants set where the ejection starts")
-{
-  auto peak_art = [](bool continuous) {
-    LumpedCavity mech;
-    PiecewisePVLoop pw;
-    pw.timing().t_init = 200.0;
-    pw.timing().t_EDP = 100.0;
-    pw.set_continuous_windkessel(continuous);
-    mech.t_act = pw.activation_time(0);
-    pw.init(mech.volume_LV(), mech.volume_RV());
-    double ejected = false;
-    for (int i = 0; i < 2200; i++)
-    {
-      const double t = i + 1.0;
-      pw.advance_pressure(t, 1.0);
-      mech.apply_pressures(t, pw.pressure_LV(), pw.pressure_RV());
-      pw.update_volumes(t, 1.0, mech.volume_LV(), mech.volume_RV());
-      if (pw.state_LV().phase == PiecewisePVLoop::EJECTION) ejected = true;
-    }
-    CHECK(ejected);
-    return pw.state_LV().P_art;
-  };
-  const double fixed = peak_art(false), cont = peak_art(true);
-  CHECK(std::isfinite(fixed));
-  CHECK(std::isfinite(cont));
-  CHECK(fixed != cont);
+  CHECK(pw.state_LV().phase == PiecewisePVLoop::IVR);
+  CHECK_MSG(t > t_open + d && t <= t_open + d + 1.0, "closed at " << t);
+  CHECK_NEAR(pw.state_LV().end_sys_vol, 100.0, 0.0);
 }
 
 TEST_CASE("PiecewisePVLoop: configure reads the XML block, and -rr wins over it")
 {
   write_text("pw.xml",
     "<mesh celltype=\"tetrahedron\" dim=\"3\">"
-    "<pvloop_piecewise RR=\"800\" t_init=\"120\" t_EDP=\"90\"/></mesh>");
+    "<pvloop_piecewise period=\"700\" t_zero=\"40\" t_end_diastole=\"100\">"
+    "<lv p_init=\"8000\" fill_rate=\"0.2\"/><rv p_fill=\"150\"/>"
+    "</pvloop_piecewise></mesh>");
   PiecewisePVLoop a;
   a.configure("pw.xml");
+  CHECK_NEAR(a.period(), 700.0, 0.0);
+  CHECK_NEAR(a.lv().t_zero, 40.0, 0.0);
+  CHECK_NEAR(a.rv().t_end_diastole, 100.0, 0.0);
+  CHECK_NEAR(a.lv().windkessel.p_init, 8000.0, 0.0);
+  CHECK_NEAR(a.lv().fill_rate, 0.2, 0.0);
+  CHECK_NEAR(a.rv().p_fill, 150.0, 0.0);
+  CHECK_NEAR(a.rv().windkessel.p_init, 2500.0, 0.0);   // default kept
+  CHECK(!a.describe().empty());
+
   PiecewisePVLoop b;
   b.configure("pw.xml", 500.0);
-  CHECK_NEAR(b.timing().RR, 500.0, 0.0);
-  CHECK(!a.describe().empty());
+  CHECK_NEAR(b.period(), 500.0, 0.0);
+  CHECK_NEAR(b.rv().period, 500.0, 0.0);
 
   std::istringstream head(PiecewisePVLoop::history_header());
   std::string tok;
   int cols = 0;
-  while (head >> tok) if (tok != "#") cols++;
-  a.init(80.0, 90.0);
+  while (head >> tok && tok.front() != '(') if (tok != "#") cols++;
+  a.initialize(0.0, 80.0, 0.0, 90.0, 0.0);
   std::istringstream row(a.history_row(0.0));
   int vals = 0;
   while (row >> tok) vals++;
+  CHECK_EQ(cols, 11);
   CHECK_EQ(cols, vals);
 }
 
@@ -775,7 +842,7 @@ TEST_CASE("RegazzoniCirculation: conserves the stressed blood volume when couple
   CHECK_MSG(std::fabs(v1 - v0) < 1e-6 * v0, v0 << " -> " << v1);
 }
 
-TEST_CASE("PiecewiseCirculation: one mechanics solve per step, with the plan including phase 0")
+TEST_CASE("PiecewiseCirculation: the plan is beats*period, and the constraints are met")
 {
   write_text("p.xml", kEmptyMesh);
   TimeBase tb;
@@ -785,10 +852,11 @@ TEST_CASE("PiecewiseCirculation: one mechanics solve per step, with the plan inc
   PiecewiseCirculation p;
   p.configure("p.xml", tb);
 
+  const PiecewisePVLoop defaults;
   const RunPlan & plan = p.plan();
-  CHECK(plan.run_ms > 600.0);
-  CHECK(plan.stim_offset_ms > 0.0);
-  CHECK_EQ(plan.nsteps, static_cast<int>(std::round(plan.run_ms)));
+  CHECK_NEAR(plan.run_ms, 600.0, 0.0);
+  CHECK_NEAR(plan.stim_offset_ms, defaults.lv().t_end_diastole, 0.0);
+  CHECK_EQ(plan.nsteps, 600);
 
   LumpedCavity mech;
   mech.period = 600.0;
@@ -797,11 +865,41 @@ TEST_CASE("PiecewiseCirculation: one mechanics solve per step, with the plan inc
   run_steps(p, 0, plan.nsteps);
   p.end();
 
-  CHECK_EQ(mech.solves, plan.nsteps);
+  // Pressure steps take one solve; the others need the Newton on the pressures
+  CHECK(mech.solves > plan.nsteps);
 
   const arma::mat h = read_table("p.xml_piecewise.dat");
-  CHECK_EQ(h.n_rows, arma::uword(plan.nsteps));
+  REQUIRE(h.n_rows == arma::uword(plan.nsteps));
   CHECK(h.is_finite());
+
+  // Columns: t, then per cavity: phase, P, V, Q, P_c
+  const PiecewisePVLoop::Windkessel wk[2] = { defaults.lv().windkessel, defaults.rv().windkessel };
+  int seen[2][5] = {};
+  for (int c = 0; c < 2; c++)
+  {
+    const int k = 1 + 5 * c;
+    double v_locked = 0.0;
+    for (arma::uword i = 0; i < h.n_rows; i++)
+    {
+      const int ph = static_cast<int>(h(i, k));
+      REQUIRE(ph >= 0);
+      REQUIRE(ph <= 4);
+      seen[c][ph]++;
+      const double P = h(i, k + 1), V = h(i, k + 2), Q = h(i, k + 3), Pc = h(i, k + 4);
+      if (ph == PiecewisePVLoop::PRELOAD || ph == PiecewisePVLoop::EJECTION) v_locked = V;
+      if (ph == PiecewisePVLoop::IVC || ph == PiecewisePVLoop::IVR)
+        CHECK_MSG(std::fabs(V - v_locked) < 1e-3,
+                  "cavity " << c << ", t = " << h(i, 0) << ": V moved " << V - v_locked << " mL");
+      if (ph == PiecewisePVLoop::FILLING && i > 0)
+        CHECK_NEAR(V - h(i - 1, k + 2), (c == 0 ? defaults.lv() : defaults.rv()).fill_rate, 1e-3);
+      // Windkessel: the cavity pressure is P_c + R_c Q at the end of the step
+      if (ph == PiecewisePVLoop::EJECTION)
+        CHECK_NEAR(P, Pc + wk[c].Rc * Q, 1e-3 * (wk[c].Rc + 1.0 / wk[c].C));
+    }
+  }
+  for (int c = 0; c < 2; c++)
+    for (int ph = 0; ph < 5; ph++)
+      CHECK_MSG(seen[c][ph] > 0, "cavity " << c << " never solved under phase " << ph);
 }
 
 namespace

@@ -3,6 +3,7 @@
 #include <armadillo>
 #include "pdes/poisson.hpp"
 #include "pdes/laplace.hpp"
+#include "util/util.hpp"
 #include "util/command_line_args.h"
 
 #pragma push_macro("error")
@@ -65,6 +66,7 @@ void print_banner()
 //   }
 // }
 
+
 int main(int argc, const char* argv[])
 {
   CommandLineArgs::init(argc, argv);
@@ -111,6 +113,8 @@ int main(int argc, const char* argv[])
   ierr = PetscInitialize(&argc, (char ***)&argv, (char *) 0, help); CHKERRQ(ierr);
   ierr = MPI_Comm_rank(PETSC_COMM_WORLD, &rank); CHKERRQ(ierr);
   ierr = MPI_Comm_size(PETSC_COMM_WORLD, &size); CHKERRQ(ierr);
+
+  apply_petsc_options_from_toml(tbl);   // <-- TOML [solver.petsc] -> PETSc options DB
 
   cout << "Poisson-Laplace Solver" << endl;
 

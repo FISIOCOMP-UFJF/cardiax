@@ -13,6 +13,14 @@
 #include "timer.hpp"
 #include "command_line_args.h"
 #include "time_parameters.hpp"
+#include "toml.hpp"
+#include <petsc.h>
+
+// -----------------------------------------------------------------------------
+// TOML utilities
+// -----------------------------------------------------------------------------
+
+void apply_petsc_options_from_toml(const toml::table & cfg);
 
 // -----------------------------------------------------------------------------
 // Useful macros

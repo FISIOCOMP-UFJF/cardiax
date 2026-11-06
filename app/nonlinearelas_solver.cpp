@@ -26,42 +26,6 @@ void usage()
   exit(0);
 }
 
-// Push every key under [solver.petsc] in the TOML into PETSc's options
-// database, as if they had been passed on the command line (-<key> <value>).
-//
-// Call AFTER PetscInitialize() and BEFORE any KSPSetFromOptions()/
-// SNESSetFromOptions(). Options actually passed on the command line take
-// precedence: we skip any option already present in the database.
-void apply_petsc_options_from_toml(const toml::table & cfg)
-{
-  // navigate to [solver.petsc]
-  auto solver = cfg["solver"].as_table();
-  if (!solver) return;
-  auto petsc = (*solver)["petsc"].as_table();
-  if (!petsc) return;
-
-  for (auto && [key, node] : *petsc)
-  {
-    const std::string flag = "-" + std::string(key.str());   // "ksp_type" -> "-ksp_type"
-
-    // Command line wins: if this option was already set (e.g. on argv,
-    // parsed by PetscInitialize), leave it untouched.
-    PetscBool already = PETSC_FALSE;
-    PetscOptionsHasName(NULL, NULL, flag.c_str(), &already);
-    if (already) continue;
-
-    // PETSc options are strings; stringify whatever TOML type we got.
-    std::string value;
-    if      (auto s = node.value<std::string>()) value = *s;
-    else if (auto b = node.value<bool>())        value = (*b ? "true" : "false");
-    else if (auto i = node.value<int64_t>())     value = std::to_string(*i);
-    else if (auto d = node.value<double>())      value = std::to_string(*d);
-    else continue;   // unsupported type -> skip
-
-    PetscOptionsSetValue(NULL, flag.c_str(), value.c_str());
-  }
-}
-
 void print_banner()
 {
   cout << "========================================" << endl;

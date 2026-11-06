@@ -2,6 +2,43 @@
 #include "pugixml.hpp"
 
 // -----------------------------------------------------------------------------
+// TOML utilities
+// -----------------------------------------------------------------------------
+
+void apply_petsc_options_from_toml(const toml::table & cfg)
+{
+  auto solver = cfg["solver"].as_table();
+  if (!solver) return;
+  auto petsc = (*solver)["petsc"].as_table();
+  if (!petsc) return;
+
+  for (auto && [key, node] : *petsc)
+  {
+    const std::string flag = "-" + std::string(key.str());
+
+    PetscBool already = PETSC_FALSE;
+    PetscOptionsHasName(NULL, NULL, flag.c_str(), &already);
+    if (already) continue;   // command line already set it -> keep CL value
+
+    // Booleans are PETSc *flags*: true -> set with no value, false -> skip.
+    if (auto b = node.value<bool>())
+    {
+      if (*b) PetscOptionsSetValue(NULL, flag.c_str(), NULL);
+      continue;
+    }
+
+    // Everything else carries a string value.
+    std::string value;
+    if      (auto s = node.value<std::string>()) value = *s;
+    else if (auto i = node.value<int64_t>())     value = std::to_string(*i);
+    else if (auto d = node.value<double>())      value = std::to_string(*d);
+    else continue;
+
+    PetscOptionsSetValue(NULL, flag.c_str(), value.c_str());
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Printing utils
 // -----------------------------------------------------------------------------
 

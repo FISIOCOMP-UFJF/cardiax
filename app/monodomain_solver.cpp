@@ -156,6 +156,8 @@ int main(int argc, const char *argv[])
   ierr = MPI_Comm_rank(PETSC_COMM_WORLD, &rank); CHKERRQ(ierr);
   ierr = MPI_Comm_size(PETSC_COMM_WORLD, &size); CHKERRQ(ierr);
 
+  apply_petsc_options_from_toml(cfg);
+
   if(model == "monodomain")
   {
     cout << "Monodomain solver\n";

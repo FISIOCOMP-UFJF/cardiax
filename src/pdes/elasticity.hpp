@@ -80,20 +80,20 @@ protected:
   void assemble_system();
 
   //! Compute element stiffness matrix
-  void calc_elmat_stiffness (const int eindex, const MixedFiniteElement * fe,
-                             arma::mat & elmat);
+  void calc_elmat_stiffness (const int eindex, const MixedFiniteElement * fe, 
+                             const Quadrature * qd, arma::mat & elmat);
 
   //! Compute element load vector
-  void calc_elvec_source (const int eindex, const MixedFiniteElement * fe,
-                          arma::vec & elvec);
+  void calc_elvec_source (const int eindex, const MixedFiniteElement * fe, 
+                          const Quadrature * qd, arma::vec & elvec);
 
   //! Compute element Robin matrix (boundary condition)
   void calc_robin_elmat (const int eindex, const MixedFiniteElement * fe,
-                         arma::mat & elmat);
+                         const Quadrature * qd, arma::mat & elmat);
 
   //! Compute element Robin load vector (boundary condition)
   void calc_robin_elvec (const int eindex, const MixedFiniteElement * fe,
-                         arma::vec & elvec);
+                         const Quadrature * qd, arma::vec & elvec);
 
   //! Compute stress for a given element
   void calc_element_stress(Mapping &em, const MixedFiniteElement *fe,

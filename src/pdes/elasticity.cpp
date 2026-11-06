@@ -70,11 +70,13 @@ void Elasticity::assemble_system()
   // Assemble bilinear form - loop over elements
   //
   MixedFiniteElement * fe = fespace.createFE();
+  Quadrature * qd = Quadrature::create(2*fe->get_order_u()-2, fe->get_type()); 
+
   for(int i=0; i<msh.get_n_elements(); i++)
   {
     fespace.get_element_dofs_u(i,dnums);
-    calc_elmat_stiffness(i, fe, elmat);
-    calc_elvec_source(i, fe, elvec);
+    calc_elmat_stiffness(i, fe, qd, elmat);
+    calc_elvec_source(i, fe, qd, elvec);
 
     for(int k=0;k<n;k++)
       for(int l=0;l<n;l++)
@@ -84,12 +86,16 @@ void Elasticity::assemble_system()
       f.add(dnums[k],elvec(k));
   }
 
+  delete qd;
+
   //
   // Assemble boundary bilinearforms to impose boundary conditions
   // Loop over surface elements
   //
   cout << "Assembling boundary matrices" << endl;
   MixedFiniteElement * bfe = fespace.create_boundary_FE();
+  Quadrature * qdb = Quadrature::create(2*bfe->get_order_u(), bfe->get_type());
+
   if (bfe != NULL)
   {
     int m = bfe->get_ndofs_u();
@@ -99,8 +105,8 @@ void Elasticity::assemble_system()
 
     for(int i=0; i<msh.get_n_boundary_elements(); i++)
     {
-      calc_robin_elmat(i, bfe, belmat);
-      calc_robin_elvec(i, bfe, belvec);
+      calc_robin_elmat(i, bfe, qdb, belmat);
+      calc_robin_elvec(i, bfe, qdb, belvec);
 
       fespace.get_boundary_element_dofs_u(i,bdnums);
 
@@ -112,6 +118,8 @@ void Elasticity::assemble_system()
         f.add(bdnums[k],belvec(k));
     }
   }
+
+  delete qdb;
 
   // Fix boundary nodes
   if (fixed_nodes_map.size())
@@ -127,15 +135,6 @@ void Elasticity::assemble_system()
 
     std::map<int,double> boundary_values;
     std::map<int,NodalData>::iterator it;
-    // for(it=fixed_nodes_map.begin(); it!=fixed_nodes_map.end(); ++it)
-    // {
-    //   nod = it->first;
-    //   inf = it->second;
-    //   dir = inf.first;
-    //   val = inf.second;
-    //   idx = (dir * msh.get_n_points()) + nod;
-    //   boundary_values.insert( std::pair<int,double>(idx,val) );
-    // }
     int nd = msh.get_n_dim();
     for(it=fixed_nodes_map.begin(); it!=fixed_nodes_map.end(); ++it)
     {
@@ -290,22 +289,19 @@ inline void Elasticity::calc_H_matrix (const arma::vec & shape, arma::mat & H)
     H(1,2) = shape(2);
     H(1,3) = shape(3);
   }
-  else if (Nd == 3 && Nb == 4) // quad
+  else if (Nd == 3 && Nb == 4)
   {
-    for(int i=0; i<Nb; i++)
-      H(0,i) = shape(i%Nb);
-
-    for(int i=Nb; i<2*Nb; i++)
-      H(1,i) = shape(i%Nb);
-
-    for(int i=2*Nb; i<3*Nb; i++)
-      H(2,i) = shape(i%Nb);
+    for(int j=0; j<Nb; j++) {      // j = node index
+      H(0, j)        = shape(j);   // x block
+      H(1, j +   Nb) = shape(j);   // y block
+      H(2, j + 2*Nb) = shape(j);   // z block
+    }
   }
 }
 
 inline void Elasticity::calc_C_matrix (const arma::vec3 & a, arma::mat & C)
 {
-  //C.zeros();
+  C.zeros();
   C(0,0) = a(0);
   C(1,1) = a(1);
   if(msh.get_n_dim() == 3)
@@ -333,6 +329,7 @@ void Elasticity::solve()
 
 void Elasticity::calc_elmat_stiffness (const int eindex,
                                        const MixedFiniteElement * fe,
+                                       const Quadrature * qd, 
                                        arma::mat & elmat)
 {
   int index;
@@ -347,9 +344,9 @@ void Elasticity::calc_elmat_stiffness (const int eindex,
   arma::mat B(numc,ndof);
   arma::mat D(numc,numc);
 
-  // Create quadrature rule (need to check if order is ok)
-  Quadrature * qd;
-  qd = Quadrature::create(2*fe->get_order_u()-2, fe->get_type()); 
+  // // Create quadrature rule (need to check if order is ok)
+  // Quadrature * qd;
+  // qd = Quadrature::create(2*fe->get_order_u()-2, fe->get_type()); 
   
   Mapping em = fe->get_mapping(eindex);
 
@@ -375,11 +372,12 @@ void Elasticity::calc_elmat_stiffness (const int eindex,
     elmat += (B.t() * D * B) * detJxW;
   }
 
-  delete qd;
+  // delete qd;
 }
 
 void Elasticity::calc_elvec_source (const int eindex,
                                     const MixedFiniteElement * fe,
+                                    const Quadrature * qd, 
                                     arma::vec & elvec)
 {
   int index;
@@ -391,9 +389,9 @@ void Elasticity::calc_elvec_source (const int eindex,
   arma::mat dshape;
 
   // Create quadrature rule (need to check if order is ok)
-  Quadrature * qd = Quadrature::create(fe->get_order_u(), fe->get_type());
+  // Quadrature * qd = Quadrature::create(fe->get_order_u(), fe->get_type());
+  
   Mapping em = fe->get_mapping(eindex);
-
   elvec.zeros();
   index = em.get_index();
   for(int q=0; q<qd->get_num_ipoints(); q++)
@@ -412,11 +410,12 @@ void Elasticity::calc_elvec_source (const int eindex,
         elvec(j+i*nubf) += f(i) * shape(j) * detJxW;
   }
 
-  delete qd;
+  // delete qd;
 }
 
 void Elasticity::calc_robin_elmat (const int eindex,
                                    const MixedFiniteElement * fe,
+                                   const Quadrature * qd,
                                    arma::mat & elmat)
 {
   int ndim = fe->get_ndim();
@@ -428,9 +427,8 @@ void Elasticity::calc_robin_elmat (const int eindex,
   arma::vec shape;
   arma::mat dshape;
 
-  // Create quadrature rule (need to check if order is ok)
-  Quadrature * qd;
-  qd = Quadrature::create(2*fe->get_order_u(), fe->get_type());
+  // Quadrature * qd;
+  // qd = Quadrature::create(2*fe->get_order_u(), fe->get_type());
 
   SurfaceMapping sm = fe->get_boundary_mapping(eindex);
 
@@ -454,11 +452,12 @@ void Elasticity::calc_robin_elmat (const int eindex,
     elmat += H.t() * C * H * detJxW;
   }
 
-  delete qd;
+  // delete qd;
 }
 
 void Elasticity::calc_robin_elvec (const int eindex,
                                    const MixedFiniteElement * fe,
+                                   const Quadrature * qd, 
                                    arma::vec & elvec)
 {
   int ndim = fe->get_ndim();
@@ -470,8 +469,8 @@ void Elasticity::calc_robin_elvec (const int eindex,
   arma::mat dshape;
 
   // Create quadrature rule (need to check if order is ok)
-  Quadrature * qd;
-  qd = Quadrature::create(fe->get_order_u(), fe->get_type());
+  // Quadrature * qd;
+  // qd = Quadrature::create(fe->get_order_u(), fe->get_type());
 
   SurfaceMapping sm = fe->get_boundary_mapping(eindex);
   elvec.zeros();
@@ -499,7 +498,7 @@ void Elasticity::calc_robin_elvec (const int eindex,
         elvec(j+i*nubf) += f(i) * shape(j) * detJxW;
   }
 
-  delete qd;
+  // delete qd;
 }
 
 arma::vec3 Elasticity::coeff_robin_mat(int index)
@@ -627,24 +626,6 @@ void Elasticity::config(std::string & parfile)
     }
   }
 
-  if(extension == "par")
-  {
-    InputFile ifile(parfile);
-    ifile.read("problem_type", etype);
-
-    if (std::strncmp(etype.c_str(), "PLANE_STRAIN", 12) == 0)
-      elastype = PLANE_STRAIN;
-    else if (std::strncmp(etype.c_str(), "PLANE_STRESS", 12) == 0)
-      elastype = PLANE_STRESS;
-    else if (std::strncmp(etype.c_str(), "THREE_DIM", 9) == 0)
-      elastype = THREE_DIM;
-
-    set_type(elastype);
-    ifile.read_section("dirichlet", dirichlet_map);
-    ifile.read_section("neumann", neumann_map);
-    ifile.read_section("prescribed_displacement", fixed_nodes_map);
-    ifile.close();
-  }
 }
 
 void Elasticity::calc_element_stress(Mapping &em, const MixedFiniteElement *fe,
@@ -718,9 +699,10 @@ void Elasticity::von_mises(const arma::vec & u, arma::vec & sigma)
   sigma.resize(nels);
   sigma.zeros();
 
+  MixedFiniteElement * fe = fespace.createFE();  
+
   for(int i=0;i<nels; i++)
   {
-    MixedFiniteElement * fe = fespace.createFE();
     Mapping em = msh.get_element_mapping(i);
     arma::vec elvecu, elsigma;
 
@@ -729,24 +711,35 @@ void Elasticity::von_mises(const arma::vec & u, arma::vec & sigma)
     get_elvec(dnums, solution, elvecu);
     calc_element_stress(em, fe, elvecu, msh.get_element_centroid(i), elsigma);
 
-    double v = 0.3;
-    double sigma11 = elsigma(0);
-    double sigma22 = elsigma(1);
-    double sigma12 = elsigma(2);
-    double sigma33 = v*(sigma11 + sigma22);
+    // double v = 0.3;
+    // double sigma11 = elsigma(0);
+    // double sigma22 = elsigma(1);
+    // double sigma12 = elsigma(2);
+    // double sigma33 = v*(sigma11 + sigma22);
+    // double s1 = sigma11*sigma11;
+    // double s2 = sigma22*sigma22;
+    // double s3 = sigma33*sigma33;
+    // double s4 = -(sigma11*sigma22);
+    // double s5 = -(sigma22*sigma33);
+    // double s6 = -(sigma33*sigma11);
+    // double s7 = (3.0*sigma12*sigma12);
+    // sigma(i) = sqrt(s1 + s2 + s3 + s4 + s5 + s6 + s7);
 
-    double s1 = sigma11*sigma11;
-    double s2 = sigma22*sigma22;
-    double s3 = sigma33*sigma33;
-    double s4 = -(sigma11*sigma22);
-    double s5 = -(sigma22*sigma33);
-    double s6 = -(sigma33*sigma11);
-    double s7 = (3.0*sigma12*sigma12);
-
-    sigma(i) = sqrt(s1 + s2 + s3 + s4 + s5 + s6 + s7);
-
-    delete fe;
-  }
+    // after elsigma computed
+    double sxx,syy,szz,sxy,syz,sxz;
+    double v = parameters["poisson"];
+    if (elastype == THREE_DIM) {
+      sxx=elsigma(0); syy=elsigma(1); szz=elsigma(2);
+      sxy=elsigma(3); syz=elsigma(4); sxz=elsigma(5);
+    } else { // plane stress/strain: 3 comps
+      sxx=elsigma(0); syy=elsigma(1); sxy=elsigma(2);
+      szz = (elastype==PLANE_STRAIN) ? v*(sxx+syy) : 0.0;
+      syz=sxz=0.0;
+    }
+    sigma(i) = sqrt(0.5*((sxx-syy)*(sxx-syy)+(syy-szz)*(syy-szz)+(szz-sxx)*(szz-sxx))
+                    + 3.0*(sxy*sxy+syz*syz+sxz*sxz));
+  }  
+  delete fe;
 }
 
 void Elasticity::write_data(const string & filename)

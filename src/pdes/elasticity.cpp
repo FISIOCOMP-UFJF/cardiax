@@ -1,7 +1,7 @@
 #include "elasticity.hpp"
 #include "util/pugixml.hpp"
 
-#define DOBRAR
+// #define DOBRAR
 
 Elasticity::Elasticity() : writer(&msh)
 {
@@ -27,6 +27,38 @@ void Elasticity::run(const string & name)
   init();
   assemble_system();
   solve();
+
+  std::cout << "x=0 clamp check: u(dof0)=" << solution(0)
+          << " u(41)=" << solution(41)
+          << " u(738)=" << solution(738) << "\n";   // dir0 node0, dir0 node41, dir1 node0
+
+// // after solve(): print u_y along the top edge (max y, z=0) from clamp to tip
+// int np = msh.get_n_points();
+
+// // find the beam's max y (the "depth") from the mesh itself
+// double ymax = -1e300, zmin = 1e300;
+// for (int i = 0; i < np; i++) {
+//   arma::vec3 X = msh.get_point(i);
+//   if (X(1) > ymax) ymax = X(1);
+//   if (X(2) < zmin) zmin = X(2);
+// }
+
+// for (int i = 0; i < np; i++) {
+//   arma::vec3 X = msh.get_point(i);
+//   if (std::abs(X(1) - ymax) < 1e-9 && std::abs(X(2) - zmin) < 1e-9) {
+//     // std::cout << "x=" << X(0) << "  u_y=" << solution(i + 1*np) << "\n";
+
+//     std::cout << "x=" << X(0) << "  u_y(block)=" << solution(i + 1*np)
+//           << "  u_y(interleaved)=" << solution(3*i + 1) << "\n";
+//   }
+// }
+
+// std::cout << "get_ndofs()   = " << fespace.get_ndofs()    << "\n";
+// std::cout << "get_ndofs_u() = " << fespace.get_ndofs_u()  << "\n";
+// std::cout << "nd*np         = " << msh.get_n_dim()*msh.get_n_points() << "\n";
+
+
+  
   cout<<"Solved\n";
 }
 
@@ -124,32 +156,81 @@ void Elasticity::assemble_system()
     }
   }
 
+  // // Fix boundary nodes
+  // if (fixed_nodes_map.size())
+  // {
+  //   cout << "Fixing boundary nodes \n";
+
+  //   int nod, idx, dir;
+  //   double val;
+  //   NodalData inf;
+
+  //   cout << " Number of prescribed displacements ";
+  //   cout << fixed_nodes_map.size() << endl;
+
+  //   std::map<int,double> boundary_values;
+  //   std::map<int,NodalData>::iterator it;
+  //   for(it=fixed_nodes_map.begin(); it!=fixed_nodes_map.end(); ++it)
+  //   {
+  //     nod = it->first;
+  //     inf = it->second;
+  //     dir = inf.first;
+  //     val = inf.second;
+  //     idx = (dir * msh.get_n_points()) + nod;
+  //     boundary_values.insert( std::pair<int,double>(idx,val) );
+  //   }
+
+  //   FETools::apply_boundary_values(boundary_values, K_l, f_l);
+  // }
+
   // Fix boundary nodes
   if (fixed_nodes_map.size())
   {
     cout << "Fixing boundary nodes \n";
+    cout << " Number of prescribed displacements " << fixed_nodes_map.size() << endl;
 
-    int nod, idx, dir;
-    double val;
-    NodalData inf;
+    // Build (node, component) -> global DOF map from the element DOF numbering,
+    // the same map assembly uses. Do NOT assume dof = dir*np + node.
+    int np  = msh.get_n_points();
+    int nd  = msh.get_n_dim();
+    int nen = msh.get_nen();
+    std::vector<int> node_comp_dof(nd * np, -1);
 
-    cout << " Number of prescribed displacements ";
-    cout << fixed_nodes_map.size() << endl;
-
-    std::map<int,double> boundary_values;
-    std::map<int,NodalData>::iterator it;
-    for(it=fixed_nodes_map.begin(); it!=fixed_nodes_map.end(); ++it)
+    std::vector<int> dnums, pnums;
+    for (int e = 0; e < msh.get_n_elements(); e++)
     {
-      nod = it->first;
-      inf = it->second;
-      dir = inf.first;
-      val = inf.second;
-      idx = (dir * msh.get_n_points()) + nod;
-      boundary_values.insert( std::pair<int,double>(idx,val) );
+      fespace.get_element_dofs_u(e, dnums);
+      msh.get_element_pt_nums(e, pnums);
+      for (int comp = 0; comp < nd; comp++)
+        for (int a = 0; a < nen; a++)
+          node_comp_dof[comp * np + pnums[a]] = dnums[comp * nen + a];
     }
 
-    FETools::apply_boundary_values(boundary_values, K_l, f_l);
+    std::map<int,double> boundary_values;
+    for (auto it = fixed_nodes_map.begin(); it != fixed_nodes_map.end(); ++it)
+    {
+      int    nod = it->first;
+      int    dir = it->second.first;
+      double val = it->second.second;
+      int dof = node_comp_dof[dir * np + nod];     // real DOF, from the map
+      if (dof >= 0)
+        boundary_values.insert({dof, val});
+    }
+
+    FETools::apply_boundary_values(boundary_values, K, f);
   }
+
+
+for (auto it = fixed_nodes_map.begin(); it != fixed_nodes_map.end(); ++it)
+{
+  int nod = it->first;
+  int dir = it->second.first;
+  double val = it->second.second;
+  arma::vec3 X = msh.get_point(nod);
+  int dof = node_comp_dof[dir*np + nod];      // or the old dir*np+nod
+  std::cout << "CLAMP node " << nod << " at x=" << X(0)
+            << " dir=" << dir << " -> dof=" << dof << " val=" << val << "\n";
+}
 
   //int ln = K_l.size();
   //int nnz  = K_l.get_nnz();
@@ -412,9 +493,13 @@ inline void Elasticity::calc_D_matrix (const arma::vec3 & X, int index, arma::ma
     D(1,1) = c;
     D(1,2) = c*(v/(1.0-v));
     D(2,2) = c;
-    D(3,3) = (1.0-2.0*v)/(2.0*(1.0-v));
-    D(4,4) = (1.0-2.0*v)/(2.0*(1.0-v));
-    D(5,5) = (1.0-2.0*v)/(2.0*(1.0-v));
+    // bug !
+    // D(3,3) = (1.0-2.0*v)/(2.0*(1.0-v));
+    // D(4,4) = (1.0-2.0*v)/(2.0*(1.0-v));
+    // D(5,5) = (1.0-2.0*v)/(2.0*(1.0-v));
+    D(3,3) = c*((1.0-2.0*v)/(2.0*(1.0-v)));
+    D(4,4) = c*((1.0-2.0*v)/(2.0*(1.0-v)));
+    D(5,5) = c*((1.0-2.0*v)/(2.0*(1.0-v)));
 
     // symmetric
     D(1,0) = D(0,1);
@@ -746,6 +831,8 @@ void Elasticity::config(std::string & parfile)
       t(1) = node.attribute("t1").as_double();
       t(2) = node.attribute("t2").as_double();
       neumann_map.insert( std::pair<int,arma::vec3>(marker,t) );
+
+      // cout << t << endl;
     }
 
     // dirichlet
@@ -910,24 +997,70 @@ void Elasticity::von_mises(const arma::vec & u, arma::vec & sigma)
 
 void Elasticity::write_data(const string & filename)
 {
-  arma::vec vmstress(msh.get_n_elements());
-  std::string vtuname = filename + ".vtu";
-  std::string vename = filename + "_ve";
-
-  // copy solution to displacements array
-  // (u1, u2, ... un, v1, v2, ...vn) -> (u1, v1, u2, v2, ...)
   int np = msh.get_n_points();
   int nd = msh.get_n_dim();
   arma::vec displacements(3*np, arma::fill::zeros);
 
+  // DOF layout is block: solution(nod + dir*np). Interleave to (x,y,z) per node.
   for(int d=0; d<nd; d++)
     for(int i=0; i<np; i++)
-      displacements(d + i * 3) = solution(i + d * np);
+      displacements(d + i*3) = solution(i + d*np);
 
-  // write output data
   writer.open(filename, 1, 1);
   writer.write_displ_step(0, displacements.memptr());
-
-  //von_mises(solution,vmstress);
-  //vtkout.write_def_mesh(displacement, vmstress, vtuname);
 }
+
+// void Elasticity::write_data(const string & filename)
+// {
+//   int np  = msh.get_n_points();
+//   int nd  = msh.get_n_dim();
+//   int nen = msh.get_nen();
+
+//   arma::vec displacements(3*np, arma::fill::zeros);
+
+//   std::vector<int> dnums;
+//   std::vector<int> pnums;
+//   for (int e = 0; e < msh.get_n_elements(); e++)
+//   {
+//     fespace.get_element_dofs_u(e, dnums);   // the SAME map used in assembly
+//     msh.get_element_pt_nums(e, pnums);      // this element's global node ids
+
+//     // dnums is laid out block-per-component to match calc_B_matrix:
+//     //   local dof = comp*nen + localnode
+//     for (int comp = 0; comp < nd; comp++)
+//       for (int a = 0; a < nen; a++)
+//       {
+//         int dof  = dnums[comp*nen + a];
+//         int node = pnums[a];
+//         displacements(comp + node*3) = solution(dof);
+//       }
+//   }
+
+//   writer.open(filename, 1, 1);
+//   writer.write_displ_step(0, displacements.memptr());
+// }
+
+
+// void Elasticity::write_data(const string & filename)
+// {
+//   arma::vec vmstress(msh.get_n_elements());
+//   std::string vtuname = filename + ".vtu";
+//   std::string vename = filename + "_ve";
+
+//   // copy solution to displacements array
+//   // (u1, u2, ... un, v1, v2, ...vn) -> (u1, v1, u2, v2, ...)
+//   int np = msh.get_n_points();
+//   int nd = msh.get_n_dim();
+//   arma::vec displacements(3*np, arma::fill::zeros);
+
+//   for(int d=0; d<nd; d++)
+//     for(int i=0; i<np; i++)
+//       displacements(d + i * 3) = solution(i + d * np);
+
+//   // write output data
+//   writer.open(filename, 1, 1);
+//   writer.write_displ_step(0, displacements.memptr());
+
+//   //von_mises(solution,vmstress);
+//   //vtkout.write_def_mesh(displacement, vmstress, vtuname);
+// }

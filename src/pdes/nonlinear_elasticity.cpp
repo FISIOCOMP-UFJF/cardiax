@@ -2421,7 +2421,13 @@ void NonlinearElasticity::run(const string & mshfile, const toml::table & cfg, c
   // setup data writer
   if(output_step)
   {
-    std::string output = filename.substr(0, filename.length() - 4) + "_output_nl";
+    // std::string output = filename.substr(0, filename.length() - 4) + "_output_nl";
+    // writer.open(output, lc.get_nincs() + 1 + INCs_TA, 1);
+
+    // Output basename from the TOML [output] block; fall back to the
+    // mesh-derived name if the key is absent.
+    std::string default_output = filename.substr(0, filename.length() - 4) + "_output_nl";
+    std::string output = cfg["output"]["filename"].value_or(default_output);
     writer.open(output, lc.get_nincs() + 1 + INCs_TA, 1);
   }
 

@@ -40,6 +40,20 @@ void FETools::apply_boundary_values(std::map<int,double> nodes,
   }
 }
 
+// void FETools::apply_boundary_values(std::map<int,double> nodes, 
+//                                     petsc::Matrix & A, petsc::Vector & b)
+// {
+//   const double p = 1.e+10;
+//   for (auto it = nodes.begin(); it != nodes.end(); ++it)
+//   {
+//     int index = it->first;
+//     double value = it->second;
+//     std::cout << "BC: clamping dof " << index << " to " << value << "\n";   // the print
+//     A.add(index, index, p);
+//     b.set(index, value*p);
+//   }
+// }
+
 void FETools::apply_boundary_values(std::map<int,double> nodes,
 																		petsc::Matrix & A, petsc::Vector & b,
 																		petsc::Vector & xbar, bool update_rhs)

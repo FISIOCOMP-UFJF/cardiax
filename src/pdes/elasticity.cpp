@@ -14,16 +14,68 @@ Elasticity::~Elasticity()
 {
   // do nothing
 }
+void Elasticity::set_parameters(const toml::table & cfg)
+{
+  cout << "Reading parameters from TOML" << endl;
 
-void Elasticity::run(const string & name)
+  // problem: type + mesh
+  std::string t = cfg["problem"]["type"].value_or(std::string("THREE_DIM"));
+  if      (t == "PLANE_STRAIN") elastype = PLANE_STRAIN;
+  else if (t == "PLANE_STRESS") elastype = PLANE_STRESS;
+  else if (t == "THREE_DIM")    elastype = THREE_DIM;
+  else
+    print_error("elasticity.cpp", "set_parameters",
+                "unknown problem.type (THREE_DIM | PLANE_STRAIN | PLANE_STRESS)");
+  set_type(elastype);
+
+  filename = cfg["problem"]["mesh"].value_or(std::string("null"));
+  if (filename == "null")
+    print_error("elasticity.cpp", "set_parameters", "problem.mesh not set in TOML");
+  cout << " Mesh file    : " << filename << endl;
+
+  // material
+  double young   = cfg["material"]["young"].value_or(1.0);
+  double poisson = cfg["material"]["poisson"].value_or(0.3);
+  parameters["young"]   = young;
+  parameters["poisson"] = poisson;
+  cout << " Young modulus: " << young   << endl;
+  cout << " Poisson ratio: " << poisson << endl;
+
+  // penalty 
+  parameters["penalty"] = cfg["solver"]["penalty"].value_or(1.0e10);
+
+  // Neumann (one entry per marker) 
+  if (const toml::array * narr = cfg["neumann"].as_array())
+  {
+    for (const auto & elem : *narr)
+    {
+      const toml::table * tb = elem.as_table();
+      if (!tb) continue;
+      int marker = (*tb)["marker"].value_or(0);
+      arma::vec3 tr(arma::fill::zeros);
+      if (const toml::array * tv = (*tb)["t"].as_array())
+      {
+        tr(0) = tv->size() > 0 ? (*tv)[0].value_or(0.0) : 0.0;
+        tr(1) = tv->size() > 1 ? (*tv)[1].value_or(0.0) : 0.0;
+        tr(2) = tv->size() > 2 ? (*tv)[2].value_or(0.0) : 0.0;
+      }
+      neumann_map.insert( std::pair<int,arma::vec3>(marker, tr) );
+      cout << " Neumann marker " << marker
+           << "  t = (" << tr(0) << ", " << tr(1) << ", " << tr(2) << ")" << endl;
+    }
+  }
+
+  // PETSc options 
+  apply_petsc_options_from_toml(cfg);
+}
+
+void Elasticity::run()
 {
   int nc = parameters["num_components"];
   if(nc == 0) print_error("elasticity.cpp", "run()", "num_components==0");
 
-  filename = name;
-
-  init();
-  assemble_system();  
+  init();            // reads mesh from 'filename' + prescribed_displacement
+  assemble_system();
   solve();
 }
 
@@ -41,6 +93,7 @@ void Elasticity::init()
   {
     cout << "Reading XML mesh" << endl;
     msh.read_xml(filename);
+    read_prescribed_displacement(filename);
   }
 
   fespace.set_mesh(&msh);
@@ -94,10 +147,11 @@ void Elasticity::assemble_system()
   //
   cout << "Assembling boundary matrices" << endl;
   MixedFiniteElement * bfe = fespace.create_boundary_FE();
-  Quadrature * qdb = Quadrature::create(2*bfe->get_order_u(), bfe->get_type());
 
-  if (bfe != NULL)
+  if (bfe != NULL && msh.get_n_boundary_elements() > 0)
   {
+    Quadrature * qdb = Quadrature::create(2*bfe->get_order_u(), bfe->get_type());
+
     int m = bfe->get_ndofs_u();
     arma::mat belmat(m,m);
     arma::vec belvec(m);
@@ -117,9 +171,8 @@ void Elasticity::assemble_system()
       for(int k=0;k<m;k++)
         f.add(bdnums[k],belvec(k));
     }
-  }
-
-  delete qdb;
+    delete qdb;
+  } 
 
   // Fix boundary nodes
   if (fixed_nodes_map.size())
@@ -536,96 +589,123 @@ arma::vec3 Elasticity::coeff_robin_vec(int index)
   return t;
 }
 
-void Elasticity::config(std::string & parfile)
+// void Elasticity::config(std::string & parfile)
+// {
+//   cout << "Reading parameters file" << endl;
+
+//   std::string etype;
+//   std::string extension = file_extension(parfile);
+
+//   if(extension == "xml")
+//   {
+//     pugi::xml_document doc;
+//     pugi::xml_parse_result result = doc.load_file(parfile.c_str());
+
+//     if (!result)
+//     {
+//       std::cout << "XML parsed with errors, attr value: ["
+//       << doc.child("mesh").attribute("attr").value() << "]\n";
+//       std::cout << "Error description: " << result.description() << "\n";
+//       std::cout << "Error offset: " << result.offset;
+//       std::cout << " (error at [..." << (result + result.offset) << "]\n\n";
+//     }
+
+//     // problem type
+//     pugi::xml_attribute type = doc.child("elasticity").attribute("type");
+//     if (std::strncmp(type.as_string(), "PLANE_STRAIN", 12) == 0)
+//       elastype = PLANE_STRAIN;
+//     else if (std::strncmp(type.as_string(), "PLANE_STRESS", 12) == 0)
+//       elastype = PLANE_STRESS;
+//     else if (std::strncmp(type.as_string(), "THREE_DIM", 9) == 0)
+//       elastype = THREE_DIM;
+
+//     set_type(elastype);
+
+//     //
+//     // reading boundary conditions
+//     //
+
+//     // neumann
+//     pugi::xml_node nodes = doc.child("elasticity").child("neumann");
+//     for(pugi::xml_node node = nodes.child("node") ; node ;
+//         node = node.next_sibling("node"))
+//     {
+//       //int idx = node.attribute("id").as_int();
+//       int marker = node.attribute("marker").as_int();
+//       arma::vec3 t;
+//       t(0) = node.attribute("t0").as_double();
+//       t(1) = node.attribute("t1").as_double();
+//       t(2) = node.attribute("t2").as_double();
+//       neumann_map.insert( std::pair<int,arma::vec3>(marker,t) );
+
+//       // cout << t << endl;
+//     }
+
+//     // dirichlet
+//     pugi::xml_node dnodes = doc.child("elasticity").child("dirichlet");
+//     for(pugi::xml_node node = dnodes.child("node") ; node ;
+//         node = node.next_sibling("node"))
+//     {
+//       //int idx = node.attribute("id").as_int();
+//       int marker = node.attribute("marker").as_int();
+//       int dir = node.attribute("direction").as_int();
+//       dirichlet_map.insert( std::pair<int,int>(marker,dir) );
+//     }
+
+//     // dirichlet - fixed nodes
+//     pugi::xml_node fnodes = doc.child("elasticity").child("prescribed_displacement");
+//     for(pugi::xml_node node = fnodes.child("node") ; node ;
+//         node = node.next_sibling("node"))
+//     {
+//       int idx = node.attribute("id").as_int();
+//       int dir = node.attribute("direction").as_int();
+//       double val = node.attribute("value").as_double();
+//       NodalData nd(dir,val);
+//       fixed_nodes_map.insert( std::pair<int,NodalData>(idx,nd) );
+//     }
+
+//     //material coef -> via parameters
+//     // dirichlet - fixed nodes
+//     pugi::xml_node params = doc.child("elasticity").child("parameters");
+//     if(params)
+//     {
+//       double young = params.child("young").text().as_double();
+//       double poisson = params.child("poisson").text().as_double();
+//       parameters["young"] = young;
+//       parameters["poisson"] = poisson;
+//       cout << " Young modulus: " << young << endl;
+//       cout << " Poisson ratio: " << poisson << endl;
+//     }
+//   }
+// }
+
+void Elasticity::read_prescribed_displacement(const std::string & meshfile)
 {
-  cout << "Reading parameters file" << endl;
-
-  std::string etype;
-  std::string extension = file_extension(parfile);
-
-  if(extension == "xml")
+  pugi::xml_document doc;
+  pugi::xml_parse_result result = doc.load_file(meshfile.c_str());
+  if(!result)
   {
-    pugi::xml_document doc;
-    pugi::xml_parse_result result = doc.load_file(parfile.c_str());
-
-    if (!result)
-    {
-      std::cout << "XML parsed with errors, attr value: ["
-      << doc.child("mesh").attribute("attr").value() << "]\n";
-      std::cout << "Error description: " << result.description() << "\n";
-      std::cout << "Error offset: " << result.offset;
-      std::cout << " (error at [..." << (result + result.offset) << "]\n\n";
-    }
-
-    // problem type
-    pugi::xml_attribute type = doc.child("elasticity").attribute("type");
-    if (std::strncmp(type.as_string(), "PLANE_STRAIN", 12) == 0)
-      elastype = PLANE_STRAIN;
-    else if (std::strncmp(type.as_string(), "PLANE_STRESS", 12) == 0)
-      elastype = PLANE_STRESS;
-    else if (std::strncmp(type.as_string(), "THREE_DIM", 9) == 0)
-      elastype = THREE_DIM;
-
-    set_type(elastype);
-
-    //
-    // reading boundary conditions
-    //
-
-    // neumann
-    pugi::xml_node nodes = doc.child("elasticity").child("neumann");
-    for(pugi::xml_node node = nodes.child("node") ; node ;
-        node = node.next_sibling("node"))
-    {
-      //int idx = node.attribute("id").as_int();
-      int marker = node.attribute("marker").as_int();
-      arma::vec3 t;
-      t(0) = node.attribute("t0").as_double();
-      t(1) = node.attribute("t1").as_double();
-      t(2) = node.attribute("t2").as_double();
-      neumann_map.insert( std::pair<int,arma::vec3>(marker,t) );
-
-      // cout << t << endl;
-    }
-
-    // dirichlet
-    pugi::xml_node dnodes = doc.child("elasticity").child("dirichlet");
-    for(pugi::xml_node node = dnodes.child("node") ; node ;
-        node = node.next_sibling("node"))
-    {
-      //int idx = node.attribute("id").as_int();
-      int marker = node.attribute("marker").as_int();
-      int dir = node.attribute("direction").as_int();
-      dirichlet_map.insert( std::pair<int,int>(marker,dir) );
-    }
-
-    // dirichlet - fixed nodes
-    pugi::xml_node fnodes = doc.child("elasticity").child("prescribed_displacement");
-    for(pugi::xml_node node = fnodes.child("node") ; node ;
-        node = node.next_sibling("node"))
-    {
-      int idx = node.attribute("id").as_int();
-      int dir = node.attribute("direction").as_int();
-      double val = node.attribute("value").as_double();
-      NodalData nd(dir,val);
-      fixed_nodes_map.insert( std::pair<int,NodalData>(idx,nd) );
-    }
-
-    // TODO: implementar Young , PoissonRation etc...
-    //material coef -> via parameters
-    // dirichlet - fixed nodes
-    pugi::xml_node params = doc.child("elasticity").child("parameters");
-    if(params)
-    {
-      double young = params.child("young").text().as_double();
-      double poisson = params.child("poisson").text().as_double();
-      parameters["young"] = young;
-      parameters["poisson"] = poisson;
-      cout << " Young modulus: " << young << endl;
-      cout << " Poisson ratio: " << poisson << endl;
-    }
+    cout << "Warning: could not parse prescribed_displacement from "
+         << meshfile << " (" << result.description() << ")" << endl;
+    return;
   }
 
+  // Block lives under <elasticity> in the mesh XML (as the generators emit it).
+  pugi::xml_node fnodes =
+      doc.child("elasticity").child("prescribed_displacement");
+
+  int count = 0;
+  for(pugi::xml_node node = fnodes.child("node"); node;
+      node = node.next_sibling("node"))
+  {
+    int    idx = node.attribute("id").as_int();
+    int    dir = node.attribute("direction").as_int();
+    double val = node.attribute("value").as_double();
+    NodalData nd(dir, val);
+    fixed_nodes_map.insert( std::pair<int,NodalData>(idx, nd) );
+    ++count;
+  }
+  cout << " Prescribed-displacement entries read: " << count << endl;
 }
 
 void Elasticity::calc_element_stress(Mapping &em, const MixedFiniteElement *fe,

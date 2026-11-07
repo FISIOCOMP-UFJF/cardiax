@@ -41,7 +41,7 @@ public:
   void config(std::string & configfile);
 
   //! Run the solver with the given mesh
-  void run(const string & meshfilename);
+  void run();
 
   //! Set the type of the elasticity problem
   void set_type(ElasticityType type);
@@ -54,6 +54,9 @@ public:
 
   //! Set nodes with prescribed displacements
   void set_fixed_nodes(const std::multimap<int,NodalData> & fm) { fixed_nodes_map = fm; }
+
+  //! Set parameters from TOML input file
+  void set_parameters(const toml::table & cfg);
 
   //! Output data to file
   void write_data(const string & filename);
@@ -133,6 +136,9 @@ protected:
 
   //! Solve the linear elasticity problem
   void solve();
+
+  //! Read from XML mesh
+  void read_prescribed_displacement(const std::string & meshfile);
 
   //! Calculate Von Mises stress of mixed FE Variable
   void von_mises(const arma::vec & u, arma::vec & sigma);

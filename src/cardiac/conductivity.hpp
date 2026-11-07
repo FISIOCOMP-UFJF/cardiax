@@ -39,6 +39,12 @@ public:
                  const arma::vec3 & s,
                  const arma::vec3 & n) const;
 
+  arma::mat33 at_scaled(int region_id, int ndim,
+                        const arma::vec3 & f,
+                        const arma::vec3 & s,
+                        const arma::vec3 & n,
+                        const arma::vec3 & scale) const;   
+
   arma::mat33 assemble(int ndim,
                        const ConductivityValues & v,
                        const arma::vec3 & f,

@@ -3,6 +3,7 @@
 
 #include "cardiacproblem.hpp"
 #include "fem/fem.h"
+#include "fibrosis.hpp"
 
 /** 
     This class implements the Monodomain model.
@@ -61,9 +62,6 @@ protected:
 
   //! Nodal stimulus control
   // bool stim_apply_nodes;
-
-
-
 
   bool stimuli_from_toml = false;
 
@@ -142,6 +140,14 @@ protected:
   //! Number of print steps to skip at the beginning of the file
   int output_step_offset = 0;
   
+
+  // fibrosis 
+  std::vector<cardiax::FibrosisRegion> fib_regions;  // from the TOML
+  cardiax::FibrosisField               fib;          // per element; empty = no fibrosis
+  std::vector<bool>                    excitable;    // per node;    empty = all excitable
+
+  void setup_fibrosis();
+
 };
 
 #endif

@@ -17,6 +17,19 @@ arma::mat33 ConductivityModel::at(int region_id, int ndim,
   return assemble(ndim, values(region_id), f, s, n);
 }
 
+arma::mat33 ConductivityModel::at_scaled(int region_id, int ndim,
+                                         const arma::vec3 & f,
+                                         const arma::vec3 & s,
+                                         const arma::vec3 & n,
+                                         const arma::vec3 & scale) const
+{
+  ConductivityValues v = values(region_id);   // a copy, so the stored values are untouched
+  v.sigma_l *= scale(0);                      // fibre
+  v.sigma_t *= scale(1);                      // transverse (sheet)
+  v.sigma_n *= scale(2);                      // normal
+  return assemble(ndim, v, f, s, n);
+}
+
 arma::mat33 ConductivityModel::assemble(int ndim,
                                         const ConductivityValues & v,
                                         const arma::vec3 & f,

@@ -19,20 +19,23 @@ public:
   void set_checkpoint_interval(double interval) {checkpoint_interval = interval;};
 
 private:
-  double dt_mech;
-  string filename;
-  CardiacProblem* ephy; // Can be eikonal, monodomain or monodomainderformation
-  std::string ep_type;
+  
+  CardiacProblem* ephy; // Can be eikonal, Monodomain or MonodomainDeformation
   UpdatedLagrangian elas;
-  std::vector<arma::mat33 *> vec_stress;
-  std::vector<arma::mat33 *> vec_fib;
-  std::vector<arma::mat33 *> vec_fib0;
+  
+  std::string filename;
+  std::string ep_type;
+  std::string cell_model; 
+  std::vector<arma::mat33*> vec_stress;
+  std::vector<arma::mat33*> vec_fib;
+  std::vector<arma::mat33*> vec_fib0;
+  
   TimerSection timer;
-  string cell_model; 
-
+  
   arma::vec ta;
+  
   int checkpoint_interval; 
-
+  double dt_mech;
 };
 
 #endif

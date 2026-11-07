@@ -3,6 +3,7 @@ set(CARDIAC_SRC
     cardiacproblem.cpp
     conductivity.cpp
     stimulus.cpp
+    fibrosis.cpp
     bidomain.cpp
     bidomain_bath.cpp
     bidomain_deformation.cpp

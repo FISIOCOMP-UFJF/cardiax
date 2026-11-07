@@ -116,6 +116,19 @@ void Monodomain::set_parameters(const toml::table & cfg)
     ecg_file.open("output_ecg.dat");
   }
 
+  //
+  // fibrosis
+  //
+  try
+  {
+    fib_regions = cardiax::read_fibrosis_regions(cfg);
+  }
+  catch (const std::exception& ex)
+  {
+    PetscPrintf(PETSC_COMM_WORLD, " *** ERROR: %s\n", ex.what());
+    exit(1);
+  }
+
 }
 
 void Monodomain::advance()
@@ -223,19 +236,31 @@ void Monodomain::assemble_matrices()
   solver.set_preconditioner(pctype);
 }
 
-void Monodomain::calc_cond_tensor(const int index, const int ndim,
-                                  arma::mat & sigma)
+// void Monodomain::calc_cond_tensor(const int index, const int ndim,
+//                                   arma::mat & sigma)
+// {
+//   // const double sigma_l = parameters["sigma_l"];
+//   // const double sigma_t = parameters["sigma_t"];
+//   // const double sigma_n = parameters["sigma_n"];
+//   // cout << sigma_l << "  " << sigma_t << endl;
+
+//   const arma::vec3 f = get_fiber(index);
+//   const arma::vec3 s = get_trans(index);
+//   const arma::vec3 n = get_normal(index);
+
+//   sigma = cond.at(index, ndim, f, s, n);
+// }
+
+void Monodomain::calc_cond_tensor(int e, int ndim, arma::mat& sigma)
 {
-  // const double sigma_l = parameters["sigma_l"];
-  // const double sigma_t = parameters["sigma_t"];
-  // const double sigma_n = parameters["sigma_n"];
-  // cout << sigma_l << "  " << sigma_t << endl;
+  const arma::vec3 f = get_fiber(e);
+  const arma::vec3 s = get_trans(e);
+  const arma::vec3 n = get_normal(e);
 
-  const arma::vec3 f = get_fiber(index);
-  const arma::vec3 s = get_trans(index);
-  const arma::vec3 n = get_normal(index);
-
-  sigma = cond.at(index, ndim, f, s, n);
+  if (fib.empty())
+    sigma = cond.at(e, ndim, f, s, n);                         // unchanged path
+  else
+    sigma = cond.at_scaled(e, ndim, f, s, n, fib.sigma_scale[e]);
 }
 
 void Monodomain::calc_elmat_stiff(const int eindex, const FiniteElement & fe,
@@ -440,6 +465,8 @@ void Monodomain::init(bool is_restart)
     parameters.parse_xml(mesh_filename, "electrophysiology");
   cout << parameters.str();
 
+  setup_fibrosis(); 
+
   // setup data writer
   if(is_restart)
   {
@@ -458,7 +485,29 @@ void Monodomain::init(bool is_restart)
     cout << " Number of steps = " << nsteps << endl;
     cout << " Timestep = " << timestep << endl;
     writer->add_field("vm", FieldLoc::Point, FieldKind::Transient);
+    if (!fib.empty())
+    {
+      writer->add_field("fibrotic",    FieldLoc::Cell, FieldKind::Static, 1);
+      writer->add_field("sigma_scale", FieldLoc::Cell, FieldKind::Static, 3);
+    }
     writer->open(output, nsteps, timestep, false, is_restart);
+
+    if (!fib.empty())
+    {
+      const std::size_t ne = fib.fibrotic.size();
+
+      std::vector<double> fibrotic(ne);
+      std::vector<double> scale(3 * ne);           // [ne, 3], row by row
+      for (std::size_t e = 0; e < ne; ++e)
+      {
+        fibrotic[e] = fib.fibrotic[e] ? 1.0 : 0.0;
+        for (int k = 0; k < 3; ++k)
+          scale[3*e + k] = fib.sigma_scale[e](k);
+      }
+
+      writer->write_static_field(fibrotic.data(), "fibrotic");
+      writer->write_static_field(scale.data(),    "sigma_scale");
+    }
   }
   
   // setup model and cells
@@ -494,6 +543,41 @@ void Monodomain::initial_conditions()
 void Monodomain::set_stimulus_value(int index, double val)
 {
   i_pmj(index) = val;
+}
+
+void Monodomain::setup_fibrosis()
+{
+  if (fib_regions.empty())
+    return;
+
+  const int n_elements = mesh->get_n_elements();
+  std::vector<int> nodes;
+
+  // 1. centroid of each element
+  std::vector<arma::vec3> centroids(n_elements);
+  for (int e = 0; e < n_elements; ++e)
+  {
+    fespace.get_element_dofs(e, nodes);
+    arma::vec3 c = {0.0, 0.0, 0.0};
+    for (int a : nodes)
+      c += mesh->get_point(a);
+    centroids[e] = c / nodes.size();
+  }
+
+  // 2. conductivity factors and fibrotic flags per element
+  fib = cardiax::compute_fibrosis_field(fib_regions, centroids);
+  cardiax::print_fibrosis_summary(fib_regions, fib);
+
+  // 3. a node stays excitable if at least one neighbouring element is not fibrotic
+  excitable.assign(mesh->get_n_points(), false);     // your node-count accessor
+  for (int e = 0; e < n_elements; ++e)
+  {
+    if (fib.fibrotic[e])
+      continue;
+    fespace.get_element_dofs(e, nodes);
+    for (int a : nodes)
+      excitable[a] = true;
+  }
 }
 
 void Monodomain::solve()

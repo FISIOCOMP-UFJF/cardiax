@@ -41,6 +41,9 @@ public:
 
   //! Read parameters from an already-parsed TOML table
   void config(const toml::table & tbl);
+  
+  //! Computes the gradient of the solution u (per element)
+  void compute_gradient(arma::vec & grad_flat);
 
   //! Return reference to mesh
   const Mesh & get_mesh() const { return mesh; }

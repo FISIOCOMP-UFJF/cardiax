@@ -407,6 +407,40 @@ double Poisson::coeff_robin_vec(int index)
   exit(0);
 }
 
+void Poisson::compute_gradient(arma::vec & grad_flat)   // out: [ne*3], interleaved
+{
+  const int ne   = mesh.get_n_elements();
+  FiniteElement & fe = fespace.createFE(0);
+  const int ndim = fe.get_ndim();
+  const int ndof = fe.ndofs();
+
+  grad_flat.zeros(ne * 3);                 // 3 comps even in 2D (z = 0)
+
+  arma::mat dshape, gradn(ndof, ndim), jacinv(ndim, ndim);
+  arma::vec3 centroid; centroid.zeros();   // reference-element centroid
+  std::vector<int> dnums;
+  arma::vec u_loc(ndof);
+
+  for (int e = 0; e < ne; e++)
+  {
+    Mapping em = fe.get_mapping(e);
+    fe.calc_deriv_shape(centroid, dshape);
+    em.calc_jacobian(dshape);
+    jacinv = em.get_inv_jacobian();
+    gradn  = dshape * jacinv;              // physical shape-fn gradients (ndof x ndim)
+
+    fespace.get_element_dofs(e, dnums);
+    for (int a = 0; a < ndof; a++) u_loc(a) = solution(dnums[a]);
+
+    arma::vec g = gradn.t() * u_loc;       // grad(u) at centroid (ndim)
+
+    grad_flat(e*3 + 0) = g(0);
+    grad_flat(e*3 + 1) = g(1);
+    grad_flat(e*3 + 2) = (ndim == 3) ? g(2) : 0.0;
+  }
+  delete &fe;
+}
+
 void Poisson::init()
 {
   if(!file_exists(filename))
@@ -437,9 +471,16 @@ void Poisson::init()
 
 void Poisson::write_data(const string & filename)
 {
-  // write output data
+  writer.add_field("solution", FieldLoc::Point, FieldKind::Static);
+  writer.add_field("gradient", FieldLoc::Cell,  FieldKind::Static, 3);
   writer.open(filename, 1, 1);
-  writer.write_vm_step(0, solution.memptr());
+
+  writer.write_static_field(solution.memptr(), "solution");
+
+  arma::vec grad_flat;
+  compute_gradient(grad_flat);
+  writer.write_static_field(grad_flat.memptr(), "gradient");
+
   writer.close();
 }
 

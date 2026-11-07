@@ -357,26 +357,44 @@ void CardiacProblem::warmup_cells(const arma::vec & lat)
   cout << ")." << endl;
 }
 
-
 void CardiacProblem::write_data(const arma::vec & u, const std::string & s, int * step)
 {
   if (tip.time2print())
   {
-    std::string aux = s.substr(s.length() - 2);
-
-    if (aux == "ve")
-      writer->write_ve_step(*step, u.memptr());
-    else if (aux == "vm")
-      writer->write_vm_step(*step, u.memptr());
-    else if(aux=="dv")
+    if (s == "dv")
     {
+      // dv: write the second half of u (the ve component of a stacked vector)
       arma::vec current = u( arma::span(u.size()/2, u.size()-1) );
-      writer->write_ve_step(*step, current.memptr());
+      writer->write_point_field_step(*step, current.memptr(), "ve");
     }
-    
+    else
+    {
+      writer->write_point_field_step(*step, u.memptr(), s);
+    }
+
     *step = *step + 1;
   }
 }
+
+// void CardiacProblem::write_data(const arma::vec & u, const std::string & s, int * step)
+// {
+//   if (tip.time2print())
+//   {
+//     std::string aux = s.substr(s.length() - 2);
+
+//     if (aux == "ve")
+//       writer->write_ve_step(*step, u.memptr());
+//     else if (aux == "vm")
+//       writer->write_vm_step(*step, u.memptr());
+//     else if(aux=="dv")
+//     {
+//       arma::vec current = u( arma::span(u.size()/2, u.size()-1) );
+//       writer->write_ve_step(*step, current.memptr());
+//     }
+    
+//     *step = *step + 1;
+//   }
+// }
 
 void CardiacProblem::write_data(const arma::vec & u, const arma::vec & displ,
                                 const std::string & s, int step)

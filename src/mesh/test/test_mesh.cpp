@@ -45,6 +45,8 @@ int main()
   int nsteps = 2;
 
   WriterHDF5 writer(&bb);
+  writer.add_field("vm",            FieldLoc::Point, FieldKind::Transient);
+  writer.add_field("displacements", FieldLoc::Point, FieldKind::Transient, 3);
   writer.open("testeMesh", nsteps, 1.0/nsteps);
 
   double *v = new double[bb.get_n_points()];
@@ -63,7 +65,7 @@ int main()
       u[j*3 + 2] = i*1000;
     }
 
-    writer.write_vm_step(i, v);
+    writer.write_point_field_step(i, v, "vm");
     writer.write_displ_step(i, u);
   }
 

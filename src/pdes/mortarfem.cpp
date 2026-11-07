@@ -632,23 +632,20 @@ void Mortarfem::init()
   cout << mesh;
 }
 
-//Function to writte exact solution in file for visualization
 void Mortarfem::write_data(const string & filename, arma::vec & u_exact)
 {
-                 //nsteps, step
-  writer.open("Sol_exact", 1, 1); //Maybe it is already set to write several times
-  writer.setup();
-  writer.write_vm_step(0, u_exact.memptr());
+  writer.add_field("u_exact", FieldLoc::Point, FieldKind::Static);
+  writer.open("Sol_exact", 1, 1);
+  writer.write_static_field(u_exact.memptr(), "u_exact");
   writer.close();
 }
 
 void Mortarfem::write_data(const string & filename)
 {
   // write output data
-                 //nsteps, step
-  writer.open(filename, 1, 1); //Maybe it is already set to write several times
-  writer.setup();
-  writer.write_vm_step(0, primal_solution.memptr());
+  writer.add_field("solution", FieldLoc::Point, FieldKind::Static);
+  writer.open(filename, 1, 1);
+  writer.write_static_field(primal_solution.memptr(), "solution");
   writer.close();
 }
 
@@ -1135,7 +1132,7 @@ void Mortarfem::write_gradient(const string & filename)
 
   writer.open(filename, 1, 1);
   writer.setup();
-  writer.write_vm_step(0, gradient.memptr());
+  writer.write_point_field_step(step, v.memptr(), "vm");
   writer.close();
 }
 

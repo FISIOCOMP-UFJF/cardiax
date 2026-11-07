@@ -2111,7 +2111,8 @@ void NonlinearElasticity::output_vtk(const int cont, const int step)
 void NonlinearElasticity::output_vtk(const int step, const arma::vec & v, const arma::vec & displ)
 {
   cout << "Writing Data\n";
-  writer.write_vm_step(step, v.memptr());
+  //   writer.write_vm_step(step, v.memptr());
+  writer.write_point_field_step(step, v.memptr(), "vm");
   writer.write_displ_step(step, displ.memptr());
 }
 
@@ -2151,7 +2152,8 @@ void NonlinearElasticity::output_vtk(const int cont,
   if(output_step)
   {
     cout << "Writing Data\n";
-    writer.write_vm_step(step, v.memptr());
+    // writer.write_vm_step(step, v.memptr());
+    writer.write_point_field_step(step, v.memptr(), "vm");
     writer.write_displ_step(step, u_field);
   }
 

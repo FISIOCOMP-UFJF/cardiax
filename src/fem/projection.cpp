@@ -188,9 +188,9 @@ void Projection::write_data(const string & filename, bool as_text)
 
   if(!as_text)
   {
-    // write output data
+    writer.add_field("solution", FieldLoc::Point, FieldKind::Static);
     writer.open(filename, 1, 1);
-    writer.write_vm_step(0, solution.memptr());
+    writer.write_static_field(solution.memptr(), "solution");
     writer.close();
   }
   //else

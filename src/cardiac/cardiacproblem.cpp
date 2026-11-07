@@ -401,18 +401,12 @@ void CardiacProblem::write_data(const arma::vec & u, const arma::vec & displ,
 {
     if (tip.time2print())
     {
-        std::string aux = s.substr(s.length()-2);
-
-        // potentials scalar field
-        if(aux=="ve")
-          writer->write_ve_step(step, u.memptr());
-        else if(aux=="vm")
-            writer->write_vm_step(step, u.memptr());
+        // potentials scalar field (name passed through directly)
+        writer->write_point_field_step(step, u.memptr(), s);
 
         // displacement vector field
         writer->write_displ_step(step, displ.memptr());
-
-  }
+    }
 }
 
 void CardiacProblem::write_data_text(const arma::vec & vm, int * step)

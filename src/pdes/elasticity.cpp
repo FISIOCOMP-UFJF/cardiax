@@ -822,18 +822,42 @@ void Elasticity::von_mises(const arma::vec & u, arma::vec & sigma)
   delete fe;
 }
 
+// void Elasticity::write_data(const string & filename)
+// {
+//   int np = msh.get_n_points();
+//   int nd = msh.get_n_dim();
+//   arma::vec displacements(3*np, arma::fill::zeros);
+
+//   // solution is interleaved by node: solution(nd*i + comp).
+//   // writer wants interleaved too: displacements(3*i + comp).
+//   for(int i=0; i<np; i++)
+//     for(int d=0; d<nd; d++)
+//       displacements(3*i + d) = solution(nd*i + d);
+
+//   writer.open(filename, 1, 1);
+//   writer.write_displ_step(0, displacements.memptr());
+// }
+
 void Elasticity::write_data(const string & filename)
 {
   int np = msh.get_n_points();
+  int ne = msh.get_n_elements();
   int nd = msh.get_n_dim();
-  arma::vec displacements(3*np, arma::fill::zeros);
 
-  // solution is interleaved by node: solution(nd*i + comp).
-  // writer wants interleaved too: displacements(3*i + comp).
+  // register the fields BEFORE open() so the file holds only these
+  writer.add_field("displacements", FieldLoc::Point, FieldKind::Transient, 3);
+  writer.add_field("stress",        FieldLoc::Cell,  FieldKind::Transient);
+  writer.open(filename, 1, 1);
+
+  // displacements: solution is node-interleaved solution(nd*i + comp)
+  arma::vec displacements(3*np, arma::fill::zeros);
   for(int i=0; i<np; i++)
     for(int d=0; d<nd; d++)
       displacements(3*i + d) = solution(nd*i + d);
-
-  writer.open(filename, 1, 1);
   writer.write_displ_step(0, displacements.memptr());
+
+  // stress: von Mises per element (cell field)
+  arma::vec vm_stress;
+  von_mises(solution, vm_stress);          // fills [ne]
+  writer.write_cell_field_step(0, vm_stress.memptr(), "stress");
 }

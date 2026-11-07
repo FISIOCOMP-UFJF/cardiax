@@ -457,6 +457,7 @@ void Monodomain::init(bool is_restart)
     cout << " HDF5 save rate = " << printrate << endl;
     cout << " Number of steps = " << nsteps << endl;
     cout << " Timestep = " << timestep << endl;
+    writer->add_field("vm", FieldLoc::Point, FieldKind::Transient);
     writer->open(output, nsteps, timestep, false, is_restart);
   }
   
@@ -508,6 +509,7 @@ void Monodomain::solve()
     cout << "HDF5 Writer" << endl;
     cout << " HDF5 save rate = " << tip.pr() * timestep << endl;
     cout << " Remaining steps to write = " << remaining_print_steps << endl;
+    writer->add_field("vm", FieldLoc::Point, FieldKind::Transient);
     writer->open(out_filename, remaining_print_steps, timestep, false, false);
   }
   

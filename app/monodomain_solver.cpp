@@ -11,8 +11,12 @@
 
 static char help[] = "Monodomain Cardiac Solver.\n\n";
 
-using namespace std;
-namespace fs = std::filesystem;
+void print_banner()
+{
+  cout << "========================================" << endl;
+  cout << "   M O N O D O M A I N   S O L V E R    " << endl;
+  cout << "========================================" << endl;
+}
 
 void usage()
 {
@@ -34,54 +38,6 @@ void usage()
   cout << endl;
   exit(0);
 }
-
-void print_banner()
-{
-  cout << "========================================" << endl;
-  cout << "   M O N O D O M A I N   S O L V E R    " << endl;
-  cout << "========================================" << endl;
-}
-
-namespace {
-
-// Fetch a mandatory value from the TOML; abort with a clear message if absent.
-template <typename T>
-T require(const toml::table & cfg, std::string_view path)
-{
-  auto v = cfg.at_path(path).value<T>();
-  if (!v)
-  {
-    cerr << " *** ERROR: missing mandatory config key: " << path << endl;
-    exit(1);
-  }
-  return *v;
-}
-
-// CLI-override helpers. Each reads the flag with a sentinel default; if the
-// returned value differs from the sentinel, the flag was passed on the command
-// line and should overwrite the value already taken from the TOML file.
-void override_str(std::string & value, const char * flag)
-{
-  static const std::string SENT = "\x01__unset__\x01";
-  std::string got = CommandLineArgs::read(flag, SENT);
-  if (got != SENT) value = got;
-}
-
-void override_double(double & value, const char * flag)
-{
-  const double SENT = std::numeric_limits<double>::lowest();
-  double got = CommandLineArgs::read(flag, SENT);
-  if (got != SENT) value = got;
-}
-
-void override_int(int & value, const char * flag)
-{
-  const int SENT = std::numeric_limits<int>::lowest();
-  int got = CommandLineArgs::read(flag, SENT);
-  if (got != SENT) value = got;
-}
-
-} // namespace
 
 int main(int argc, const char *argv[])
 {
@@ -109,8 +65,14 @@ int main(int argc, const char *argv[])
   //  Values from the TOML file (base configuration).
   //  Mandatory keys use require<>; optional keys use value_or.
   // --------------------------------------------------------------
-  std::string mshname   = require<std::string>(cfg, "problem.mesh");
-  std::string model     = cfg["problem"]["model"].value_or("monodomain");
+  auto mshfile_opt = cfg.at_path("problem.mesh").value<std::string>();
+  if (!mshfile_opt)
+  {
+    cerr << " *** ERROR: missing mandatory config key: problem.mesh" << endl;
+    return 1;
+  }
+  std::string mshname = *mshfile_opt;
+  std::string model   = cfg["problem"]["model"].value_or("monodomain");
 
   double dt = cfg["time"]["dt"].value_or(0.1);
   double T  = cfg["time"]["t_end"].value_or(10.0);
@@ -153,6 +115,7 @@ int main(int argc, const char *argv[])
   PetscErrorCode ierr;
 
   ierr = PetscInitialize(&argc, (char ***)&argv, (char *) 0, help); CHKERRQ(ierr);
+  ierr = PetscOptionsClearValue(NULL, "-f"); CHKERRQ(ierr);
   ierr = MPI_Comm_rank(PETSC_COMM_WORLD, &rank); CHKERRQ(ierr);
   ierr = MPI_Comm_size(PETSC_COMM_WORLD, &size); CHKERRQ(ierr);
 

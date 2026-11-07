@@ -6,7 +6,12 @@
 #include "pdes/eikonal.hpp"
 #include "mesh/mesh.hpp"
 
-using namespace std;
+void print_banner()
+{
+  std::cout << "========================================" << std::endl;
+  std::cout << "     E I K O N A L   S O L V E R        " << std::endl;
+  std::cout << "========================================" << std::endl;
+}
 
 void usage()
 {
@@ -14,13 +19,6 @@ void usage()
   std::cout << " Usage: eikonal -f config.toml\n";
   std::cout << std::endl;
   exit(0);
-}
-
-void print_banner()
-{
-  cout << "========================================" << endl;
-  cout << "     E I K O N A L   S O L V E R        " << endl;
-  cout << "========================================" << endl;
 }
 
 int main(int argc, const char *argv[])

@@ -4,20 +4,19 @@
 #include "pdes/poisson.hpp"
 #include "pdes/laplace.hpp"
 #include "util/util.hpp"
-#include "util/command_line_args.h"
-
-#pragma push_macro("error")
-#undef error
 #include "util/toml.hpp"
-#pragma pop_macro("error")
-
-#pragma push_macro("error")
-#undef error
-#include "exprtk.hpp"
-#pragma pop_macro("error")
+#include "util/command_line_args.h"
 #include "util/expr_function.hpp"
+#include "exprtk.hpp"
 
 static char help[] = "Poisson Solver.\n\n";
+
+void print_banner()
+{
+  cout << "========================================" << endl;
+  cout << "     P O I S S O N   S O L V E R        " << endl;
+  cout << "========================================" << endl;
+}
 
 void usage()
 {
@@ -25,13 +24,6 @@ void usage()
   std::cout << " Usage: poisson -f config.toml\n";
   std::cout << std::endl;
   exit(0);
-}
-
-void print_banner()
-{
-  cout << "========================================" << endl;
-  cout << "     P O I S S O N   S O L V E R        " << endl;
-  cout << "========================================" << endl;
 }
 
 /** Some exact solutions for testing Poisson problem
@@ -111,6 +103,7 @@ int main(int argc, const char* argv[])
 
   // Start PETSC
   ierr = PetscInitialize(&argc, (char ***)&argv, (char *) 0, help); CHKERRQ(ierr);
+  ierr = PetscOptionsClearValue(NULL, "-f"); CHKERRQ(ierr);
   ierr = MPI_Comm_rank(PETSC_COMM_WORLD, &rank); CHKERRQ(ierr);
   ierr = MPI_Comm_size(PETSC_COMM_WORLD, &size); CHKERRQ(ierr);
 

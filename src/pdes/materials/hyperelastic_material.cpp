@@ -95,7 +95,9 @@ void HyperelasticMaterial::active_stress_elastensor(int nincs, MaterialData * md
 
 void HyperelasticMaterial::allocate_Ta(int n)
 {
-  double act_stress_default = active_stress(0);
+  // double act_stress_default = active_stress(0);
+
+  double act_stress_default = (active_stress.n_elem > 0) ? active_stress(0) : 0.0;
 
   active_stress.set_size(n);
   active_stress.fill(act_stress_default);

@@ -1904,6 +1904,10 @@ void NonlinearElasticity::setup_data_writer(int size)
 {
   std::cout << "Output step size: " << size << std::endl;
   std::string output = filename.substr(0, filename.length() - 4) + "_output_nl";
+  // writer.open(output, size + 1, 1);
+  writer.add_field("displacements", FieldLoc::Point, FieldKind::Transient, 3);
+  writer.add_field("stress",        FieldLoc::Cell,  FieldKind::Transient);
+  writer.add_field("strain",        FieldLoc::Cell,  FieldKind::Transient);
   writer.open(output, size + 1, 1);
 }
 
@@ -2428,6 +2432,11 @@ void NonlinearElasticity::run(const string & mshfile, const toml::table & cfg, c
     // mesh-derived name if the key is absent.
     std::string default_output = filename.substr(0, filename.length() - 4) + "_output_nl";
     std::string output = cfg["output"]["filename"].value_or(default_output);
+
+    // writer.open(output, lc.get_nincs() + 1 + INCs_TA, 1);
+    writer.add_field("displacements", FieldLoc::Point, FieldKind::Transient, 3);
+    writer.add_field("stress",        FieldLoc::Cell,  FieldKind::Transient);
+    writer.add_field("strain",        FieldLoc::Cell,  FieldKind::Transient);
     writer.open(output, lc.get_nincs() + 1 + INCs_TA, 1);
   }
 

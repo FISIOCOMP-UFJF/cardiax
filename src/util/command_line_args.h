@@ -10,8 +10,13 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <limits>
 
 using namespace std;
+
+void override_str(std::string & value, const char * flag);
+void override_int(int & value, const char * flag);
+void override_double(double & value, const char * flag);
 
 /**
    Command line argument parser.

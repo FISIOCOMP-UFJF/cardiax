@@ -7,9 +7,14 @@
 #include "pdes/total_lagrangian.hpp"
 #include "pdes/updated_lagrangian.hpp"
 
-static char help[] = "Non-Linear Elasticity Finite Element Solver.\n\n";
+static char help[] = "Non-Linear Elasticity Solver.\n\n";
 
-using namespace std;
+void print_banner()
+{
+  cout << "============================================================" << endl;
+  cout << "  N O N L I N E A R   E L A S T I C I T Y   S O L V E R     " << endl;
+  cout << "============================================================" << endl;
+}
 
 void usage()
 {
@@ -25,43 +30,6 @@ void usage()
   cout << endl;
   exit(0);
 }
-
-void print_banner()
-{
-  cout << "========================================" << endl;
-  cout << "  E L A S T I C I T Y   S O L V E R     " << endl;
-  cout << "========================================" << endl;
-}
-
-namespace {
-
-template <typename T>
-T require(const toml::table & cfg, std::string_view path)
-{
-  auto v = cfg.at_path(path).value<T>();
-  if (!v)
-  {
-    cerr << " *** ERROR: missing mandatory config key: " << path << endl;
-    exit(1);
-  }
-  return *v;
-}
-
-void override_str(std::string & value, const char * flag)
-{
-  static const std::string SENT = "\x01__unset__\x01";
-  std::string got = CommandLineArgs::read(flag, SENT);
-  if (got != SENT) value = got;
-}
-
-void override_int(int & value, const char * flag)
-{
-  const int SENT = std::numeric_limits<int>::lowest();
-  int got = CommandLineArgs::read(flag, SENT);
-  if (got != SENT) value = got;
-}
-
-} // namespace
 
 int main(int argc, const char* argv[])
 {
@@ -86,7 +54,13 @@ int main(int argc, const char* argv[])
   print_banner();
 
   // values from the TOML (base configuration) 
-  std::string mshfile = require<std::string>(cfg, "problem.mesh");
+  auto mshfile_opt = cfg.at_path("problem.mesh").value<std::string>();
+  if (!mshfile_opt)
+  {
+    cerr << " *** ERROR: missing mandatory config key: problem.mesh" << endl;
+    return 1;
+  }
+  std::string mshfile = *mshfile_opt;
   std::string smethod = cfg["solver"]["method"].value_or("ul");      // ul | tl
   std::string outdir  = cfg["output"]["directory"].value_or("output/");
   std::string restorefile = cfg["restore"]["file"].value_or("");
@@ -113,6 +87,7 @@ int main(int argc, const char* argv[])
   PetscMPIInt rank, size;
   PetscErrorCode ierr;
   ierr = PetscInitialize(&argc, (char ***)&argv, (char *) 0, help); CHKERRQ(ierr);
+  ierr = PetscOptionsClearValue(NULL, "-f"); CHKERRQ(ierr);
   ierr = MPI_Comm_rank(PETSC_COMM_WORLD, &rank); CHKERRQ(ierr);
   ierr = MPI_Comm_size(PETSC_COMM_WORLD, &size); CHKERRQ(ierr);
 

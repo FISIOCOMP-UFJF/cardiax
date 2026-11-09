@@ -149,6 +149,14 @@ class CellModel
   
   double dt_solver = 0.0;
 
+  //! Active tension: where the model stores it, and the factor to kPa.
+  //! ta_index < 0 means the model has no active tension.
+  int    ta_index     = -1;     //!< state variable (or monitored value) index
+  bool   ta_monitored = false;  //!< true: ta_index refers to a monitored value
+  double ta_factor    = 1.0;    //!< multiply by this to get kPa
+
+  bool has_active_tension() const { return ta_index >= 0; }
+
  protected:
   //! Number of state variables (equations)
   const int num_state_vars;

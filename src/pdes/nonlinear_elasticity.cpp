@@ -2110,7 +2110,7 @@ void NonlinearElasticity::output_vtk(const int cont, const int step)
 
 void NonlinearElasticity::output_vtk(const int step, const arma::vec & v, const arma::vec & displ)
 {
-  cout << "Writing Data\n";
+  // cout << "Writing Data\n";
   //   writer.write_vm_step(step, v.memptr());
   writer.write_point_field_step(step, v.memptr(), "vm");
   writer.write_displ_step(step, displ.memptr());
@@ -2151,7 +2151,7 @@ void NonlinearElasticity::output_vtk(const int cont,
 
   if(output_step)
   {
-    cout << "Writing Data\n";
+    // cout << "Writing Data\n";
     // writer.write_vm_step(step, v.memptr());
     writer.write_point_field_step(step, v.memptr(), "vm");
     writer.write_displ_step(step, u_field);
@@ -2445,8 +2445,10 @@ void NonlinearElasticity::run(const string & mshfile, const toml::table & cfg, c
   init_matvecs();
 
   pre_solve();
-  cout << "Initial LV cavity volume: " << volume_LV() << "\n";
-  cout << "Initial RV cavity volume: " << volume_RV() << "\n";
+
+  // TO-DO: these should be moved to the application (pv-loop or cardiac-cycle)
+  // cout << "Initial LV cavity volume: " << volume_LV() << "\n";
+  // cout << "Initial RV cavity volume: " << volume_RV() << "\n";
 
   set_pv_record_increments(true);
 

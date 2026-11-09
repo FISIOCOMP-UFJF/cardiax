@@ -208,6 +208,18 @@ void Cells::get_var(int vindex, petsc::Vector &v) const
     v.set(i , states[vindex+(i*odesize)] );
 }
 
+void Cells::get_active_tension(arma::vec & ta) const
+{
+  const CellModel & m = get_model();
+  if (!m.has_active_tension())
+    throw std::runtime_error("cell model has no active tension");
+
+  if (m.ta_monitored) get_monitored_values(m.ta_index, ta);
+  else                get_var(m.ta_index, ta);
+
+  ta *= m.ta_factor;
+}
+
 void Cells::init()
 {
   cout << "Setting initial conditions" << endl;

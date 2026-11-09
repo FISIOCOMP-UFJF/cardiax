@@ -70,19 +70,6 @@ public:
   //! Configure problem with parameters from file
   void config(const string & mshfile, const string & parfile);
 
-  //! Initialize problem (init_mesh, init_coords, etc...)
-  void init();
-
-  //! Getters
-  int get_num_nz_prescribed();
-  int get_num_integration_points();
-  Mesh & get_mesh() { return msh; }
-  const std::vector<arma::mat33*> & get_vec_F() { return vecF; };
-
-  //! Multiplicadores de Lagrange por elemento. Mudam a cada solucao
-  //! (al_augment) e entram na pressao da proxima: fazem parte do checkpoint.
-  arma::vec & lagrange_multipliers() { return eL; }
-
   //! Fibre stretch lambda_f = sqrt(I4f) = sqrt(f0.C.f0) = ||F f0||, one
   //! value per ELEMENT (averaged over its integration points). Uses the
   //! deformation gradient left in vecF by the last solve, so it is only
@@ -96,14 +83,30 @@ public:
   //! Falls back to unweighted averaging if vol0 has not been filled yet
   //! (calc_volume(true), called from pre_solve()). Resizes lam_n to n_points.
   void fiber_stretch_nodes(arma::vec & lam_n);
+
+  //! Getters
+  int get_num_nz_prescribed();
+
+  int get_num_integration_points();
+
+  Mesh & get_mesh() { return msh; }
+
+  const std::vector<arma::mat33*> & get_vec_F() { return vecF; };
+
   void get_displacements(arma::mat & umat);
+
   void get_displacements(arma::vec & u);
 
-  //! Output VTK data of that step
-  void output_vtk(const int cont, const int step);
+  //! Access to the output writer, so a coupled driver can register its own
+  //! fields before setup_data_writer() opens the file.
+  WriterHDF5 & get_writer() { return writer; }
 
-  //! New output vtk
-  void output_vtk(const int step, const arma::vec & v, const arma::vec & displ);
+  //! Initialize problem (init_mesh, init_coords, etc...)
+  void init();
+
+  //! Multiplicadores de Lagrange por elemento. Mudam a cada solucao
+  //! (al_augment) e entram na pressao da proxima: fazem parte do checkpoint.
+  arma::vec & lagrange_multipliers() { return eL; }
 
   void setup_data_writer(int size);
   //! Output VTK data of that step and write scalar field v
@@ -274,7 +277,13 @@ public:
   void save_coupled_checkpoint(int ep_step, double ep_time, 
                                const double* vm, const double* state_vars, 
                                int num_state_vars);
-                              
+                               
+  //! Output VTK data of that step
+  void output_vtk(const int cont, const int step);
+
+  //! New output vtk
+  void output_vtk(const int step, const arma::vec & v, const arma::vec & displ);
+
   
 protected:
   

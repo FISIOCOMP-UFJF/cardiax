@@ -56,6 +56,8 @@ void Monodomain::set_parameters(const toml::table & cfg)
 
   cond.set_default({ parameters["sigma_l"],parameters["sigma_t"],parameters["sigma_n"] });
 
+  cond_from_toml = true;
+
   // Stimuli
   // stimuli: [stim_key] with regions = [ {start, duration, value, min, max}, ... ]
   stimuli_from_toml = stimuli.read_toml(cfg, "stimuli.tissue") > 0;
@@ -148,8 +150,11 @@ void Monodomain::advance()
     solve_parabolic();
     timer.leave();
 
-    //write_data_text(vm, &step_apd);
-    write_data(vm, "vm", &step);
+    if (write_output)
+    {
+      //write_data_text(vm, &step_apd);
+      write_data(vm, "vm", &step);
+    }
   }
 }
 
@@ -437,10 +442,28 @@ void Monodomain::init(bool is_restart)
   std::string output = mesh_filename + "_output";
   std::string extension = file_extension(mesh_filename);
 
+  // if(extension == "xml")
+  // {
+  //   mesh->read_xml(mesh_filename);
+  //   // stimuli.read_xml(stimuli_filename);
+  //   std::size_t pos = mesh_filename.find(".xml");
+  //   std::string mesh_name = mesh_filename.substr(0,pos);
+  //   output = mesh_name + "_output";
+  // }
+  // else
+  // {
+  //   mesh->read(mesh_filename);
+  //   // stimuli.read(stimuli_filename);
+  // }
+
+  // ALLOWS to read stimuli from legacy xml input file
+  // TODO: when everything moves to TOML, we can simplify this
+
   if(extension == "xml")
   {
     mesh->read_xml(mesh_filename);
-    // stimuli.read_xml(stimuli_filename);
+    if (!stimuli_from_toml)
+      stimuli.read_xml(stimuli_filename);        // XML-only runs (e.g. Electromechanic)
     std::size_t pos = mesh_filename.find(".xml");
     std::string mesh_name = mesh_filename.substr(0,pos);
     output = mesh_name + "_output";
@@ -448,8 +471,10 @@ void Monodomain::init(bool is_restart)
   else
   {
     mesh->read(mesh_filename);
-    // stimuli.read(stimuli_filename);
+    if (!stimuli_from_toml)
+      stimuli.read(stimuli_filename);
   }
+
 
   // stimulus initialization
   stim_values.zeros(mesh->get_n_points());
@@ -465,7 +490,17 @@ void Monodomain::init(bool is_restart)
     parameters.parse_xml(mesh_filename, "electrophysiology");
   cout << parameters.str();
 
-  setup_fibrosis(); 
+  // XML-only runs: conductivity from the mesh's element_data type and the
+  // sigma parameters (constructor defaults, or <electrophysiology> overrides)
+  if (!cond_from_toml)
+  {
+    cond.set_type(TRANSVERSELY_ISOTROPIC);
+    cond.set_default({ parameters["sigma_l"], parameters["sigma_t"], parameters["sigma_n"] });
+  }
+
+  setup_fibrosis();
+
+
 
   // setup data writer
   if(is_restart)
@@ -477,7 +512,7 @@ void Monodomain::init(bool is_restart)
     is_restart_run = is_restart;
     output_step_offset = 0;
   }
-  else
+  else if (write_output)
   {
     int nsteps = tip.get_nsteps()/(printrate/timestep);
     cout << "HDF5 Writer" << endl;
@@ -624,7 +659,7 @@ void Monodomain::solve()
     solve_parabolic();
     timer.leave();
     
-    write_data(vm, "vm", &step);
+    if (write_output) write_data(vm, "vm", &step);
 
     // pseudo-ecg computation
     if(tip.time2print())

@@ -40,7 +40,6 @@ class Cells
   //! Default constructor
   Cells (uint n, CellModel * c); 
   Cells (uint n, string cell_model_name, string ode_solver, double dt, double totaltime, double tp);
-
   
   //! Default destructor
   ~Cells();
@@ -92,6 +91,9 @@ class Cells
 
   //! Return an array with all monitored values
   void get_monitored_values(int mindex, arma::vec & v) const;
+
+  //! Return active tension value
+  void get_active_tension(arma::vec & ta) const;
 
   //! Set state variable vindex with contents of varray
   void set_var(int vindex, double * varray) const;

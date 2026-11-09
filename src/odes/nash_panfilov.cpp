@@ -5,6 +5,9 @@ NashPanfilov::NashPanfilov() : CellModel(3)
   var_names.insert( std::pair<int, std::string>(0, "Vm") );
   var_names.insert( std::pair<int, std::string>(1, "r") );
   var_names.insert( std::pair<int, std::string>(2, "Ta") );
+
+  ta_index  = 2;   // Ta state variable
+  ta_factor = 1.0;
 }
 
 void NashPanfilov::init(double * values) const

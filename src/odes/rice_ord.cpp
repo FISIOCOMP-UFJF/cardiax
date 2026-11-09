@@ -32,6 +32,7 @@ RiceOHaraRudy::RiceOHaraRudy() : CellModel(52)
   // Initialize monitored values
   monitored.push_back( &active_force );  
   active_force = 0.0;
+  
 }
 
 void RiceOHaraRudy::init(double * values) const

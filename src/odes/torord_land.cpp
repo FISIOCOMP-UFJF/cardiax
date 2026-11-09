@@ -91,6 +91,9 @@ TorordLand::TorordLand() : CellModel(50) {
   is_rl.assign(get_num_state_vars(), false);
   for (int i : rlvars) is_rl[i] = true;
 
+  // active tension
+  ta_index  = 49;       // Ta state variable
+  ta_factor = 1.0/25.0; // scale factor
 }
 
 void TorordLand::init(double * values) const

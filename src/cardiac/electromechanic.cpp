@@ -65,14 +65,38 @@ void Electromechanic::config(const string &basename)
   }
 
   ephy->setup(monofile, cell_model, odesolver, dt, T, pr, pa);
+  ephy->set_write_output(false); // only elas writes; vm goes through elas
   ephy->update_matrix(false);
   ephy->init();
+
+  CellModel & cm = ephy->get_cells().get_model();
+  if (!cm.has_active_tension())
+  {
+    cerr << " *** ERROR: cell model '" << cell_model
+         << "' has no active tension; it can't drive the mechanics." << endl;
+    exit(1);
+  }
 
   elas.config(mshfile, parfile);
   elas.set_output_step(false);
   elas.save_checkpoint(false);
   elas.init();
-  elas.setup_data_writer( static_cast<int> (T / dt_mech) + 1 );
+  
+  // Old
+  // elas.setup_data_writer( static_cast<int> (T / dt_mech) + 1 );
+
+  // New
+  // Fields this coupled solver writes through elas that the mechanics
+  // doesn't register itself. Must come before setup_data_writer(),
+  // which calls open().
+  WriterHDF5 & w = elas.get_writer();
+  w.add_field("vm",          FieldLoc::Point, FieldKind::Transient);
+  w.add_field("ta",          FieldLoc::Point, FieldKind::Transient);  // output_vtk(ii, vm, ...)
+  w.add_field("long_strain", FieldLoc::Cell,  FieldKind::Transient);  // storeStress(ii)
+  w.add_field("circ_strain", FieldLoc::Cell,  FieldKind::Transient);
+  w.add_field("rad_strain",  FieldLoc::Cell,  FieldKind::Transient);
+  elas.setup_data_writer(static_cast<int>(T / dt_mech));
+  //elas.setup_data_writer(static_cast<int>(T / dt_mech) + 1);
 
   // Configure fibers for mechanical problem
   for (int i = 0; i < elas.get_mesh().get_n_elements(); i++)
@@ -168,7 +192,8 @@ void Electromechanic::solve()
   while (!tip.finished())
   {
     tip.increase_time();
-    cout << "Time: " << tip.time() << endl;
+    if (tip.time2print())
+      cout << "Time: " << tip.time();
 
     i += 1;
     
@@ -185,37 +210,42 @@ void Electromechanic::solve()
     }
 
     ephy->get_cells().get_var(0, vm);
+    ephy->get_cells().get_active_tension(ta);
     timer.leave(); 
 
-    // TODO: colocar um wrapper aqui
-    if (cell_model == "NP")         ephy->get_cells().get_var(2, ta);
-    else if (cell_model == "MINI")   ephy->get_cells().get_var(5, ta);
-    else if (cell_model == "MMSilva")   ephy->get_cells().get_var(5, ta);
-    else if (cell_model == "MNP")   ephy->get_cells().get_var(2, ta);
-    else if (cell_model == "TT2Ta") ephy->get_cells().get_var(19, ta);
-    else if (cell_model == "MS")
-    {
-      ephy->get_cells().get_var(2, ta);
-      ta *= 13.7;
-    }
-    else if (cell_model == "RiceTT2")
-    {
-      ephy->get_cells().get_monitored_values(0, ta);
-      ta = 300.0 * ta;
-    }
-    else if (cell_model == "RiceORd")
-    {
-      ephy->get_cells().get_monitored_values(0, ta);
-      ta = 10.0 * ta;
-    }
-    else if (cell_model == "ToRORdLand")
-    {
-      ephy->get_cells().get_var(49, ta);
-      ta = ta/25.;
-    }else if (cell_model == "Kerkoff2003")
-    {
-      ephy->get_cells().get_monitored_values(0, ta); 
-    }
+    // // TODO: colocar um wrapper aqui
+    // if (cell_model == "NP")
+    // {
+      // ephy->get_cells().get_var(2, ta);
+    // }  
+
+    // else if (cell_model == "MINI")   ephy->get_cells().get_var(5, ta);
+    // else if (cell_model == "MMSilva")   ephy->get_cells().get_var(5, ta);
+    // else if (cell_model == "MNP")   ephy->get_cells().get_var(2, ta);
+    // else if (cell_model == "TT2Ta") ephy->get_cells().get_var(19, ta);
+    // else if (cell_model == "MS")
+    // {
+    //   ephy->get_cells().get_var(2, ta);
+    //   ta *= 13.7;
+    // }
+    // else if (cell_model == "RiceTT2")
+    // {
+    //   ephy->get_cells().get_monitored_values(0, ta);
+    //   ta = 300.0 * ta;
+    // }
+    // else if (cell_model == "RiceORd")
+    // {
+    //   ephy->get_cells().get_monitored_values(0, ta);
+    //   ta = 10.0 * ta;
+    // }
+    // else if (cell_model == "ToRORdLand")
+    // {
+    //   ephy->get_cells().get_var(49, ta);
+    //   ta = ta/25.;
+    // }else if (cell_model == "Kerkoff2003")
+    // {
+    //   ephy->get_cells().get_monitored_values(0, ta); 
+    // }
 
     if (i % save_freq == 0) 
     {
@@ -224,12 +254,23 @@ void Electromechanic::solve()
       elas.solve();
       timer.leave(); 
 
+      // DEBUG
+      arma::vec ta_eff;
+      elas.effective_active_tension(ta, ta_eff);
+  
       timer.enter("Writing");
       elas.get_displacements(u_field);
       elas.output_vtk(ii, vm, u_field);
+      elas.output_vtk(ii, ta, u_field);
       elas.storeStress(ii);
       ii += 1;
       timer.leave(); 
+
+
+      cout << " Ta: cell max = " << ta.max() << "   effective max (x ta_scale) = " << ta_eff.max() << endl;
+      cout << " max |u| = " << arma::abs(u_field).max() << " um" << endl;
+
+      // t =   65.00 | EP lin:  1.0 its, max rnorm 0.0e+00 | Newton:  4 its, rnorm 4.8e-08 | max Vm 0.99  Ta 13.28  |u| 3736.0 um
 
       if(tip.it() % checkpoint_interval == 0 && checkpoint_interval > 0)
         {

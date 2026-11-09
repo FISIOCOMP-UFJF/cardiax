@@ -153,6 +153,9 @@ public:
   //! Change total time
   void set_totaltime(double t) { totaltime = t; }
 
+  //! Disable this problem's own HDF5/XDMF output (a coupled driver writes instead)
+  void set_write_output(bool w) { write_output = w; }
+
   //! BCL do warm up celular, na unidade de tempo do SOLVER.
   //!
   //! 0 = derivar de totaltime (comportamento legado, correto quando -t cobre
@@ -193,7 +196,8 @@ public:
   TimerSection timer;
  
 protected:
-
+  
+  bool write_output = true;
   bool re_assembly_mats;
   double timestep;
   double totaltime;

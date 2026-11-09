@@ -65,6 +65,8 @@ protected:
 
   bool stimuli_from_toml = false;
 
+  bool cond_from_toml    = false; 
+
   //! Nodes to apply stimulus
   std::set<uint> stim_nodes;
 

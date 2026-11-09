@@ -10,6 +10,9 @@ MyNashPanfilov::MyNashPanfilov() : CellModel(4)
   var_names.insert( std::pair<int, std::string>(3, "aux2") );
 
   rlvars.insert(4);
+
+  ta_index  = 2;   // Ta state variable
+  ta_factor = 1.0;
 }
 
 void MyNashPanfilov::init(double * values) const

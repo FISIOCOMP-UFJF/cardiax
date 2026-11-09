@@ -3,17 +3,18 @@
 #include <cassert>
 
 MinimalModel::MinimalModel() : CellModel(6) {
-    var_names.insert( std::pair<int, std::string>(0, "u") );
-    var_names.insert( std::pair<int, std::string>(1, "v") );
-    var_names.insert( std::pair<int, std::string>(2, "w") );
-    var_names.insert( std::pair<int, std::string>(3, "s") );
-    var_names.insert( std::pair<int, std::string>(4, "ca") );
-    var_names.insert( std::pair<int, std::string>(5, "ta") );
-    
-    
-    // variables for RL integration in Explicit Euler
-    for(int i=1; i<=3; i++) rlvars.insert(i);
+  var_names.insert( std::pair<int, std::string>(0, "u") );
+  var_names.insert( std::pair<int, std::string>(1, "v") );
+  var_names.insert( std::pair<int, std::string>(2, "w") );
+  var_names.insert( std::pair<int, std::string>(3, "s") );
+  var_names.insert( std::pair<int, std::string>(4, "ca") );
+  var_names.insert( std::pair<int, std::string>(5, "ta") );
 
+  // variables for RL integration in Explicit Euler
+  for(int i=1; i<=3; i++) rlvars.insert(i);
+
+  ta_index  = 5;        // Ta state variable
+  ta_factor = 1.0;
 }
 
 

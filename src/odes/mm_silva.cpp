@@ -7,6 +7,9 @@ MMSilva::MMSilva() : CellModel(6) {
   var_names.insert( std::pair<int, std::string>(3, "s") );
   var_names.insert( std::pair<int, std::string>(4, "ca") );
   var_names.insert( std::pair<int, std::string>(5, "ta") );
+
+  ta_index  = 5;        // Ta state variable
+  ta_factor = 1.0;
 }
 
 void MMSilva::init(double * values) const

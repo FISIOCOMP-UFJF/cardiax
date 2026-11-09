@@ -730,10 +730,13 @@ void UpdatedLagrangian::solve()
   fext0 += fext; // save nodal loads
   log << calc_volume() << endl;
   
-  cout << "End inner volume: " << calc_volume() << endl;
-  cout << "End LV cavity volume: " << volume_LV() << endl;
-  cout << "End RV cavity volume: " << volume_RV() << endl;
+
+  // TO-DO: these should be moved to the application (cardiac/pvloop)
+  // cout << "End inner volume: " << calc_volume() << endl;
+  // cout << "End LV cavity volume: " << volume_LV() << endl;
+  // cout << "End RV cavity volume: " << volume_RV() << endl;
+  
   //nls->timer.summary();
 
-  cout << " Done" << endl;
+  // cout << " Done" << endl;
 }

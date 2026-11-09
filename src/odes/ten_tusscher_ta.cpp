@@ -22,6 +22,9 @@ TenTusscherTa::TenTusscherTa() : CellModel(21), marked(false), elapsedTime(0)
   // some test for active tension (Ta)
   rlvars.insert(19); 
   rlvars.insert(20); 
+
+  ta_index  = 19;        // Ta state variable
+  ta_factor = 1.0;
 }
 
 void TenTusscherTa::init(double * values) const

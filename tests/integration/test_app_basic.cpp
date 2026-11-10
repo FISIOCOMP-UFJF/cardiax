@@ -6,7 +6,7 @@
  *    the Laplace variant selected in the same file.
  *  - l2projection: runs and writes the projected function.
  *  - elasticity: uniaxial tension of a bar under a traction, against Hooke's law.
- *  - eikonal: the cube and cable cases in testes/eikonal, and a generated cube with a
+ *  - eikonal: the cube and cable cases in tests/data/eikonal, and a generated cube with a
  *    known activation time; the output files must hold what the solver reports.
  *  - Command line: each solver stops with a usage message when called with no input.
  *
@@ -43,8 +43,8 @@ TEST_CASE("poisson: reports a small L2 error for a problem with a known solution
   CHECK_EQ(r.exit_code, 0);
   const double err = number_after(r.log, "L2 error norm:");
   CHECK_MSG(err < 2e-3, err);
-  const arma::mat vm = h5_read("poisson/out.h5", "/point_data/vm");
-  CHECK_NEAR(vm(0, box_node(b, 8, 1, 1)), 0.25, 2e-3);
+  const arma::mat u = h5_read("poisson/out.h5", "/point_data/solution");
+  CHECK_NEAR(u(box_node(b, 8, 1, 1), 0), 0.25, 2e-3);
 }
 
 TEST_CASE("poisson: without an exact solution it says so and still solves")
@@ -113,9 +113,9 @@ TEST_CASE("l2projection: writes the projection of its source function")
   const AppResult r = run_app("l2projection", std::string("-f m.xml -o proj ") + kPetsc, "l2");
   CHECK_EQ(r.exit_code, 0);
   REQUIRE(std::filesystem::exists("l2/proj.h5"));
-  const arma::mat vm = h5_read("l2/proj.h5", "/point_data/vm");
+  const arma::mat u = h5_read("l2/proj.h5", "/point_data/solution");
   // sin(pi x) sin(pi y) at the centre of the unit square
-  CHECK_NEAR(vm(0, 8 + 8 * 17), 1.0, 0.02);
+  CHECK_NEAR(u(8 + 8 * 17, 0), 1.0, 0.02);
 }
 
 TEST_CASE_KNOWN_BUG("elasticity: uniaxial tension of a bar follows Hooke's law",
@@ -183,9 +183,9 @@ TEST_CASE("eikonal: generated cube, isotropic")
 TEST_CASE("eikonal: repository cases run and keep their activation range")
 {
   const struct { const char * toml; const char * mesh; const char * key; } cases[] = {
-    {"testes/eikonal/input_cube.toml",  "testes/eikonal/cube.xml",            "eikonal.cube.latmax"},
-    {"testes/eikonal/input_cable.toml", "testes/eikonal/cable_10x_fiber.xml", "eikonal.cable.latmax"},
-    {"testes/eikonal/input_donut.toml", "testes/eikonal/donut.xml",           "eikonal.donut.latmax"},
+    {"tests/data/eikonal/input_cube.toml",  "tests/data/eikonal/cube.xml",            "eikonal.cube.latmax"},
+    {"tests/data/eikonal/input_cable.toml", "tests/data/eikonal/cable_10x_fiber.xml", "eikonal.cable.latmax"},
+    {"tests/data/eikonal/input_donut.toml", "tests/data/eikonal/donut.xml",           "eikonal.donut.latmax"},
   };
   for (const auto & c : cases)
   {

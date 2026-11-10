@@ -63,6 +63,22 @@ void write_cable(const std::string & path, int n, double L);
 //! <prescribed_displacement> entries fixing the given directions on a set of nodes
 std::string fix_nodes_xml(const std::vector<int> & nodes, const std::vector<int> & dirs);
 
+//! TOML input of nonlinearelas. The TOML carries the values (material, coefficients,
+//! number of increments, pressure per surface marker); the mesh XML named in `mesh`
+//! still carries the node/marker topology of the boundary conditions
+//! (<prescribed_displacement>, <spring>, ...). `coefs` is a comma-separated list.
+struct NonlinearElasInput
+{
+  std::string mesh;                                //!< relative to the run directory
+  std::string material = "Guccione";
+  std::string coefs;
+  int ninc = 1;
+  std::vector<std::pair<int, double>> pressure;    //!< (marker, value)
+};
+
+//! Writes `in` as a TOML file at `path`
+void write_nonlinearelas_toml(const std::string & path, const NonlinearElasInput & in);
+
 //! Writes a text file
 void write_text(const std::string & path, const std::string & contents);
 

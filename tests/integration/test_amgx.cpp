@@ -83,25 +83,35 @@ TEST_CASE("AMGX: Poisson gives the same solution as the direct solver")
   const AppResult d = run_app("poisson", "-f c.toml -linsolver petsc -ksp_type preonly -pc_type lu", "direct_p");
   REQUIRE(a.exit_code == 0);
   REQUIRE(d.exit_code == 0);
-  const arma::mat ua = h5_read("amgx_p/out.h5", "/point_data/vm");
-  const arma::mat ud = h5_read("direct_p/out.h5", "/point_data/vm");
+  const arma::mat ua = h5_read("amgx_p/out.h5", "/point_data/solution");
+  const arma::mat ud = h5_read("direct_p/out.h5", "/point_data/solution");
   CHECK_MSG(arma::abs(ua - ud).max() < 1e-3, "max gap " << arma::abs(ua - ud).max());
 }
 
 TEST_CASE("AMGX: a mechanics solve converges to the state of the direct solver")
 {
   require_gpu();
-  const char * input = "testes/passive/teste_unitario_guccione.xml";
+  const char * input = "tests/data/passive/teste_unitario_guccione.xml";
   const std::string n1 = copy_input(input, "amgx_m");
   const std::string n2 = copy_input(input, "direct_m");
-  const AppResult a = run_app("nonlinearelas", "-f " + n1 + " -num_threads 2 " + amgx_flags(), "amgx_m");
+  // nonlinearelas reads a TOML; values from the <parameters>/<pressure> blocks of the XML
+  NonlinearElasInput in;
+  in.mesh = n1;
+  in.material = "Guccione";
+  in.coefs = "0.650, 6.62, 3.65, 2.65, 100, 200.0";
+  in.ninc = 10;
+  in.pressure = {{10, 4.0}};
+  write_nonlinearelas_toml("amgx_m/m.toml", in);
+  write_nonlinearelas_toml("direct_m/m.toml", in);
+  const AppResult a = run_app("nonlinearelas", "-f m.toml -num_threads 2 " + amgx_flags(), "amgx_m");
   const AppResult d = run_app("nonlinearelas",
-      "-f " + n2 + " -num_threads 2 -linsolver petsc -ksp_type preonly -pc_type lu", "direct_m");
+      "-f m.toml -num_threads 2 -linsolver petsc -ksp_type preonly -pc_type lu", "direct_m");
   REQUIRE(a.exit_code == 0);
   REQUIRE(d.exit_code == 0);
   const std::string base = n1.substr(0, n1.rfind(".xml"));
-  const double va = number_after(a.log, "End inner volume:");
-  const double vd = number_after(d.log, "End inner volume:");
+  // Tissue volume at the end: third line of <base>_volumes.dat
+  const double va = read_table("amgx_m/" + base + "_volumes.dat")(2, 0);
+  const double vd = read_table("direct_m/" + base + "_volumes.dat")(2, 0);
   CHECK_REL(va, vd, 1e-4);
   CHECK(fs::exists("amgx_m/" + base + "_output_nl.h5"));
 }

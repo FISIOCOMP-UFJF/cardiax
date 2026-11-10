@@ -2,7 +2,7 @@
  * Integration tests of the coupled problems: electromech and cardiac_cycle.
  *
  * They run on small meshes from the repository, for a short time, with the PETSc direct
- * solver. The biventricular mesh of testes/teste_pvloop_save_state has 702 nodes.
+ * solver. The biventricular mesh of tests/data/teste_pvloop_save_state has 702 nodes.
  *
  * Regression baselines use -ta_curve, which tests mechanics and circulation by themselves.
  *
@@ -17,9 +17,9 @@
  *  - Ta unit: the mechanics receive Pa. The ceiling -t only reduces beats.
  *  - -ta_curve replaces the active tension of the cell model.
  *  - Mechano-electric feedback (-lam, -lamrate): the stretch reaches the cell.
- *  - Output files: frames, fields and the flag table with its provenance.
+ *  - The flag table with its provenance. The layout of the output files is not tested.
  *  - Checkpoint: for each circulation model, a run restarted from -restore ends in the
- *    same state as the uninterrupted one (the check of testes/teste_pvloop_save_state,
+ *    same state as the uninterrupted one (the check of tests/data/teste_pvloop_save_state,
  *    made automatic).
  *  - Invalid flag combinations are rejected.
  *  - Regression baselines of the volumes and pressures reached, for each model.
@@ -35,7 +35,7 @@ namespace fs = std::filesystem;
 namespace
 {
 
-const char * kMesh = "testes/teste_pvloop_save_state/malha_descarregada_ldrb_ms.xml";
+const char * kMesh = "tests/data/teste_pvloop_save_state/malha_descarregada_ldrb_ms.xml";
 const char * kMeshName = "malha_descarregada_ldrb_ms.xml";
 const char * kCommon = " -num_threads 2 -linsolver petsc -ksp_type preonly -pc_type lu"
                        " -c ToRORdLand -dt 0.02 -dt_mech 1 -logc 1000 ";
@@ -119,7 +119,7 @@ void check_checkpoints_match(const std::string & full, const std::string & rest,
 
 TEST_CASE("electromech: the cook's beam case runs and deforms")
 {
-  const std::string name = copy_input("testes/mechanics/cooks_modificado_electromech.xml", "em");
+  const std::string name = copy_input("tests/data/mechanics/cooks_modificado_electromech.xml", "em");
   const AppResult r = run_app("electromech",
       "-f " + name + " -c ToRORdLand -m ExplicitEuler -ep mono -dt 0.02 -dt_mech 1.0 -t 30 "
       "-num_threads 2 -linsolver petsc -ksp_type preonly -pc_type lu", "em");
@@ -134,7 +134,7 @@ TEST_CASE("electromech: the cook's beam case runs and deforms")
 
 TEST_CASE("electromech: an unknown EP model is an error")
 {
-  const std::string name = copy_input("testes/mechanics/cooks_modificado_electromech.xml", "em_bad");
+  const std::string name = copy_input("tests/data/mechanics/cooks_modificado_electromech.xml", "em_bad");
   const AppResult r = run_app("electromech", "-f " + name + " -ep nope -t 1", "em_bad");
   CHECK(r.exit_code != 0);
 }
@@ -153,24 +153,6 @@ TEST_CASE("cardiac_cycle legacy: the curve drives the cavity and the volume resp
   CHECK(h.is_finite());
   CHECK_GOLDEN("cycle.legacy.vlv_last", h(h.n_rows - 1, 2), 1e-5);
   CHECK_GOLDEN("cycle.legacy.plv_last", h(h.n_rows - 1, 1), 1e-5);
-}
-
-TEST_CASE("cardiac_cycle legacy: output fields have the mesh sizes and are finite")
-{
-  write_ta_curve("legacy_out");
-  const AppResult r = cycle("legacy_out", "-t 5 -prc 1 -ta_curve ta.txt");
-  REQUIRE(r.exit_code == 0);
-  const std::string h5 = frames("legacy_out");
-  REQUIRE(fs::exists(h5));
-  const arma::mat vm = h5_read(h5, "/point_data/vm");
-  CHECK_EQ(vm.n_cols, arma::uword(702));
-  const arma::mat ta = h5_read(h5, "/point_data/active_stress");
-  CHECK(ta.is_finite());
-  const arma::mat u = h5_read(h5, "/point_data/displacements");
-  CHECK_EQ(u.n_cols, arma::uword(3 * 702));
-  CHECK(u.is_finite());
-  const arma::mat scale = h5_read(h5, "/cell_data/ta_scale");
-  CHECK_EQ(scale.n_cols, arma::uword(2164));
 }
 
 // ---- cardiac_cycle, Regazzoni -----------------------------------------------

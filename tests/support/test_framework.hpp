@@ -66,7 +66,7 @@ struct SkipCase { std::string why; };  //!< thrown by SKIP_TEST
 //! Records a failure of the running case
 void report_failure(const char * file, int line, const std::string & what);
 
-//! Path of the repository (for fixtures in testes/, examples/, configs/)
+//! Path of the repository (for fixtures in tests/data/, examples/, configs/)
 std::string source_dir();
 
 //! Path of the directory with the solver executables

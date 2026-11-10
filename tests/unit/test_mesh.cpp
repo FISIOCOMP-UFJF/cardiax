@@ -454,7 +454,12 @@ TEST_CASE("WriterHDF5: nodal, displacement and cell fields land in the right ste
   m.read_xml("m.xml");
   const int np = m.get_n_points(), ne = m.get_n_elements();
 
+  // Fields are registered before open(), which creates their datasets
   WriterHDF5 w(&m);
+  w.add_field("vm",            FieldLoc::Point, FieldKind::Transient);
+  w.add_field("active_stress", FieldLoc::Point, FieldKind::Transient);
+  w.add_field("stress",        FieldLoc::Cell,  FieldKind::Transient);
+  w.add_field("displacements", FieldLoc::Point, FieldKind::Transient, 3);
   w.open("res", 3, 1.0);
 
   arma::vec vm(np), ta(np), cell(ne);
@@ -464,7 +469,7 @@ TEST_CASE("WriterHDF5: nodal, displacement and cell fields land in the right ste
   for (int i = 0; i < np; i++)
     for (int d = 0; d < 3; d++) disp(d, i) = 100.0 * i + d;
 
-  w.write_vm_step(1, vm.memptr());
+  w.write_point_field_step(1, vm.memptr(), "vm");
   w.write_point_field_step(2, ta.memptr(), "active_stress");
   w.write_cell_field_step(1, cell.memptr(), "stress");
   w.write_displ_step(2, disp.memptr());
@@ -483,6 +488,41 @@ TEST_CASE("WriterHDF5: nodal, displacement and cell fields land in the right ste
   // [nsteps, np, 3] read as nsteps rows of np*3 values
   const arma::mat rd = h5_read("res.h5", "/point_data/displacements");
   CHECK_NEAR(rd(2, 3 * 4 + 1), 401.0, 0.0);
+
+  // Only the registered fields exist
+  CHECK(!h5_has("res.h5", "/point_data/lambda_f"));
+}
+
+TEST_CASE("WriterHDF5: static fields are written once, scalar and vector")
+{
+  BoxSpec b = small_box();
+  write_tet_box("m.xml", b);
+  Mesh m;
+  m.read_xml("m.xml");
+  const int np = m.get_n_points(), ne = m.get_n_elements();
+
+  WriterHDF5 w(&m);
+  w.add_field("solution", FieldLoc::Point, FieldKind::Static);
+  w.add_field("gradient", FieldLoc::Cell,  FieldKind::Static, 3);
+  w.open("res", 1, 1.0);
+
+  arma::vec sol(np), grad(3 * ne);
+  for (int i = 0; i < np; i++) sol(i) = 0.5 * i;
+  for (int k = 0; k < 3 * ne; k++) grad(k) = k;
+  w.write_static_field(sol.memptr(), "solution");
+  w.write_static_field(grad.memptr(), "gradient");
+  w.close();
+
+  // [np] is read as a column; [ne, 3] as ne rows of 3 values
+  const arma::mat rs = h5_read("res.h5", "/point_data/solution");
+  CHECK_EQ(rs.n_rows, arma::uword(np));
+  CHECK_EQ(rs.n_cols, arma::uword(1));
+  CHECK_NEAR(rs(7, 0), 3.5, 0.0);
+
+  const arma::mat rg = h5_read("res.h5", "/cell_data/gradient");
+  CHECK_EQ(rg.n_rows, arma::uword(ne));
+  CHECK_EQ(rg.n_cols, arma::uword(3));
+  CHECK_NEAR(rg(2, 1), 7.0, 0.0);
 }
 
 TEST_CASE("WriterHDF5: writing a field with no dataset warns and writes nothing")
@@ -509,10 +549,16 @@ TEST_CASE("WriterHDF5: region markers and AHA numbers are saved per element")
     "</elements></mesh>");
   Mesh m;
   m.read_xml("mk.xml");
+  // Mesh-derived static fields: open() fills them, one value per element (not per step)
   WriterHDF5 w(&m);
+  w.add_field("fibrosis",   FieldLoc::Cell, FieldKind::Static);
+  w.add_field("aha_marker", FieldLoc::Cell, FieldKind::Static);
   w.open("res", 2, 1.0);
-  CHECK_NEAR(h5_read("res.h5", "/cell_data/fibrosis")(1, 0), 4.0, 0.0);
-  CHECK_NEAR(h5_read("res.h5", "/cell_data/aha_marker")(1, 0), 11.0, 0.0);
+  const arma::mat fib = h5_read("res.h5", "/cell_data/fibrosis");
+  const arma::mat aha = h5_read("res.h5", "/cell_data/aha_marker");
+  CHECK_EQ(fib.n_elem, arma::uword(1));
+  CHECK_NEAR(fib(0, 0), 4.0, 0.0);
+  CHECK_NEAR(aha(0, 0), 11.0, 0.0);
 }
 
 TEST_CASE("WriterHDF5: the EP checkpoint round trip returns exactly what was saved")

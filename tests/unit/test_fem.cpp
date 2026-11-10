@@ -701,7 +701,8 @@ TEST_CASE("Projection: write_data creates the result file")
   Projection P;
   P.run("p.xml");
   P.write_data("proj_out", false);
-  const arma::mat vm = h5_read("proj_out.h5", "/point_data/vm");
-  CHECK_EQ(vm.n_cols, arma::uword(9));
-  CHECK_REL(vm(0, 4), P.get_solution()(4), 1e-12);
+  // Static nodal field [np], read as a column
+  const arma::mat u = h5_read("proj_out.h5", "/point_data/solution");
+  CHECK_EQ(u.n_rows, arma::uword(9));
+  CHECK_REL(u(4, 0), P.get_solution()(4), 1e-12);
 }

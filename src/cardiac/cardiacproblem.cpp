@@ -420,3 +420,18 @@ void CardiacProblem::write_data_text(const arma::vec & vm, int * step)
     *step = *step + 1;
   //}
 }
+
+std::vector<double> CardiacProblem::direction_field(int which)
+{
+  const int ne = mesh->get_n_elements();
+  std::vector<double> d(3 * ne);
+  for (int e = 0; e < ne; e++)
+  {
+    const arma::vec3 v = (which == 0) ? get_fiber(e)
+                       : (which == 1) ? get_trans(e)
+                                      : get_normal(e);
+    for (int k = 0; k < 3; k++)
+      d[3*e + k] = v(k);
+  }
+  return d;
+}

@@ -520,12 +520,14 @@ void Monodomain::init(bool is_restart)
     cout << " Number of steps = " << nsteps << endl;
     cout << " Timestep = " << timestep << endl;
     writer->add_field("vm", FieldLoc::Point, FieldKind::Transient);
+    writer->add_field("fiber", FieldLoc::Cell, FieldKind::Static, 3);
     if (!fib.empty())
     {
       writer->add_field("fibrotic",    FieldLoc::Cell, FieldKind::Static, 1);
       writer->add_field("sigma_scale", FieldLoc::Cell, FieldKind::Static, 3);
     }
     writer->open(output, nsteps, timestep, false, is_restart);
+    writer->write_static_field(direction_field(0).data(), "fiber");
 
     if (!fib.empty())
     {

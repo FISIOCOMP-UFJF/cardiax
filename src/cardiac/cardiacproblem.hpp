@@ -63,6 +63,9 @@ public:
   //! Coordenada transventricular, binaria (0 = VE, 1 = VD)
   const arma::ivec & get_tv() const { return cbv_tv; }
 
+  //! Array to store f, s, or n directions 
+  std::vector<double> direction_field(int which);
+
   //! Havia bloco <tm> no arquivo de malha?
   bool has_cobiveco() const { return cbv_loaded; }
 

@@ -95,8 +95,9 @@ void Electromechanic::config(const string &basename)
   w.add_field("long_strain", FieldLoc::Cell,  FieldKind::Transient);  // storeStress(ii)
   w.add_field("circ_strain", FieldLoc::Cell,  FieldKind::Transient);
   w.add_field("rad_strain",  FieldLoc::Cell,  FieldKind::Transient);
-  elas.setup_data_writer(static_cast<int>(T / dt_mech));
-  //elas.setup_data_writer(static_cast<int>(T / dt_mech) + 1);
+  w.add_field("fiber",       FieldLoc::Cell,  FieldKind::Static, 3);
+  elas.setup_data_writer(static_cast<int>(T / dt_mech)); //+1
+  w.write_static_field(ephy->direction_field(0).data(), "fiber");
 
   // Configure fibers for mechanical problem
   for (int i = 0; i < elas.get_mesh().get_n_elements(); i++)

@@ -3,11 +3,6 @@
 #include "electromechanic.hpp"
 #include "util/pugixml.hpp"
 
-Electromechanic::~Electromechanic()
-{
-  delete ephy;
-}
-
 void Electromechanic::config(const string & basename)
 {
   filename = basename;
@@ -94,9 +89,12 @@ void Electromechanic::setup_mechanics()
   // the mechanics uses the electrophysiology fibres
   for (int e = 0; e < mm.get_n_elements(); e++)
   {
-    mm.set_element_fiber (e, ephy->get_fiber(e));
-    mm.set_element_trans (e, ephy->get_trans(e));
-    mm.set_element_normal(e, ephy->get_normal(e));
+    arma::vec3 f0 = ephy->get_fiber(e);
+    arma::vec3 s0 = ephy->get_trans(e);
+    arma::vec3 n0 = ephy->get_normal(e);
+    mm.set_element_fiber (e, f0);
+    mm.set_element_trans (e, s0);
+    mm.set_element_normal(e, n0);
   }
 }
 

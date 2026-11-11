@@ -12,6 +12,7 @@
  *    and the final state matches the regression baseline (tests/golden/baseline.txt).
  *    The baseline detects unintended changes in equations that have no closed-form
  *    answer to compare with.
+ *  - CellModel: the cell type has a default (ENDO) even when built over dirty memory.
  *  - Physiology of the ionic models used in production (TT2, ORd, ToRORd-Land): resting
  *    potential, upstroke, repolarisation; and contraction in ToRORd-Land.
  *  - Length dependence of the Land submodel, the neutral values of stretch and of the
@@ -25,7 +26,9 @@
 #include "test_framework.hpp"
 #include "fixtures.hpp"
 
+#include <cstring>
 #include <memory>
+#include <new>
 #include <omp.h>
 
 #include "odes/odes.h"
@@ -416,6 +419,20 @@ TEST_CASE("ToRORd-Land: cell types differ, and each one is reproducible")
   CHECK(std::fabs(epi - endo) > 1e-3);
   CHECK(std::fabs(mid - endo) > 1e-3);
   CHECK_NEAR(final_v(EPI), epi, 0.0);
+}
+
+TEST_CASE("CellModel: the cell type has a default even over dirty memory")
+{
+  // Cells keeps one CellModel per OpenMP thread and only calls set_celltype() when the
+  // mesh has cell types. CellModel::type used to be left uninitialized, so with no types
+  // each copy ran with whatever was in its memory (EPI in some, an invalid value in
+  // others) and the answer depended on the thread -> node mapping. Building the model
+  // over memory filled with garbage reproduces that deterministically.
+  alignas(TorordLand) unsigned char buf[sizeof(TorordLand)];
+  std::memset(buf, 0xAB, sizeof(buf));
+  TorordLand * m = new (buf) TorordLand();
+  CHECK_MSG(m->get_celltype() == ENDO, "type " << m->get_celltype());
+  m->~TorordLand();   // ode_solver/ts must be nullptr before setup(), or this crashes
 }
 
 // ---- Land submodel and neutral values ---------------------------------------

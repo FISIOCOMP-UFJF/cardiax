@@ -161,8 +161,13 @@ class CellModel
   //! Number of state variables (equations)
   const int num_state_vars;
 
-  //! Select cell type
-  CellType type;
+  //! Select cell type. Antes ficava sem inicializar: sem tipos na malha,
+  //! cada copia por thread de Cells (ode[tid]) usava o lixo da propria
+  //! memoria (EPI em umas, valor invalido em outras), e o resultado dependia
+  //! de qual thread avancava cada no -- nao determinístico. ENDO e o default
+  //! de TorordLand::init(); modelos que querem outro default (TT2Ta,
+  //! RiceTT2, ...) sobrescrevem no proprio construtor.
+  CellType type = ENDO;
 
   //! Coordenada apicobasal da celula (0 apice -> 1 base); 0.5 = neutro
   double apicobasal = 0.5;
@@ -173,14 +178,14 @@ class CellModel
   //! Taxa de estiramento na direcao da fibra; 0.0 = neutro
   double stretch_rate = 0.0;
 
-  //! Solver
-  ODESolver * ode_solver;
+  //! Solver (nullptr ate setup(); o destrutor faz delete dele)
+  ODESolver * ode_solver = nullptr;
 
-  //! Timing step
-  TimeStepper * ts;
+  //! Timing step (nullptr ate setup())
+  TimeStepper * ts = nullptr;
 
   //! Stimulus value
-  double i_stim;
+  double i_stim = 0.0;
 
   //! Used to compute jacobian
   arma::vec f1, f2;

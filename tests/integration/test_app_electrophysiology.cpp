@@ -7,7 +7,8 @@
  *    and matching the regression baseline. Faster along the fibres than across them.
  *  - Crank-Nicolson and implicit Euler (the numerics.theta option) give close velocities.
  *  - No stimulus means no activation.
- *  - The same answer with one and two OpenMP threads.
+ *  - The same answer with one and two OpenMP threads (also for ToRORdLand, whose
+ *    result depends on the cell type, with no cell types in the mesh).
  *  - Different ionic models run through the same path.
  *  - Checkpoint: -save_state writes a file, -restore continues the run and arrives at the
  *    same final state as the uninterrupted run.
@@ -160,6 +161,20 @@ TEST_CASE("monodomain: the result does not depend on the number of threads")
   const std::string toml = mono_toml("TT2", 10.0, 0.02, 0.5);
   const arma::mat a = run_monodomain("t1", b, toml, "", 1);
   const arma::mat c = run_monodomain("t2", b, toml, "", 2);
+  CHECK_NEAR(arma::abs(a - c).max(), 0.0, 1e-8);
+}
+
+// ToRORdLand depends on the cell type (endo/mid/epi). With no types in the mesh,
+// CellModel::type used to be left uninitialized, so each per-thread copy of the cell
+// model ran with whatever was in its memory and the result changed with the
+// thread -> node mapping.
+TEST_CASE("monodomain: ToRORdLand without cell types does not depend on the number of threads")
+{
+  const BoxSpec b = slab(10);
+  const std::string toml = mono_toml("ToRORdLand", 10.0, 0.02, 0.5);
+  const arma::mat a = run_monodomain("tor_t1", b, toml, "", 1);
+  const arma::mat c = run_monodomain("tor_t4", b, toml, "", 4);
+  CHECK(a.is_finite());
   CHECK_NEAR(arma::abs(a - c).max(), 0.0, 1e-8);
 }
 

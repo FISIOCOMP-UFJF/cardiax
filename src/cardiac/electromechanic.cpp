@@ -107,7 +107,7 @@ void Electromechanic::setup_output()
 
   // frames at t = 0, dt_out, ..., counted with the loop's own step numbers
   const int n_steps  = ephy->get_time_parameters().get_nsteps();
-  const int n_frames = n_steps / steps_per_out + 1;
+  const int n_frames = n_steps / steps_per_out;
 
   // fields the mechanics doesn't register itself; before setup_data_writer(),
   // which opens the file

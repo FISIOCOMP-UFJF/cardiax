@@ -12,17 +12,37 @@ static char help[] = "coupled monodomain-mechanics solver";
 void usage()
 {
   cout << endl;
-  cout << " Usage: monomech [OPTIONS]" << endl << endl;
-  cout << "    -f    <meshbase>   prefix of the mesh file" << endl;
-  cout << "    -dt   <dt>         time step (ms)" << endl;
-  cout << "    -t    <time>       total time of simulation (ms)" << endl;
-  cout << "    -c    <cell>       name of the cell model (FHN,NP,LR1,TT2)" << endl; 
-  cout << "    -m    <odesolver>  ODE solver (ExplicitEuler, ImplicitEuler)" << endl;
-  cout << "    -cond <condtype>   conductivity type (0 1 ... 5)" << endl;
-  cout << "    -ep   <EP model>   Monodomain or Bidomain (mono or bido)" << endl;
-  cout << "  -restore <restorefile>           Restore state file" <<endl; 
-  cout << "-save_state <checkpoint_interval>  Save state interval (ms)"<<endl;
-  cout << "-num_threads\t number of OpenMP threads " << endl;
+  cout << " Usage: electromech -f <mesh.xml> [OPTIONS] [PETSc options]" << endl << endl;
+
+  cout << "  Input:" << endl;
+  cout << "    -f           <file>      mesh + mechanics + stimulus (XML)" << endl;
+  cout << "    -ep          <model>     electrophysiology: mono | monodef" << endl;
+  cout << endl;
+
+  cout << "  Time (each step a multiple of the previous: dt_ephy | dt_mech | dt_out):" << endl;
+  cout << "    -t           <time>      total simulation time (ms)" << endl;
+  cout << "    -dt_ephy     <step>      electrophysiology time step (ms)" << endl;
+  cout << "    -dt_mech     <step>      mechanics: solve every dt_mech (ms)" << endl;
+  cout << "    -dt_out      <step>      output: one frame every dt_out (ms)" << endl;
+  cout << endl;
+
+  cout << "  Cell model:" << endl;
+  cout << "    -c           <model>     cell model with active tension (NP, MNP, MS, TT2Ta, ToRORdLand, ...)" << endl;
+  cout << "    -m           <method>    ODE solver (ExplicitEuler, ImplicitEuler, RungeKutta4)" << endl;
+  cout << endl;
+
+  cout << "  Checkpoint / restart:" << endl;
+  cout << "    -save_state  <interval>  save a coupled checkpoint every <interval> ms" << endl;
+  cout << "    -restore     <file>      restart from a coupled checkpoint" << endl;
+  cout << endl;
+
+  cout << "  Parallel:" << endl;
+  cout << "    -num_threads <n>         number of OpenMP threads" << endl;
+  cout << endl;
+
+  cout << "  Example:" << endl;
+  cout << "    electromech -f em_cylinder_5x48x12.xml -ep mono -c NP -t 100 \\" << endl;
+  cout << "                -dt_ephy 0.01 -dt_mech 0.1 -dt_out 1 -ksp_type preonly -pc_type lu" << endl;
   cout << endl;
   exit(0);
 }

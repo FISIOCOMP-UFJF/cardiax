@@ -13,7 +13,7 @@ NonlinearElasticity::NonlinearElasticity()
     log(), writer(&msh), first_step(true)
 {
   // define default parameters
-  parameters.add("tol_energy",1.0e-8);
+  parameters.add("tol_energy",1.0e-6);
   parameters.add("tol_residual",1.0e-6);
   parameters.add("tol_displacement",1.0e-16);
 
@@ -2110,7 +2110,7 @@ void NonlinearElasticity::output_vtk(const int cont, const int step)
 
 void NonlinearElasticity::output_vtk(const int step, const arma::vec & v, const arma::vec & displ)
 {
-  // cout << "Writing Data\n";
+  cout << "Writing Data\n";
   //   writer.write_vm_step(step, v.memptr());
   writer.write_point_field_step(step, v.memptr(), "vm");
   writer.write_displ_step(step, displ.memptr());
@@ -2151,7 +2151,7 @@ void NonlinearElasticity::output_vtk(const int cont,
 
   if(output_step)
   {
-    // cout << "Writing Data\n";
+    cout << "Writing Data\n";
     // writer.write_vm_step(step, v.memptr());
     writer.write_point_field_step(step, v.memptr(), "vm");
     writer.write_displ_step(step, u_field);
@@ -2446,7 +2446,7 @@ void NonlinearElasticity::run(const string & mshfile, const toml::table & cfg, c
 
   pre_solve();
 
-  // TO-DO: these should be moved to the application (pv-loop or cardiac-cycle)
+  // TO-DO: these should be moved to the application (pv-loop or ca)
   // cout << "Initial LV cavity volume: " << volume_LV() << "\n";
   // cout << "Initial RV cavity volume: " << volume_RV() << "\n";
 

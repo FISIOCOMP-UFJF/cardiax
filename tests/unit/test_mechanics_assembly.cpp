@@ -268,10 +268,9 @@ TEST_CASE("Total Lagrangian: tangent of Holzapfel-Ogden on tetrahedra")
   CHECK_MSG(g < 1e-3, "relative gap " << g);
 }
 
-TEST_CASE_KNOWN_BUG("Mechanics: a compressible material can be configured from XML",
-                    "src/pdes/materials/hyperelastic_material.cpp, allocate_Ta: reads "
-                    "active_stress(0), but only the incompressible laws fill it, so "
-                    "CompressibleNeoHookean, SaintVenantKirchoff and Exponential throw in config()")
+// allocate_Ta used to read active_stress(0) of an empty vector, so the compressible laws
+// threw in config(); fixed in 5668b24
+TEST_CASE("Mechanics: a compressible material can be configured from XML")
 {
   BoxSpec b;
   b.nx = 2; b.ny = 1; b.nz = 1;

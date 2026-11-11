@@ -1,0 +1,62 @@
+
+<?xml version="1.0"?>
+<elasticity type="THREE_DIM">
+  <parameters>
+  <material>Guccione</material>
+      <coefficients>0.650, 6.62, 3.65, 2.65, 100, 200.0</coefficients>
+    <ninc>10</ninc>
+  </parameters>
+
+  <pressure>
+    <node id="1" marker="10" value="4" />
+  </pressure>
+  
+  <prescribed_displacement>
+    <node id="0" direction="1" value="0.000000" />
+    <node id="1" direction="1" value="0.000000" />
+    <node id="0" direction="0" value="0.000000" />
+    <node id="3" direction="0" value="0.000000" />
+    <node id="7" direction="0" value="0.000000" />
+    <node id="5" direction="1" value="0.000000" />
+    <node id="4" direction="0" value="0.000000" />
+    <node id="4" direction="1" value="0.000000" />
+
+    <node id="0" direction="2" value="0.000000" />
+    <node id="1" direction="2" value="0.000000" />
+    <node id="2" direction="2" value="0.000000" />
+    <node id="3" direction="2" value="0.000000" />
+  
+  </prescribed_displacement>
+</elasticity>
+
+<mesh celltype="hexahedron" dim="3">
+  <nodes size="8">
+    <node id="0" x="0.000000" y="0.000000" z="0.000000" />
+    <node id="1" x="1.000000" y="0.000000" z="0.000000" />
+    <node id="2" x="1.000000" y="1.000000" z="0.000000" />
+    <node id="3" x="0.000000" y="1.000000" z="0.000000" />
+    <node id="4" x="0" y="0" z="1" />
+    <node id="5" x="1" y="0" z="1" />
+    <node id="6" x="1" y="1" z="1" />
+    <node id="7" x="0" y="1" z="1" />
+  </nodes>
+
+  <elements size="1">
+    <element id="0" v0="0" v1="1" v2="2" v3="3" v4="4" v5="5" v6="6" v7="7" />
+  </elements>
+
+  <boundary celltype="quadrilateral" dim="2">
+    <element id="0" marker="10" v0="0" v1="3" v2="2" v3="1"/>
+    <element id="1" marker="10" v0="4" v1="5" v2="6" v3="7"/>
+    <element id="2" marker="10" v0="0" v1="1" v2="5" v3="4"/>
+    <element id="3" marker="10" v0="3" v1="7" v2="6" v3="2"/>
+    <element id="4" marker="10" v0="0" v1="4" v2="7" v3="3"/>
+    <element id="5" marker="10" v0="1" v1="2" v2="6" v3="5"/>
+  </boundary>
+
+  <element_data type="fiber_transversely_isotropic">
+    <element id="0">
+        <fiber>1.000000,0.000000,0.000000</fiber>
+    </element>
+  </element_data>
+</mesh>

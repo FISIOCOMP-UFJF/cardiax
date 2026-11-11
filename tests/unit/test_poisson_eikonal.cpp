@@ -280,8 +280,12 @@ TEST_CASE("Poisson: write_data stores the solution")
   p.config(poisson_cfg(kLinearCfg));
   p.run("m.xml");
   p.write_data("poisson_out");
-  const arma::mat vm = h5_read("poisson_out.h5", "/point_data/vm");
-  CHECK_NEAR(vm(0, box_node(b, 2, 0, 0)), p.get_solution()(box_node(b, 2, 0, 0)), 0.0);
+  // Static fields: the nodal solution [np] and the gradient per element [ne, 3]
+  const arma::mat u = h5_read("poisson_out.h5", "/point_data/solution");
+  CHECK_NEAR(u(box_node(b, 2, 0, 0), 0), p.get_solution()(box_node(b, 2, 0, 0)), 0.0);
+  const arma::mat g = h5_read("poisson_out.h5", "/cell_data/gradient");
+  CHECK_EQ(g.n_rows, arma::uword(p.get_mesh().get_n_elements()));
+  CHECK_EQ(g.n_cols, arma::uword(3));
 }
 
 // ---- Laplace ----------------------------------------------------------------

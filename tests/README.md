@@ -30,6 +30,7 @@ solvers wrote.
 | `tests/unit/` | Linked against the libraries. Subroutines and subproblems: cell models, element matrices, materials, circulation models. |
 | `tests/integration/` | Run the executables in `build/app` on small problems, and check what they print and write. |
 | `tests/support/` | `test_framework.hpp` (assertions), `test_main.cpp` (shared `main`), `fixtures.hpp` (generated meshes, running the solvers, reading HDF5). |
+| `tests/data/` | Small repository meshes and inputs the integration tests copy (passive/active cubes, eikonal cases, the cook's beam, the biventricular mesh of `teste_pvloop_save_state`). They came from the old `testes/`, which moved to the `cardiax-examples` repository; the tests keep their own copy so they do not depend on it. |
 | `tests/golden/baseline.txt` | Regression baseline. See below. |
 
 | Test | What it exercises |

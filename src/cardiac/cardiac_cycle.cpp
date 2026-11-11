@@ -151,6 +151,23 @@ void CardiacElectromechanic::config(const std::string &basename)
   n_frames  = plan.nsteps / out_every + 2;
   cout << " Output: " << plan.nsteps << " steps, saving every " << out_every
        << " -> " << n_frames << " frame(s)" << endl;
+
+  // Campos que o ciclo grava pelo writer da mecanica (save_node_fields e
+  // storeStress) alem dos que a mecanica registra sozinha. Precisam vir antes
+  // de setup_data_writer(), que chama open(). Mesmo conjunto que o writer
+  // antigo criava sempre, para o layout do .h5 nao mudar.
+  WriterHDF5 & w = elas.get_writer();
+  w.add_field("vm",            FieldLoc::Point, FieldKind::Transient);
+  w.add_field("active_stress", FieldLoc::Point, FieldKind::Transient);
+  w.add_field("lambda_f",      FieldLoc::Point, FieldKind::Transient);
+  w.add_field("lambda_rate",   FieldLoc::Point, FieldKind::Transient);
+  w.add_field("Ta_applied",    FieldLoc::Cell,  FieldKind::Transient);
+  w.add_field("ta_scale",      FieldLoc::Cell,  FieldKind::Transient);
+  w.add_field("long_strain",   FieldLoc::Cell,  FieldKind::Transient);
+  w.add_field("circ_strain",   FieldLoc::Cell,  FieldKind::Transient);
+  w.add_field("rad_strain",    FieldLoc::Cell,  FieldKind::Transient);
+  w.add_field("fibrosis",      FieldLoc::Cell,  FieldKind::Static);
+  w.add_field("aha_marker",    FieldLoc::Cell,  FieldKind::Static);
   elas.setup_data_writer(n_frames);
 
   configure_fibers();

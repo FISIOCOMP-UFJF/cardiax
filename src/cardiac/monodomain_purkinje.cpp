@@ -230,8 +230,11 @@ void MonodomainPurkinje::init()
   cout << " Number of steps = " << nsteps << endl;
   cout << " Timestep = " << timestep << endl;
 
-  writer->open(output, nsteps, timestep, true);
+  // vm (valores nodais) e ve (derivada Hermite, gravada via "dv" em
+  // write_data) precisam estar registrados antes de open()
+  writer->add_field("vm", FieldLoc::Point, FieldKind::Transient);
   writer->add_ve();
+  writer->open(output, nsteps, timestep, true);
 
   // setup model and cells
   cellmodel = CellModel::create(cell_name);
@@ -294,8 +297,8 @@ void MonodomainPurkinje::solve()
     timer.leave();
 
     //write_data_text(vm, &step_apd);
-    write_data(vm, "vm_vtu/vm", &step);
-    write_data(vm, "vm_vtu/dv", &step_dv);
+    write_data(vm, "vm", &step);
+    write_data(vm, "dv", &step_dv);
   }  
 
   timer.summary();

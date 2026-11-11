@@ -279,6 +279,30 @@ std::string fix_nodes_xml(const std::vector<int> & nodes, const std::vector<int>
   return os.str();
 }
 
+void write_nonlinearelas_toml(const std::string & path, const NonlinearElasInput & in)
+{
+  std::ostringstream os;
+  os << std::setprecision(16);
+  os << "[problem]\n"
+     << "mesh = \"" << in.mesh << "\"\n"
+     << "type = \"THREE_DIM\"\n\n"
+     << "[solver]\n"
+     << "n_increments = " << in.ninc << "\n\n"
+     << "[material]\n"
+     << "name = \"" << in.material << "\"\n"
+     << "coefficients = [" << in.coefs << "]\n";
+  for (const auto & p : in.pressure)
+  {
+    // always a TOML float, so the solver never sees an integer where it reads a double
+    std::ostringstream v;
+    v << std::setprecision(16) << p.second;
+    std::string value = v.str();
+    if (value.find_first_of(".eEn") == std::string::npos) value += ".0";
+    os << "\n[[pressure]]\nmarker = " << p.first << "\nvalue = " << value << "\n";
+  }
+  write_text(path, os.str());
+}
+
 void write_text(const std::string & path, const std::string & contents)
 {
   std::ofstream os(path);

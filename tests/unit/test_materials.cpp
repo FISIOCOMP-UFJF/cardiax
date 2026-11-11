@@ -67,7 +67,7 @@ arma::mat33 rotation()
 
 struct NamedMaterial { std::string name; std::vector<double> prm; };
 
-// Stiffness parameters in the range used in testes/ (Ta = 0)
+// Stiffness parameters in the range used in tests/data/ (Ta = 0)
 const std::vector<NamedMaterial> kMaterials = {
   {"SaintVenantKirchoff",    {1.0, 2.0}},
   {"CompressibleNeoHookean", {1.0, 2.0}},

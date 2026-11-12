@@ -6,7 +6,6 @@ MitchellSchaeffer::MitchellSchaeffer() : CellModel(3)
   var_names.insert( std::pair<int, std::string>(1, "h") );
   var_names.insert( std::pair<int, std::string>(2, "Ta") );
 
-  
   ta_index  = 2;     // Ta state variable
   ta_factor = 13.7;  // Scaling factor
 }

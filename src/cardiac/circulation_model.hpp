@@ -65,7 +65,7 @@ struct RunPlan
   double ep_dt_hint_ms     = 0.0;   //!< passo da EP sugerido pelo modelo (0 = o
                                     //!< do modelo celular); usado se -dt faltar
   int    span_margin_steps = 2;     //!< folga do span da EP, em passos da EP
-  int    default_out_every = 8;     //!< default de -prc
+  int    default_out_every = 1;     //!< default de -prc
   bool   store_stress      = false; //!< gravar tambem o campo de tensoes
 };
 

@@ -8,6 +8,7 @@ FORCE_ARMA=false
 FORCE_AMGX=false
 FORCE_PETSC=false
 CUDA_ARCH=""
+PETSC_KOKKOS=true   # PETSc com CUDA + Kokkos por padrao (--petsc-no-kokkos desliga)
 
 IGNORE_HDF5=false
 IGNORE_ARMA=false
@@ -28,6 +29,13 @@ show_help() {
     echo "  --ignore-amgx         Skips AMGX build and installation."
     echo "  --ignore-petsc        Skips PETSc build and installation."
     echo "  --cuda-arch           Specifies the CUDA architecture."
+    echo "  --petsc-no-kokkos     Builds PETSc for CPU only. By default PETSc is built with"
+    echo "                        CUDA + Kokkos + Kokkos Kernels (VECKOKKOS / MATAIJKOKKOS),"
+    echo "                        using --cuda-arch if it is a single value (e.g. 86), otherwise"
+    echo "                        the arch detected via nvidia-smi."
+    echo "                        With no GPU detected and no --cuda-arch, the script switches"
+    echo "                        to CPU-only PETSc and skips AMGX by itself."
+    echo "                        Rebuilds PETSc automatically when the variant changes."
     echo "  -h, --help            Shows this message. Hi! "
     echo ""
 }
@@ -75,6 +83,10 @@ while [[ $# -gt 0 ]]; do
             CUDA_ARCH="$2"
             shift 2
             ;;
+        --petsc-no-kokkos)
+            PETSC_KOKKOS=false
+            shift
+            ;;
         -h|--help)
             show_help
             exit 0
@@ -86,6 +98,47 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# --- GPU DETECTION (antes de compilar qualquer coisa) ---
+# A arch vem de --cuda-arch (se for um valor unico, ex. 86) ou do nvidia-smi.
+# Sem GPU detectada e sem --cuda-arch, os pacotes de GPU sao desligados sozinhos:
+# o PETSc cai na variante cpu e o AMGX e pulado (a nao ser que --force-amgx).
+# Com --cuda-arch explicito (ex.: compilar para outra maquina) nada e desligado.
+GPU_ARCH=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -n1 | tr -d '. ')
+[[ "$GPU_ARCH" =~ ^[0-9]+$ ]] || GPU_ARCH=""
+
+if [ -z "$GPU_ARCH" ] && [ -z "$CUDA_ARCH" ]; then
+    GPU_MSG=""
+    if [ "$PETSC_KOKKOS" = true ] && [ "$IGNORE_PETSC" = false ]; then
+        GPU_MSG="$GPU_MSG\n   -> PETSc will be built for CPU only (as with --petsc-no-kokkos)."
+        PETSC_KOKKOS=false
+    fi
+    if [ "$IGNORE_AMGX" = false ] && [ "$FORCE_AMGX" = false ] && [ "$FORCE_ALL" = false ]; then
+        GPU_MSG="$GPU_MSG\n   -> AMGX will be skipped (as with --ignore-amgx)."
+        IGNORE_AMGX=true
+    fi
+    if [ -n "$GPU_MSG" ]; then
+        echo "------------------------------------------"
+        echo " WARNING: no NVIDIA GPU detected (nvidia-smi) and no --cuda-arch given."
+        echo -e "${GPU_MSG#\\n}"
+        echo "   Pass --cuda-arch <sm> to build the GPU packages anyway."
+        echo "------------------------------------------"
+    fi
+fi
+
+# Kokkos aceita uma unica arch: --cuda-arch de valor unico, senao a da GPU detectada.
+if [ "$PETSC_KOKKOS" = true ] && [ "$IGNORE_PETSC" = false ]; then
+    if [[ "$CUDA_ARCH" =~ ^[0-9]+$ ]]; then
+        PETSC_CUDA_ARCH="$CUDA_ARCH"
+    elif [ -n "$GPU_ARCH" ]; then
+        PETSC_CUDA_ARCH="$GPU_ARCH"
+    else
+        echo "ERROR: PETSc with Kokkos needs a single CUDA arch (Kokkos supports only one),"
+        echo "       but --cuda-arch '$CUDA_ARCH' is a list and no GPU was detected."
+        echo "       Pass a single value (e.g. --cuda-arch 86) or use --petsc-no-kokkos."
+        exit 1
+    fi
+fi
 
 echo "=========================================="
 echo "   CARDIAX: DEPENDENCY INSTALLATION       "
@@ -137,6 +190,7 @@ echo "[2/4] Verifying recipes:"
 build_recipe_smart() {
     PKG_NAME=$1
     FORCE_THIS=$2 # Receives true/false if this specific package should be forced
+    VARIANT=${3:-} # Build variant recorded in the marker; a different one forces a rebuild
     RECIPE_PATH="$RECIPES_DIR/$PKG_NAME"
     MARKER_FILE="$MARKERS_DIR/${PKG_NAME}.done"
 
@@ -156,6 +210,9 @@ build_recipe_smart() {
     elif [ "$FORCE_THIS" = true ]; then
         SHOULD_BUILD=true
         REASON="Flag --force-$PKG_NAME activated."
+    elif [ "$(cat "$MARKER_FILE")" != "$VARIANT" ]; then
+        SHOULD_BUILD=true
+        REASON="Variant changed ('$(cat "$MARKER_FILE")' -> '$VARIANT')."
     fi
     
     if [ "$SHOULD_BUILD" = true ]; then
@@ -179,7 +236,7 @@ build_recipe_smart() {
         python -m conda_index "$CONDA_BLD_PATH" > /dev/null 2>&1
 
         # Cria o arquivo marcador para pular essa compilação no futuro.
-        touch "$MARKER_FILE"
+        printf '%s' "$VARIANT" > "$MARKER_FILE"
         echo "[SUCCESS] Marker created for $PKG_NAME"
     else
         echo "[SKIPPING] $PKG_NAME already exists (Fast check via marker)."
@@ -211,8 +268,23 @@ else
     echo "[IGNORED] amgx_custom"
 fi
 
+# Variante do PETSc: "kokkos-sm<arch>" (CUDA + Kokkos, padrao) ou "cpu" (--petsc-no-kokkos).
+# O build.sh/meta.yaml da receita leem CARDIAX_PETSC_KOKKOS e CARDIAX_PETSC_CUDA_ARCH.
+# A arch (PETSC_CUDA_ARCH) ja foi resolvida na deteccao de GPU, no inicio do script.
+if [ "$PETSC_KOKKOS" = true ] && [ "$IGNORE_PETSC" = false ]; then
+    echo "PETSc with Kokkos/CUDA, arch sm_$PETSC_CUDA_ARCH"
+    export CARDIAX_PETSC_KOKKOS=1
+    export CARDIAX_PETSC_CUDA_ARCH="$PETSC_CUDA_ARCH"
+    PETSC_VARIANT="kokkos-sm$PETSC_CUDA_ARCH"
+    PETSC_SPEC="petsc_custom=*=kokkos*"
+else
+    export CARDIAX_PETSC_KOKKOS=0
+    PETSC_VARIANT="cpu"
+    PETSC_SPEC="petsc_custom=*=cpu*"
+fi
+
 if [ "$IGNORE_PETSC" = false ]; then
-    build_recipe_smart "petsc_custom" "$FORCE_PETSC"
+    build_recipe_smart "petsc_custom" "$FORCE_PETSC" "$PETSC_VARIANT"
 else
     echo "[IGNORED] petsc_custom"
 fi
@@ -228,16 +300,17 @@ conda deactivate
 conda remove -n cardiax_env --all -y > /dev/null 2>&1 || true
 
 # Constrói a string de dependências apenas com o que não foi ignorado
-DEPS=""
-if [ "$IGNORE_HDF5" = false ]; then DEPS="$DEPS hdf5_custom"; fi
-if [ "$IGNORE_ARMA" = false ]; then DEPS="$DEPS armadillo_custom"; fi
-if [ "$IGNORE_AMGX" = false ]; then DEPS="$DEPS amgx_custom"; fi
-if [ "$IGNORE_PETSC" = false ]; then DEPS="$DEPS petsc_custom"; fi
+# (array: PETSC_SPEC tem '*' e nao pode sofrer expansao de glob)
+DEPS=()
+if [ "$IGNORE_HDF5" = false ]; then DEPS+=(hdf5_custom); fi
+if [ "$IGNORE_ARMA" = false ]; then DEPS+=(armadillo_custom); fi
+if [ "$IGNORE_AMGX" = false ]; then DEPS+=(amgx_custom); fi
+if [ "$IGNORE_PETSC" = false ]; then DEPS+=("$PETSC_SPEC"); fi
 
 conda create -n cardiax_env \
     -c "file://$CONDA_BLD_PATH" \
     -c conda-forge -c nvidia \
-    $DEPS \
+    "${DEPS[@]}" \
     cuda-nvtx cuda-nvtx-dev cuda-libraries-dev cuda-cudart-dev "cuda-version=12" \
     cmake make gxx_linux-64 gcc_linux-64 gfortran_linux-64 \
     python=3.10 mpich pkg-config -y

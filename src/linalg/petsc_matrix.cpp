@@ -40,19 +40,24 @@ void Matrix::create(int rows, int cols, int nz)
     CHKERRABORT(PETSC_COMM_WORLD,ierr);    
   }
   
-  ierr = MatSetUp(_mat);
+  // O tipo vindo das opcoes (ex.: -mat_type aijkokkos) tem que ser aplicado ANTES da
+  // pre-alocacao: trocar o tipo depois descarta a pre-alocacao e o PETSc cai no
+  // MatSetValues baseado em hash (montagem ~2x mais lenta no hex126).
+  ierr = MatSetFromOptions(_mat);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
-  
+
   //ierr = MatMPIAIJSetPreallocation(_mat, nz, NULL, nz, NULL);
   //CHKERRABORT(PETSC_COMM_WORLD,ierr);
 
   ierr = MatSeqAIJSetPreallocation(_mat, nz, NULL);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
 
-  ierr =MatSetOption(_mat, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE);
+  // Depois da pre-alocacao: no-op para (seq)aij*, e deixa a matriz utilizavel caso
+  // -mat_type seja um tipo nao-AIJ (onde MatSeqAIJSetPreallocation e ignorado).
+  ierr = MatSetUp(_mat);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
 
-  ierr = MatSetFromOptions(_mat);
+  ierr =MatSetOption(_mat, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE);
   CHKERRABORT(PETSC_COMM_WORLD,ierr);
 }
 

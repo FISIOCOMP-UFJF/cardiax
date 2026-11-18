@@ -1,5 +1,8 @@
 {% set name = "petsc_custom" %}
 {% set version = "3.19.6" %}
+{# Variante escolhida pelo install_deps.sh: kokkos (CUDA + Kokkos, padrao) ou cpu (--petsc-no-kokkos) #}
+{% set kokkos = environ.get('CARDIAX_PETSC_KOKKOS', '0') == '1' %}
+{% set variant = 'kokkos' if kokkos else 'cpu' %}
 
 package:
   name: {{ name }}
@@ -11,7 +14,12 @@ source:
 
 build:
   number: 1
+  string: {{ variant }}_{{ PKG_BUILDNUM }}
   skip: True  # [not linux]
+  script_env:
+    - CARDIAX_PETSC_KOKKOS
+    - CARDIAX_PETSC_CUDA_ARCH
+    - CARDIAX_PETSC_MAKE_NP
 
 requirements:
   build:
@@ -21,14 +29,26 @@ requirements:
     - python 3.10.* # Essencial para rodar o ./configure
     - make
     - pkg-config
+{% if kokkos %}
+    - cuda-nvcc 12.*
+    - git          # --download-kokkos / --download-kokkos-kernels clonam via git
+{% endif %}
   
   host:
     - python 3.10.* # Essencial para o ambiente
     - hdf5_custom    # <--- USA O SEU PACOTE LOCAL
     - libgfortran-ng
     - libgomp
+{% if kokkos %}
+    - mpich 4.*                 # MPI do conda-forge em vez do --download-mpich (ver build.sh)
+    - cuda-version 12.*
+    - cuda-cudart-dev 12.*
+    - cuda-libraries-dev 12.*   # cublas, cufft, cusparse, cusolver, curand
+    - cuda-driver-dev 12.*      # stub libcuda.so (Kokkos usa a driver API)
+    - cuda-nvtx-dev 12.*        # headers nvtx3 (o eventlog.c do PETSc inclui nvToolsExt.h)
+{% endif %}
 
 about:
   home: https://petsc.org/
-  summary: "PETSc 3.19.6 Custom Build (Optimized + Python 3.10)"
+  summary: "PETSc 3.19.6 Custom Build (Optimized + Python 3.10){{ ' + CUDA/Kokkos (sem hypre)' if kokkos else '' }}"
   license: BSD-2-Clause
